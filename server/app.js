@@ -70,6 +70,7 @@ function createApp(opts = {}) {
     app.locals.config = config;
     app.use('/auth/', rateLimit({ windowMs: 15 * 60_000, max: 60, standardHeaders: true, legacyHeaders: false }));
     app.use('/auth', createAuthRoutes(config, auth));
+    { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'community', service: 'community', host: 'openvibe.community', name: 'OpenVibe.Community', profile: 'ugc' })); app.get('/tos', (_req, res) => res.redirect(301, '/terms')); }
 
     // ── /api/pastes → OpenVibe.Live (before any body parser: bodies stream through) ──
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
