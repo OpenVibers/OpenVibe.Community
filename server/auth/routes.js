@@ -13,7 +13,13 @@
 //                          error=login_required and lands on next + ?sso=none)
 //                          ?next=…  same-site path or an https://openvibe.network/…
 //                          URL (sign-in-everywhere chains)
+//                          A silent login whose ov_token already verifies skips the
+//                          Network round trip and 302s straight to next.
 //   GET  /auth/callback  → server-side code exchange, set cookies
+//   POST /auth/fedcm     → browser-native FedCM: the navbar posts the Network's
+//                          assertion JWT + the nonce it minted; we check the nonce,
+//                          swap the assertion for tokens (jwt-bearer grant), set the
+//                          same cookies as the callback
 //   GET  /auth/logout    → clear cookies (+ best-effort refresh revoke), hint=guest
 //   GET  /auth/me        → offline-verify ov_token, return profile
 //   POST /auth/refresh   → rotate tokens via refresh_token grant
@@ -101,6 +107,30 @@ function claimsToUser(claims) {
     if (!claims) return null;
     const { iat, exp, aud, iss, nbf, jti, ...user } = claims;
     return user;
+}
+
+/**
+ * Decode a JWT's payload WITHOUT checking its signature. Only for reading claims
+ * we cross-check locally (the FedCM nonce) before the Network — which does verify
+ * the signature — sees the assertion. Never use it to trust an identity.
+ */
+function decodeJwtPayload(token) {
+    if (typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    try {
+        const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        return claims && typeof claims === 'object' && !Array.isArray(claims) ? claims : null;
+    } catch { return null; }
+}
+
+/** True when the assertion's `nonce` claim is exactly the nonce the page posted. */
+function fedcmNonceMatches(token, nonce) {
+    if (typeof nonce !== 'string' || !nonce || nonce.length > 256) return false;
+    const claims = decodeJwtPayload(token);
+    if (!claims || typeof claims.nonce !== 'string') return false;
+    const a = Buffer.from(claims.nonce), b = Buffer.from(nonce);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 /**
@@ -211,6 +241,8 @@ function createAuthRoutes(config, auth) {
                 if (!res.ok) {
                     const err = new Error(data.error_description || data.error || `token grant failed (${res.status})`);
                     err.status = res.status;
+                    err.error = data.error || 'invalid_grant';
+                    err.error_description = data.error_description || null;
                     throw err;
                 }
                 return data;
@@ -224,8 +256,17 @@ function createAuthRoutes(config, auth) {
     }
 
     // ── GET /auth/login ──────────────────────────────────────
-    router.get('/login', (req, res) => {
+    router.get('/login', async (req, res) => {
         const silent = !!req.query.silent && req.query.silent !== '0';
+        if (silent) {
+            // Already signed in here? Then the silent round trip through the Network would
+            // only hand back the session we have: go straight to where the caller wanted.
+            const existing = req.cookies?.[ACCESS_COOKIE];
+            if (existing && await auth.verify(existing)) {
+                clearFlowCookies(res);
+                return res.redirect(sanitizeNext(req.query.next, config));
+            }
+        }
         const { url, state } = buildAuthorizeUrl(config, auth, { silent });
         res.cookie(STATE_COOKIE, state, flowCookieOpts());
         const next = sanitizeNext(req.query.next, config);
@@ -273,6 +314,40 @@ function createAuthRoutes(config, auth) {
         } catch (err) {
             console.error('[Auth] Code exchange failed:', err.message);
             return res.status(502).send('Sign-in failed — could not reach OpenVibe.Network. Please try again.');
+        }
+    });
+
+    // ── POST /auth/fedcm ─────────────────────────────────────
+    // The shared navbar obtained a FedCM assertion from openvibe.network (the
+    // browser's own account chooser) and posts it same-origin with the nonce it
+    // put in the FedCM request. We only pre-check the nonce; the Network verifies
+    // the assertion's signature when it swaps it for tokens.
+    const fedcmBody = express.json({ limit: '16kb', type: 'application/json' });
+    const fedcmBodyError = (err, _req, res, next) => (err ? res.status(400).json({ error: 'invalid_request', error_description: 'Malformed JSON body' }) : next());
+    router.post('/fedcm', fedcmBody, fedcmBodyError, async (req, res) => {
+        if (!req.is('application/json')) return res.status(400).json({ error: 'invalid_request', error_description: 'Expected application/json' });
+        const { token, nonce } = req.body || {};
+        if (typeof token !== 'string' || !token || typeof nonce !== 'string' || !nonce) {
+            return res.status(400).json({ error: 'invalid_request', error_description: 'token and nonce are required' });
+        }
+        if (!fedcmNonceMatches(token, nonce)) {
+            return res.status(400).json({ error: 'invalid_request', error_description: 'nonce mismatch' });
+        }
+        try {
+            const data = await tokenGrant({
+                grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                assertion: token,
+            });
+            if (!data.access_token) throw Object.assign(new Error('no token'), { status: 401, error: 'invalid_grant' });
+            setSessionCookies(res, data.access_token, data.refresh_token);
+            const user = data.user || claimsToUser(await auth.verify(data.access_token));
+            return res.json({ ok: true, user });
+        } catch (err) {
+            if (err.status && err.status < 500) {
+                return res.status(401).json({ error: err.error || 'invalid_grant', error_description: err.error_description || err.message });
+            }
+            console.error('[Auth] FedCM exchange failed:', err.message);
+            return res.status(502).json({ error: 'server_error', error_description: 'Could not reach OpenVibe.Network' });
         }
     });
 
@@ -344,4 +419,4 @@ function optionalAuth(auth) {
     };
 }
 
-module.exports = { createAuthClient, createAuthRoutes, extractToken, optionalAuth, sanitizeNext, withParam, buildAuthorizeUrl, claimsToUser };
+module.exports = { createAuthClient, createAuthRoutes, extractToken, optionalAuth, sanitizeNext, withParam, buildAuthorizeUrl, claimsToUser, decodeJwtPayload, fedcmNonceMatches };

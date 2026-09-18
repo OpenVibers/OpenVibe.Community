@@ -1,5 +1,5 @@
 'use strict';
-/** The OAuth client: login (incl. silent), callback, logout, me, refresh, and next sanitising. */
+/** The OAuth client: login (incl. silent + already-signed-in shortcut), callback, FedCM, logout, me, refresh, and next sanitising. */
 const assert = require('assert');
 const { boot, check, done } = require('./helpers/app');
 
@@ -78,6 +78,27 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(bad.status, 401);
     });
 
+    await check('silent login with a valid ov_token skips the Network and 302s to next; non-silent and bad tokens still go', async () => {
+        assert.ok(t.jar.has('ov_token'), 'precondition: signed in');
+        const short = await t.get('/auth/login?silent=1&next=/pastes%3Fsort%3Dviews');
+        assert.strictEqual(short.status, 302);
+        assert.strictEqual(short.headers.get('location'), '/pastes?sort=views');
+        const state = cookieNamed(short, 'ov_oauth_state');
+        assert.ok(!state || /Expires=Thu, 01 Jan 1970/i.test(state), 'no OAuth flow was started (state cookie only ever cleared)');
+        const evil = await t.get('/auth/login?silent=1&next=https://evil.example/');
+        assert.strictEqual(evil.headers.get('location'), '/');
+        const loud = await t.get('/auth/login?next=/my');
+        assert.strictEqual(new URL(loud.headers.get('location')).origin, t.network.url);
+        const stale = await t.get('/auth/login?silent=1&next=/my', { cookies: ['ov_token=garbage'] });
+        assert.strictEqual(stale.status, 302);
+        // The jar's good token is also sent, so exercise the shortcut miss with the jar emptied.
+        const saved = t.jar.get('ov_token'); t.jar.delete('ov_token');
+        const miss = await t.get('/auth/login?silent=1&next=/my', { cookies: ['ov_token=garbage'] });
+        assert.strictEqual(new URL(miss.headers.get('location')).origin, t.network.url);
+        assert.strictEqual(new URL(miss.headers.get('location')).searchParams.get('prompt'), 'none');
+        t.jar.set('ov_token', saved);
+    });
+
     await check('callback rejects a missing or mismatched state', async () => {
         const r = await t.get('/auth/callback?code=good-code&state=deadbeef');
         assert.strictEqual(r.status, 400);
@@ -105,6 +126,59 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!t.jar.has('ov_token') && !t.jar.has('ov_refresh'));
         const evil = await t.get('/auth/logout?next=https://evil.example/');
         assert.strictEqual(evil.headers.get('location'), '/');
+    });
+
+    await check('POST /auth/fedcm swaps a nonce-matching assertion for a session (jwt-bearer grant)', async () => {
+        assert.ok(!t.jar.has('ov_token'), 'precondition: signed out');
+        const post = (body, headers = {}) => t.get('/auth/fedcm', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+        const nonce = 'n-' + Math.random().toString(16).slice(2);
+        const assertion = t.network.sign({ id: 7, username: 'alex', nonce, aud: 'community' });
+        const r = await post({ token: assertion, nonce });
+        assert.strictEqual(r.status, 200, r.text);
+        const body = r.json();
+        assert.strictEqual(body.ok, true);
+        assert.strictEqual(body.user.username, 'alex');
+        const tok = cookieNamed(r, 'ov_token');
+        assert.ok(tok && !/HttpOnly/i.test(tok) && /SameSite=Lax/i.test(tok) && /Secure/.test(tok) && /Path=\//.test(tok));
+        assert.ok(/HttpOnly/i.test(cookieNamed(r, 'ov_refresh')) && /Path=\/auth/.test(cookieNamed(r, 'ov_refresh')));
+        const hint = cookieNamed(r, 'ov_sso_hint');
+        assert.ok(hint && hint.startsWith('ov_sso_hint=account') && !/HttpOnly/i.test(hint) && /Max-Age=31536000/.test(hint));
+        const grant = t.network.grants.pop();
+        assert.strictEqual(grant.grant_type, 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+        assert.strictEqual(grant.assertion, assertion);
+        assert.strictEqual(grant.client_id, 'community');
+        assert.strictEqual(grant.client_secret, 'shh');
+        assert.strictEqual(grant.code, undefined);
+        const me = await t.get('/auth/me');
+        assert.strictEqual(me.json().user.username, 'alex');
+    });
+
+    await check('POST /auth/fedcm rejects a nonce mismatch, bad input and a Network-refused assertion without touching the session', async () => {
+        t.jar.delete('ov_token'); t.jar.delete('ov_refresh');
+        const post = (body, headers = {}) => t.get('/auth/fedcm', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+        const before = t.network.grants.length;
+        const assertion = t.network.sign({ id: 7, username: 'alex', nonce: 'expected' });
+        const mismatch = await post({ token: assertion, nonce: 'other' });
+        assert.strictEqual(mismatch.status, 400);
+        assert.strictEqual(mismatch.json().error, 'invalid_request');
+        const noNonce = await post({ token: t.network.sign({ id: 7, username: 'alex' }), nonce: 'x' });
+        assert.strictEqual(noNonce.status, 400);
+        assert.strictEqual((await post({ nonce: 'x' })).status, 400);
+        assert.strictEqual((await post({ token: 'not-a-jwt', nonce: 'x' })).status, 400);
+        assert.strictEqual((await post('{not json')).status, 400);
+        const form = await t.get('/auth/fedcm', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'token=x&nonce=y' });
+        assert.strictEqual(form.status, 400);
+        assert.strictEqual(t.network.grants.length, before, 'nothing reached the Network');
+        // Nonce matches but the assertion is not one the Network issued → it refuses → 401.
+        const jwt = require('jsonwebtoken');
+        const { privateKey } = require('crypto').generateKeyPairSync('rsa', { modulusLength: 2048 });
+        const forged = jwt.sign({ sub: 1, username: 'mallory', nonce: 'n1' }, privateKey.export({ type: 'pkcs8', format: 'pem' }), { algorithm: 'RS256', expiresIn: '1h' });
+        const refused = await post({ token: forged, nonce: 'n1' });
+        assert.strictEqual(refused.status, 401);
+        assert.strictEqual(refused.json().error, 'invalid_grant');
+        assert.ok(/assertion rejected/.test(refused.json().error_description));
+        assert.strictEqual(t.network.grants.length, before + 1);
+        assert.ok(!t.jar.has('ov_token') && !t.jar.has('ov_refresh'), 'no session was created');
     });
 
     await t.close();
