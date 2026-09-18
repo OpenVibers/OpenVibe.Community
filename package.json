@@ -1,0 +1,27 @@
+{
+  "name": "openvibe-community",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenVibe.Community — the people of OpenVibe. Home of pastes; forums and submissions to follow. Part of the OpenVibe network (pastes stored by OpenVibe.Media via OpenVibe.Live, identity by OpenVibe.Network).",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "NODE_ENV=development node server/index.js",
+    "test": "node test/run.js"
+  },
+  "keywords": ["openvibe", "community", "pastes", "pastebin"],
+  "author": "OpenVibe Community",
+  "license": "MIT",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "highlight.js": "^11.11.1",
+    "openvibe-shared": "file:./vendor/openvibe-shared"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
