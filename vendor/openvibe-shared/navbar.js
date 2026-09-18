@@ -896,11 +896,11 @@
                 items.slice(0, 4).map(h => `<a class="item" href="${escapeAttr(h.url)}"><span class="icon"><i class="fa-solid ${escapeAttr(h.icon || 'fa-clock-rotate-left')}"></i></span><span class="t">${escapeAttr(h.title || h.url)}</span><span class="s">${escapeAttr(h.service_label || h.service || '')}</span></a>`).join('');
         };
         const H = root.OpenVibeHistory;
-        if (H && typeof H.recent === 'function') { H.recent({ limit: 4, token: _config.token }).then(draw).catch(() => draw(null)); return; }
+        if (H && typeof H.recent === 'function') { H.recent({ limit: 4, token: _config.token, apiBase: _config.apiBase }).then(draw).catch(() => draw(null)); return; }
         if (document.getElementById('ov-history-loader')) return;
         const sc = document.createElement('script'); sc.id = 'ov-history-loader'; sc.async = true;
         sc.src = `${_config.apiBase}/shared/history.js`;
-        sc.onload = () => { try { root.OpenVibeHistory.recent({ limit: 4, token: _config.token }).then(draw).catch(() => draw(null)); } catch { /* */ } };
+        sc.onload = () => { try { root.OpenVibeHistory.recent({ limit: 4, token: _config.token, apiBase: _config.apiBase }).then(draw).catch(() => draw(null)); } catch { /* */ } };
         document.head.appendChild(sc);
     }
 
@@ -912,8 +912,7 @@
         const svc = _config.service;
 
         const brand = resolveBrand();
-        nav.setAttribute('data-compact', _config.compact || 'auto');
-        nav.setAttribute('data-service', svc);
+        if (typeof nav.setAttribute === 'function') { nav.setAttribute('data-compact', _config.compact || 'auto'); nav.setAttribute('data-service', svc); }
         const links = currentLinks();
 
         const u = _config.user;

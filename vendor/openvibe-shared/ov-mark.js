@@ -2,6 +2,7 @@
  * ov-mark.js — the OpenVibe "OV" brand mark as a drop-in.
  *   <span class="ov-mark"></span>            → 32px animated mark
  *   <span class="ov-mark" data-size="56">    → any size; add data-static="1" for no motion
+ *   <span class="ov-mark" data-variant="live">  → the site's own twist on the motion (see VARIANTS)
  * Self-contained: injects its own CSS once, works on any page (Live, Network, static pages).
  * The O is a ring with a comet arc running around it, the V is drawn inside with a light
  * sweep, and a dot orbits the ring. Transform/opacity/stroke motion only.
@@ -17,7 +18,30 @@
 .ov-mark .r{fill:none;stroke:currentColor;stroke-width:4;opacity:.28}
 .ov-mark .c{fill:none;stroke-width:4;stroke-linecap:round;stroke-dasharray:34 79;transform-box:fill-box;transform-origin:center;animation:ovmComet 3.6s linear infinite}
 .ov-mark .v{fill:none;stroke-width:4.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:46;animation:ovmDraw 1.1s cubic-bezier(.2,.8,.2,1) both}
-.ov-mark .d{fill:#fff;transform-box:fill-box;transform-origin:center;animation:ovmDot 2.4s ease-in-out infinite}
+.ov-mark .d{fill:var(--ovm-dot,#fff);transform-box:fill-box;transform-origin:center;animation:ovmDot 2.4s ease-in-out infinite}
+/* Per-site variants: one family, each site with its own motion so the network reads as one brand
+   with many rooms. Colours stay with the theme (currentColor); only the dot and the rhythm change. */
+.ov-mark[data-variant=live]{--ovm-dot:#ef4444}
+.ov-mark[data-variant=live] .d{animation:ovmOnAir 1.4s ease-in-out infinite}
+.ov-mark[data-variant=tools] .c{animation-duration:2.2s;stroke-dasharray:22 91}
+.ov-mark[data-variant=tools] .o2{display:none}
+.ov-mark[data-variant=media] .c{stroke-dasharray:14 14 14 71;animation-duration:4.4s}
+.ov-mark[data-variant=games] svg{animation:ovmBounce 1.6s cubic-bezier(.3,1.4,.4,1) infinite}
+.ov-mark[data-variant=games] .d{animation-duration:1.6s}
+.ov-mark[data-variant=community] .o2{opacity:.9;r:1.8}
+.ov-mark[data-variant=community] .c{animation-direction:reverse}
+.ov-mark[data-variant=network] .g{animation-duration:2.4s}
+.ov-mark[data-variant=chat] .d{animation:ovmDot 1s ease-in-out infinite}
+.ov-mark[data-variant=stream] .c{stroke-dasharray:60 53;animation-duration:2.8s}
+.ov-mark[data-variant=codes] .v{animation:ovmDraw 1.1s cubic-bezier(.2,.8,.2,1) infinite alternate}
+.ov-mark[data-variant=blog] .c,.ov-mark[data-variant=wiki] .c,.ov-mark[data-variant=news] .c{animation-duration:6s}
+.ov-mark[data-variant=vip]{--ovm-dot:#facc15}
+.ov-mark[data-variant=tips]{--ovm-dot:#22c55e}
+.ov-mark[data-variant=deals],.ov-mark[data-variant=coupons]{--ovm-dot:#f59e0b}
+.ov-mark[data-variant=trade] .c{animation-timing-function:cubic-bezier(.4,0,.2,1)}
+.ov-mark[data-variant=host] svg{animation:none}
+@keyframes ovmOnAir{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.7);opacity:1}}
+@keyframes ovmBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
 .ov-mark .o{fill:#fff;filter:drop-shadow(0 0 3px currentColor)}
 .ov-mark .o2{opacity:.5}
 .ov-mark:hover svg,a:hover>.ov-mark svg,button:hover>.ov-mark svg{animation:ovmSpin .9s cubic-bezier(.2,1.5,.3,1) 1}
