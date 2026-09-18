@@ -22,7 +22,13 @@ function start() {
                 if (body.client_secret !== 'shh') return json(401, { error: 'invalid_client' });
                 if (body.grant_type === 'authorization_code' && body.code !== 'good-code') return json(400, { error: 'invalid_grant' });
                 if (body.grant_type === 'refresh_token' && body.refresh_token !== 'refresh-1') return json(400, { error: 'invalid_grant' });
-                return json(200, { access_token: sign({ id: 7, username: 'alex', display_name: 'Alex', role: 'user' }), refresh_token: 'refresh-2', token_type: 'Bearer', expires_in: 86400 });
+                if (body.grant_type === 'urn:ietf:params:oauth:grant-type:jwt-bearer') {
+                    // A FedCM assertion: must be one of ours (signed with our key) and carry a nonce.
+                    try { const a = jwt.verify(body.assertion, publicPem, { algorithms: ['RS256'] }); if (!a.nonce) throw new Error('no nonce'); }
+                    catch (e) { return json(400, { error: 'invalid_grant', error_description: `assertion rejected: ${e.message}` }); }
+                }
+                const user = { id: 7, username: 'alex', display_name: 'Alex', role: 'user' };
+                return json(200, { access_token: sign(user), refresh_token: 'refresh-2', token_type: 'Bearer', expires_in: 86400, user, preferences: { theme: 'vibe' } });
             }
             if (req.url === '/oauth/revoke') return json(200, { ok: true });
             json(404, { error: 'not found' });
