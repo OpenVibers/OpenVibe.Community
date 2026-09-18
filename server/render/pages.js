@@ -40,8 +40,11 @@ function authorHtml(p, { link = true } = {}) {
     const name = authorName(p);
     const initial = esc(name.trim()[0] || '?').toUpperCase();
     const avatarSrc = p.avatar_url ? (/^https?:\/\//i.test(p.avatar_url) ? p.avatar_url : `${config.liveUrl}${p.avatar_url.startsWith('/') ? '' : '/'}${p.avatar_url}`) : null;
-    const avatar = avatarSrc
-        ? `<img class="avatar" src="${esc(avatarSrc)}" alt="" loading="lazy" width="22" height="22">`
+    // No picture on the paste's own record: the network's avatar address answers for any account (the person's
+    // picture, or a generated initial), so an author looks the same here as on every other OpenVibe site.
+    const netAvatar = !avatarSrc && p.username ? `${config.networkUrl}/avatar/${encodeURIComponent(p.username)}?s=44` : null;
+    const avatar = (avatarSrc || netAvatar)
+        ? `<img class="avatar" src="${esc(avatarSrc || netAvatar)}" alt="" loading="lazy" width="22" height="22">`
         : `<span class="avatar avatar-letter" aria-hidden="true">${initial}</span>`;
     const inner = `${avatar}<span>${esc(name)}</span>`;
     if (!link || !p.username) return `<span class="author">${inner}</span>`;
