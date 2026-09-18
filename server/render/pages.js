@@ -90,16 +90,16 @@ function homePage({ latest, trending, languages, user }) {
     const body = `
 <section class="hero">
   <p class="eyebrow">OpenVibe.Community</p>
-  <h1>The people of OpenVibe</h1>
-  <p class="lede">A community-run home for the things the network makes together — starting with pastes. Open source, built in the open, and free speech within the rules.</p>
+  <h1>Share it with a link. Talk about it here.</h1>
+  <p class="lede">Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own. Spaces and threads are next.</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> Start a paste</a>
     <a class="btn" href="/pastes"><i class="fa-solid fa-paste" aria-hidden="true"></i> Browse pastes</a>
     ${user ? `<a class="btn btn-ghost" href="/my"><i class="fa-solid fa-user" aria-hidden="true"></i> My pastes</a>` : `<a class="btn btn-ghost" href="/auth/login?next=%2F"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Sign in with your OpenVibe account</a>`}
   </div>
   <ul class="hero-points">
-    <li><i class="fa-solid fa-people-group" aria-hidden="true"></i> Community-run — moderated by the people using it</li>
-    <li><i class="fa-solid fa-comment" aria-hidden="true"></i> Free speech within the rules — say it, own it</li>
+    <li><i class="fa-solid fa-people-group" aria-hidden="true"></i> Run by the people using it, moderated in the open</li>
+    <li><i class="fa-solid fa-comment" aria-hidden="true"></i> Open expression within the rules: say it, own it</li>
     <li><i class="fa-brands fa-github" aria-hidden="true"></i> Open source — <a href="https://github.com/OpenVibers/OpenVibe.Community" rel="noopener">read the code</a></li>
   </ul>
 </section>

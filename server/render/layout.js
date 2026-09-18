@@ -115,7 +115,7 @@ ${o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.m
 <meta name="twitter:title" content="${escapeHtml(o.title || SITE_NAME)}">
 <meta name="twitter:description" content="${escapeHtml(description)}">
 <meta name="twitter:image" content="${escapeHtml(ogImage)}">
-${require('openvibe-shared/app-icon').headTags({ site: 'community' })}
+${require('openvibe-shared/app-icon').headTags({ site: 'community', iconBase: '/assets' })}
 <link rel="alternate" type="application/rss+xml" title="${SITE_NAME} — latest pastes" href="/feed.xml">
 <script src="${NETWORK_URL}/shared/theme-loader.js"></script>
 <link rel="stylesheet" href="${asset('css/community.css')}">
