@@ -1,0 +1,27 @@
+[Unit]
+Description=OpenVibe.Community — The people of OpenVibe (pastes; forums and submissions to follow)
+# Live (openvibe-live) and Network (openvibe-network) should be up first, but
+# Community degrades gracefully if they aren't (paste pages answer 502, sign-in retries).
+After=network.target
+Wants=openvibe-live.service openvibe-network.service
+
+[Service]
+Type=simple
+User=openvibe
+Group=openvibe
+WorkingDirectory=/opt/openvibe.community
+EnvironmentFile=/etc/openvibe/community.env
+Environment=NODE_ENV=production
+Environment=PORT=4200
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env node /opt/openvibe.community/server/index.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Nothing is written to disk — pastes live in OpenVibe.Media, sessions are cookies.
+
+[Install]
+WantedBy=multi-user.target
