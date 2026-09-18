@@ -7,8 +7,8 @@ Wants=openvibe-live.service openvibe-network.service
 
 [Service]
 Type=simple
-User=openvibe
-Group=openvibe
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/opt/openvibe.community
 EnvironmentFile=/etc/openvibe/community.env
 Environment=NODE_ENV=production
