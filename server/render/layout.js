@@ -130,7 +130,7 @@ ${jsonLdScript(o.jsonLd)}
 <main id="main" class="page">
 ${o.body || ''}
 </main>
-<footer id="ov-footer" class="ov-footer"></footer>
+${require('openvibe-shared/footer').ssr({ service: 'community', variant: 'full' })}
 <script>
 window.__OV_PAGE = ${JSON.stringify({ navbar: nav, footer: foot }).replace(/</g, '\\u003c')};
 document.addEventListener('DOMContentLoaded', function () {
