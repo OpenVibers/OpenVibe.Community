@@ -103,7 +103,6 @@ function renderPage(o) {
 <meta name="description" content="${escapeHtml(description)}">
 <link rel="canonical" href="${escapeHtml(canonical)}">
 <meta name="robots" content="${escapeHtml(robots)}">
-<meta name="theme-color" content="#0a0f1c">
 <meta property="og:site_name" content="${SITE_NAME}">
 <meta property="og:type" content="${escapeHtml(ogType)}">
 <meta property="og:title" content="${escapeHtml(o.title || SITE_NAME)}">
@@ -116,7 +115,7 @@ ${o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.m
 <meta name="twitter:title" content="${escapeHtml(o.title || SITE_NAME)}">
 <meta name="twitter:description" content="${escapeHtml(description)}">
 <meta name="twitter:image" content="${escapeHtml(ogImage)}">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${require('openvibe-shared/app-icon').headTags({ site: 'community' })}
 <link rel="alternate" type="application/rss+xml" title="${SITE_NAME} — latest pastes" href="/feed.xml">
 <script src="${NETWORK_URL}/shared/theme-loader.js"></script>
 <link rel="stylesheet" href="${asset('css/community.css')}">
