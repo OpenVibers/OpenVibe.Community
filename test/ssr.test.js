@@ -19,7 +19,7 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, 'https://openvibe.network/shared/theme-loader.js');
         has(r.text, 'https://openvibe.network/shared/navbar.js');
         has(r.text, 'https://openvibe.network/shared/footer.js');
-        has(r.text, '<h1>The people of OpenVibe</h1>');
+        has(r.text, '<h1>Share it with a link. Talk about it here.</h1>');
         has(r.text, '<h2>Latest pastes</h2>');
         has(r.text, '<h2>Most viewed</h2>');
         has(r.text, 'id="coming"');
