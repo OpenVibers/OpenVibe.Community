@@ -59,11 +59,19 @@ function createAuthClient(config) {
     });
 
     let lastFetch = 0;
+    let inflight = null;
     async function ensureKey() {
         if (client.publicKey) return client.publicKey;
+        // A request that arrives while the key is being fetched waits for that fetch rather than
+        // being treated as signed out.
+        if (inflight) return inflight;
         // Don't hammer the Network if it's down — retry at most every 30s
         if (Date.now() - lastFetch < 30_000) return null;
         lastFetch = Date.now();
+        inflight = fetchKey().finally(() => { inflight = null; });
+        return inflight;
+    }
+    async function fetchKey() {
         for (const base of [config.networkInternalUrl, config.networkUrl]) {
             if (!base) continue;
             try {
