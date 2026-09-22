@@ -30,6 +30,8 @@ const store = require('./store');
 
 const FORMAT = 'openvibe.media.pastes-export';
 const DEFAULT_CUTOFF = '2026-08-20T03:00:26Z';
+// ac0d6a4 "Initial OpenVibe release" (2026-08-17 14:10:29 -07:00): earlier rows came from HoboStreamer's database.
+const DEFAULT_AMBIGUOUS_FROM = '2026-08-17T21:10:29Z';
 // Media rebuilt screenshot metadata itself, so the ai_moment flag Live sent was dropped for image
 // pastes; the frame file names Live's AI jobs upload are the remaining marker.
 const AI_FRAME_NAME = /^(ai-moment-vod\d+-\d+|live-\d+-\d+)\.jpe?g$/i;
@@ -77,10 +79,15 @@ function verifyBundle(bundle) {
  *   opts.source   label for migration_runs
  * → report
  */
-async function importBundle(db, bundle, { resolveLegacy, cutoff = DEFAULT_CUTOFF, dryRun = false, source = 'media' } = {}) {
+async function importBundle(db, bundle, { resolveLegacy, cutoff = DEFAULT_CUTOFF, ambiguousFrom = DEFAULT_AMBIGUOUS_FROM, dryRun = false, source = 'media' } = {}) {
     verifyBundle(bundle);
     const cutoffMs = toMs(cutoff);
     if (!Number.isFinite(cutoffMs)) throw new ImportError(`bad cutoff ${cutoff}`);
+    const fromMs = ambiguousFrom ? toMs(ambiguousFrom) : -Infinity;
+    if (!Number.isFinite(fromMs) && fromMs !== -Infinity) throw new ImportError(`bad ambiguous-from ${ambiguousFrom}`);
+    // Only rows written between the OpenVibe launch and the id-space fix can hold a Network id: rows from
+    // before the launch were migrated from HoboStreamer's own database, whose user ids Live kept.
+    const inWindow = (createdAt) => { const t = toMs(createdAt); return t >= fromMs && !(t >= cutoffMs); };
     const startedAt = new Date().toISOString();
 
     // ── 1. Resolve every legacy user id before the transaction (network calls) ──
@@ -89,7 +96,7 @@ async function importBundle(db, bundle, { resolveLegacy, cutoff = DEFAULT_CUTOFF
     const note = (userId, createdAt) => {
         if (userId == null) return;
         liveIds.add(String(userId));
-        if (!(toMs(createdAt) >= cutoffMs)) preCutoffIds.add(String(userId));
+        if (inWindow(createdAt)) preCutoffIds.add(String(userId));
     };
     for (const p of bundle.pastes) if (!isAiPaste(p)) note(p.user_id, p.created_at);
     for (const c of bundle.comments) note(c.user_id, c.created_at);
@@ -102,7 +109,7 @@ async function importBundle(db, bundle, { resolveLegacy, cutoff = DEFAULT_CUTOFF
         if (userId == null) return { subject: null, hold: null };
         const key = String(userId);
         const live = subjectOf(liveMap.get(key));
-        const pre = !(toMs(createdAt) >= cutoffMs);
+        const pre = inWindow(createdAt);
         if (!pre) return live ? { subject: live, hold: null } : { subject: null, hold: 'owner_unmapped', detail: { user_id: userId, created_at: createdAt, era: 'post-cutoff' } };
         const net = subjectOf(netMap.get(key));
         if (live && net && live !== net) return { subject: null, hold: 'ambiguous_owner', detail: { user_id: userId, created_at: createdAt, live_subject: live, network_subject: net } };
@@ -113,7 +120,7 @@ async function importBundle(db, bundle, { resolveLegacy, cutoff = DEFAULT_CUTOFF
     const blank = () => ({ bundle: 0, inserted: 0, updated: 0, unchanged: 0, held: 0, skipped: 0 });
     const report = {
         source, app: bundle.app || null, generated_at: bundle.generated_at || null, since_id: bundle.since_id ?? null, max_id: bundle.max_id ?? null,
-        cutoff, dry_run: !!dryRun,
+        cutoff, ambiguous_from: ambiguousFrom || null, dry_run: !!dryRun,
         pastes: { ...blank(), bundle: bundle.pastes.length, ai: 0, forks_remapped: 0, forks_unresolved: 0 },
         comments: { ...blank(), bundle: bundle.comments.length },
         likes: { ...blank(), bundle: bundle.likes.length },
@@ -304,16 +311,16 @@ function formatReport(r) {
     const line = (name, t) => `  ${name.padEnd(9)} ${String(t.bundle).padStart(7)} ${String(t.inserted).padStart(9)} ${String(t.updated).padStart(8)} ${String(t.unchanged).padStart(10)} ${String(t.held).padStart(6)} ${String(t.skipped).padStart(8)}`;
     const out = [
         `Paste import from ${r.source}${r.dry_run ? '  (DRY RUN — rolled back)' : ''}`,
-        `  bundle app=${r.app} ids ${r.since_id ?? '?'}..${r.max_id ?? '?'} generated ${r.generated_at || '?'}; id-space cutoff ${r.cutoff}`,
+        `  bundle app=${r.app} ids ${r.since_id ?? '?'}..${r.max_id ?? '?'} generated ${r.generated_at || '?'}; ambiguous id window ${r.ambiguous_from || 'start'} .. ${r.cutoff}`,
         '',
         `  ${'table'.padEnd(9)} ${'bundle'.padStart(7)} ${'inserted'.padStart(9)} ${'updated'.padStart(8)} ${'unchanged'.padStart(10)} ${'held'.padStart(6)} ${'skipped'.padStart(8)}`,
         line('pastes', r.pastes), line('comments', r.comments), line('likes', r.likes),
         '',
         `  AI pastes (ownerless): ${r.pastes.ai}; forks remapped: ${r.pastes.forks_remapped}, unresolved: ${r.pastes.forks_unresolved}`,
-        `  users: ${r.users.live_ids} live ids (${r.users.live_mapped} mapped), ${r.users.network_checked} pre-cutoff ids checked as network ids (${r.users.network_mapped} mapped)`,
+        `  users: ${r.users.live_ids} live ids (${r.users.live_mapped} mapped), ${r.users.network_checked} in-window ids checked as network ids (${r.users.network_mapped} mapped)`,
         `  holds: ${Object.keys(r.holds).length ? Object.entries(r.holds).map(([k, v]) => `${k}=${v}`).join(', ') : 'none'}`,
     ];
     return out.join('\n');
 }
 
-module.exports = { importBundle, verifyBundle, formatReport, isAiPaste, ImportError, FORMAT, DEFAULT_CUTOFF };
+module.exports = { DEFAULT_AMBIGUOUS_FROM, importBundle, verifyBundle, formatReport, isAiPaste, ImportError, FORMAT, DEFAULT_CUTOFF };

@@ -4,7 +4,7 @@
 /**
  * Import OpenVibe.Media's paste export into Community's database.
  *
- *   node scripts/import-pastes.js <bundle.json> [--dry-run] [--id-fix-cutoff 2026-08-20T03:00:26Z]
+ *   node scripts/import-pastes.js <bundle.json> [--dry-run] [--id-fix-cutoff 2026-08-20T03:00:26Z] [--ambiguous-from 2026-08-17T21:10:29Z]
  *
  * Reads the same environment as the server (.env / /etc/openvibe/community.env):
  * COMMUNITY_DB_PATH, OV_NETWORK_INTERNAL_URL, OV_OAUTH_CLIENT_ID, OV_OAUTH_CLIENT_SECRET (the
@@ -17,17 +17,18 @@ const path = require('path');
 
 function usage(msg) {
     if (msg) console.error(msg);
-    console.error('usage: node scripts/import-pastes.js <bundle.json> [--dry-run] [--id-fix-cutoff <ISO time>]');
+    console.error('usage: node scripts/import-pastes.js <bundle.json> [--dry-run] [--id-fix-cutoff <ISO time>] [--ambiguous-from <ISO time>|none]');
     process.exit(msg ? 1 : 0);
 }
 
 function parseArgs(argv) {
-    const out = { file: null, dryRun: false, cutoff: null };
+    const out = { file: null, dryRun: false, cutoff: null, ambiguousFrom: undefined };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '--dry-run') out.dryRun = true;
         else if (a === '--id-fix-cutoff') { out.cutoff = argv[++i]; if (!out.cutoff) usage('--id-fix-cutoff needs a value'); }
         else if (a.startsWith('--id-fix-cutoff=')) out.cutoff = a.slice('--id-fix-cutoff='.length);
+        else if (a === '--ambiguous-from') { const v = argv[++i]; if (!v) usage('--ambiguous-from needs a value'); out.ambiguousFrom = v === 'none' ? null : v; }
         else if (a === '-h' || a === '--help') usage();
         else if (a.startsWith('-')) usage(`unknown option ${a}`);
         else if (!out.file) out.file = a;
@@ -55,6 +56,7 @@ async function main() {
             // A dry run writes nothing at all, not even the display cache.
             resolveLegacy: (system, list) => network.resolveLegacy(system, list, { cache: !args.dryRun }),
             cutoff: args.cutoff || DEFAULT_CUTOFF,
+            ...(args.ambiguousFrom !== undefined ? { ambiguousFrom: args.ambiguousFrom } : {}),
             dryRun: args.dryRun,
             source: `${bundle.app || 'media'}:${path.basename(args.file)}`,
         });

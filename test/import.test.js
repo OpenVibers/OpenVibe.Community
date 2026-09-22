@@ -16,7 +16,8 @@ const { createNetworkIdentity } = require('../server/identity/network');
 const mockNetwork = require('./helpers/mock-network');
 const { check, done } = require('./helpers/app');
 
-const PRE = '2026-08-01 10:00:00';   // before the id-space fix (2026-08-20T03:00:26Z)
+const PRE = '2026-08-18 10:00:00';   // between the OpenVibe launch (2026-08-17T21:10:29Z) and the id-space fix (2026-08-20T03:00:26Z)
+const MIGRATED = '2026-08-01 10:00:00';  // before the launch: rows migrated from HoboStreamer, Live ids
 const POST = '2026-09-01 10:00:00';
 
 function seal(bundle) {
@@ -223,6 +224,17 @@ const paste = (o) => ({
         assert.strictEqual(db.prepare('SELECT COUNT(*) AS c FROM paste_likes').get().c, 2);
         assert.strictEqual(db.prepare("SELECT author_subject FROM paste_comments WHERE legacy_media_id = 13").get().author_subject, D.subject_id);
         assert.strictEqual(r.pastes.updated, 2, 'the renamed paste and the newly owned one');
+    });
+
+    await check('rows from before the OpenVibe launch map by Live id even when the number is also a Network id', async () => {
+        const mdb = openDb(':memory:');
+        const r = await importBundle(mdb, seal({ pastes: [paste({ id: 70, slug: 'old-hobo-70', user_id: 9, created_at: MIGRATED, updated_at: MIGRATED })], comments: [], likes: [] }), { resolveLegacy: identity.resolveLegacy, source: 'test' });
+        const row = mdb.prepare('SELECT owner_subject FROM pastes WHERE slug = ?').get('old-hobo-70');
+        assert.strictEqual(row.owner_subject, C.subject_id, 'live 9 = cleo, not network 9 = sam');
+        assert.strictEqual(r.pastes.held, 0);
+        const r2 = await importBundle(openDb(':memory:'), seal({ pastes: [paste({ id: 70, slug: 'old-hobo-70', user_id: 9, created_at: MIGRATED, updated_at: MIGRATED })], comments: [], likes: [] }), { resolveLegacy: identity.resolveLegacy, source: 'test', ambiguousFrom: null });
+        assert.strictEqual(r2.pastes.held, 1, 'ambiguousFrom: null restores the whole-history window');
+        mdb.close();
     });
 
     await check('CLI: exit 2 on a refused bundle, dry run prints the report and writes nothing', async () => {
