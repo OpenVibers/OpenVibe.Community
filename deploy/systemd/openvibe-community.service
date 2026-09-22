@@ -21,7 +21,10 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Nothing is written to disk — pastes live in OpenVibe.Media, sessions are cookies.
+# Community's own database (used once PASTES_AUTHORITY=community; untouched before that).
+# The code tree stays read-only; the database lives in /var/lib/openvibe-community.
+StateDirectory=openvibe-community
+Environment=COMMUNITY_DB_PATH=/var/lib/openvibe-community/community.db
 
 [Install]
 WantedBy=multi-user.target

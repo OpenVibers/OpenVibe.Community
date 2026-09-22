@@ -3,10 +3,17 @@
 const http = require('http');
 const mockLive = require('./mock-live');
 const mockNetwork = require('./mock-network');
+const mockMedia = require('./mock-media');
 
-async function boot() {
+/**
+ * opts.authority  'live' (default) or 'community' — the latter runs the native paste API on a
+ *                 fresh in-memory database, with Network and Media mocks behind it.
+ * opts.pasteLimits  overrides for service.js limits (e.g. { cooldownSeconds: 0 }).
+ */
+async function boot(opts = {}) {
     const liveSrv = await mockLive.start();
     const netSrv = await mockNetwork.start();
+    const mediaSrv = await mockMedia.start({ publicPem: netSrv.publicPem, issuer: netSrv.url });
     process.env.NODE_ENV = 'test';
     process.env.BASE_URL = 'https://openvibe.community';
     process.env.OV_LIVE_INTERNAL_URL = liveSrv.url;
@@ -19,9 +26,17 @@ async function boot() {
     process.env.OV_OAUTH_REDIRECT_URI = 'https://openvibe.community/auth/callback';
     process.env.COOKIE_SECURE = 'true';
     process.env.TRUST_PROXY = '1';
+    process.env.OV_MEDIA_INTERNAL_URL = mediaSrv.url;
+    process.env.PASTES_AUTHORITY = opts.authority || 'live';
+    process.env.COMMUNITY_DB_PATH = ':memory:';
     for (const k of Object.keys(require.cache)) if (k.includes('/server/')) delete require.cache[k];
     const { createApp } = require('../../server/app');
-    const app = createApp();
+    const appOpts = {};
+    if (opts.authority === 'community') {
+        appOpts.db = require('../../server/db').openDb(':memory:');
+        appOpts.pasteLimits = opts.pasteLimits;
+    }
+    const app = createApp(appOpts);
     const server = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -41,8 +56,8 @@ async function boot() {
         return { status: res.status, headers: res.headers, text, setCookies: res.headers.getSetCookie ? res.headers.getSetCookie() : [], json() { return JSON.parse(text); } };
     }
     return {
-        app, base, get, jar, live: liveSrv, network: netSrv,
-        close: async () => { await new Promise((r) => server.close(r)); await liveSrv.close(); await netSrv.close(); },
+        app, base, get, jar, live: liveSrv, network: netSrv, media: mediaSrv, db: appOpts.db || null,
+        close: async () => { await new Promise((r) => server.close(r)); await liveSrv.close(); await netSrv.close(); await mediaSrv.close(); },
     };
 }
 

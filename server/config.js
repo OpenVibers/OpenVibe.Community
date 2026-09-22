@@ -44,4 +44,13 @@ module.exports = {
     liveUrl: (process.env.OV_LIVE_URL || 'https://openvibe.live').replace(/\/$/, ''),
     // OpenVibe.Media — public host that serves raw paste text and screenshots.
     mediaUrl: (process.env.OV_MEDIA_URL || 'https://openvibe.media').replace(/\/$/, ''),
+    // Media's internal address: new screenshot uploads go to its file store (community app).
+    mediaInternalUrl: (process.env.OV_MEDIA_INTERNAL_URL || 'http://127.0.0.1:4100').replace(/\/$/, ''),
+
+    // Who answers /api/pastes/* and the paste pages:
+    //   'live'      — proxy to OpenVibe.Live (which stores in Media). The default until cutover.
+    //   'community' — this site's own database is the authority (server/pastes/api.js).
+    pastesAuthority: process.env.PASTES_AUTHORITY === 'community' ? 'community' : 'live',
+    // SQLite file for Community's own data (pastes once authority=community).
+    dbPath: process.env.COMMUNITY_DB_PATH || './data/community.db',
 };

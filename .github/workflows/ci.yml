@@ -14,4 +14,5 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      - run: npx openvibe-contracts-check --service community --src server
 

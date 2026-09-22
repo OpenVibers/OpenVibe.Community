@@ -6,14 +6,20 @@
  * Express app factory (server/index.js listens; tests build their own instance).
  *
  *   Pages (server-rendered)            API / machine
- *   GET /               home           ALL /api/pastes/*       → OpenVibe.Live proxy
+ *   GET /               home           ALL /api/pastes/*       → see PASTES_AUTHORITY below
  *   GET /pastes         browse         GET /api/health, /api/ready
  *   GET /p/:slug        paste          GET /robots.txt, /sitemap.xml, /feed.xml
- *   GET /p/:slug/raw    → Media        /auth/login|callback|logout|me|refresh
- *   GET /p/:slug/screenshot → Media
+ *   GET /p/:slug/raw    raw text       /auth/login|callback|logout|me|refresh
+ *   GET /p/:slug/screenshot → image
  *   GET /p/:slug/download
  *   GET|POST /new       create
  *   GET /my             signed-in user's pastes
+ *
+ * PASTES_AUTHORITY (config.pastesAuthority):
+ *   'live' (default)  /api/pastes/* is a transparent proxy to OpenVibe.Live, pages read through
+ *                     Live's API, raw text and screenshots bounce to OpenVibe.Media.
+ *   'community'       this site's own database is the authority: the native API
+ *                     (pastes/api.js), pages, raw text and screenshots all come from the store.
  */
 const path = require('path');
 const express = require('express');
@@ -24,6 +30,7 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const live = require('./live-client');
 const catalog = require('./pastes/catalog');
+const source = require('./pastes/source');
 const seo = require('./seo');
 const pages = require('./render/pages');
 const { assetVersion } = require('./render/layout');
@@ -74,9 +81,41 @@ function createApp(opts = {}) {
     app.use('/auth', createAuthRoutes(config, auth));
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'community', service: 'community', host: 'openvibe.community', name: 'OpenVibe.Community', profile: 'ugc' })); app.get('/tos', (_req, res) => res.redirect(301, '/terms')); }
 
-    // ── /api/pastes → OpenVibe.Live (before any body parser: bodies stream through) ──
+    // ── Paste authority ──────────────────────────────────────
+    const community = config.pastesAuthority === 'community';
+    let viewers = null;
+    if (community) {
+        const { openDb, getDb } = require('./db');
+        const { createNetworkIdentity } = require('./identity/network');
+        const { createViewerResolver } = require('./identity/viewer');
+        const { createMediaFiles } = require('./media/files');
+        const { createPasteService } = require('./pastes/service');
+        const db = opts.db || (opts.dbPath ? openDb(opts.dbPath) : getDb());
+        const network = opts.network || createNetworkIdentity({ config, db });
+        const media = opts.media || createMediaFiles({ config });
+        const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits });
+        viewers = createViewerResolver({ auth, config, network });
+        source.use(service);
+        app.locals.db = db;
+        app.locals.pastes = service;
+    } else {
+        source.use(null);
+    }
+    // One anonymous-write budget per address, shared by the API and the no-JS form (20 / 10 min).
+    const anonWriteLimiter = rateLimit({
+        windowMs: 10 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+        skip: (req) => !!(req.viewer ? req.viewer.kind !== 'anonymous' : req.user),
+        handler: (req, res) => {
+            const error = 'Too many anonymous posts — sign in or try again later';
+            if (req.originalUrl.startsWith('/api/')) return res.status(429).json({ error });
+            res.status(429).type('html').set('Cache-Control', 'no-cache').send(pages.newPage({ user: req.user, error }));
+        },
+    });
+
+    // ── /api/pastes (before any body parser: in 'live' mode bodies stream through to Live) ──
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
-    app.use('/api/pastes', createPastesProxy({ liveUrl: opts.liveUrl }));
+    if (community) app.use('/api/pastes', require('./pastes/api').createPastesApi({ service: app.locals.pastes, viewers, anonWriteLimiter }));
+    else app.use('/api/pastes', createPastesProxy({ liveUrl: opts.liveUrl }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     app.get('/api/ready', (_req, res) => res.json({ ready: true }));
@@ -99,8 +138,9 @@ function createApp(opts = {}) {
     app.get('/feed.xml', wrap(seo.feedHandler));
 
     // ── Pages ────────────────────────────────────────────────
-    const withUser = optionalAuth(auth);
-    const ctxOf = (req) => ({ token: req.token, ip: req.ip });
+    // Pages are for browsers: in community mode the viewer (subject, staff) is resolved too.
+    const withUser = community ? viewers.middleware({ services: false }) : optionalAuth(auth);
+    const ctxOf = (req) => ({ token: req.token, ip: req.ip, userAgent: req.get('user-agent') || '', viewer: req.viewer });
     const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', 'no-cache').send(body);
 
     app.get('/', withUser, wrap(async (req, res) => {
@@ -121,7 +161,7 @@ function createApp(opts = {}) {
         if (!SLUG_RE.test(slug)) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'That link does not point at a paste.' }), 404);
         let paste;
         try {
-            paste = await live.getPaste(slug, ctxOf(req));
+            paste = await source.getPaste(slug, ctxOf(req));
         } catch (err) {
             if (err.status === 404) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
             if (err.status === 410) return html(res, pages.errorPage({ status: 410, title: 'This paste has burned', message: 'It was set to burn after reading, and it has been read.' }), 410);
@@ -131,17 +171,41 @@ function createApp(opts = {}) {
         html(res, pages.pastePage({ paste, related, user: req.user }));
     }));
 
-    // Raw text and screenshots are public on OpenVibe.Media — bounce there.
-    app.get('/p/:slug/raw', (req, res) => res.redirect(302, live.rawUrl(req.params.slug)));
-    app.get('/p/:slug/screenshot', (req, res) => res.redirect(302, live.screenshotUrl(req.params.slug)));
+    if (community) {
+        // The store is the authority: raw text is served here, the screenshot link is the stored
+        // Media URL. (Never bounce to Media's /p/… — after cutover it redirects back here.)
+        const notFound = (res) => res.status(404).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('Not found');
+        app.get('/p/:slug/raw', withUser, (req, res) => {
+            if (!SLUG_RE.test(req.params.slug)) return notFound(res);
+            try {
+                const out = app.locals.pastes.raw(req.viewer, req.params.slug, ctxOf(req));
+                if (out.redirect) return res.redirect(302, out.redirect);
+                res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', 'private, no-store');
+                res.type('text/plain; charset=utf-8').send(out.content);
+            } catch (err) {
+                if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
+                if (err.status === 404) return notFound(res);
+                throw err;
+            }
+        });
+        app.get('/p/:slug/screenshot', withUser, (req, res) => {
+            if (!SLUG_RE.test(req.params.slug)) return notFound(res);
+            try { res.redirect(302, app.locals.pastes.screenshotUrl(req.viewer, req.params.slug)); }
+            catch (err) { if (err.status === 404) return notFound(res); throw err; }
+        });
+    } else {
+        // Raw text and screenshots are public on OpenVibe.Media — bounce there.
+        app.get('/p/:slug/raw', (req, res) => res.redirect(302, live.rawUrl(req.params.slug)));
+        app.get('/p/:slug/screenshot', (req, res) => res.redirect(302, live.screenshotUrl(req.params.slug)));
+    }
 
     app.get('/p/:slug/download', withUser, wrap(async (req, res) => {
         const { slug } = req.params;
         if (!SLUG_RE.test(slug)) return res.status(404).type('text/plain').send('Not found');
         let paste;
-        try { paste = await live.getPaste(slug, { ...ctxOf(req), noView: true }); }
+        try { paste = await source.getPaste(slug, { ...ctxOf(req), noView: true }); }
         catch (err) { if (err.status === 404 || err.status === 410) return res.status(err.status).type('text/plain').send('Not found'); throw err; }
-        if (paste.type === 'screenshot') return res.redirect(302, live.screenshotUrl(slug));
+        if (paste.type === 'screenshot') return res.redirect(302, community ? (paste.screenshot_url || `/p/${encodeURIComponent(slug)}/screenshot`) : live.screenshotUrl(slug));
         res.set('Content-Disposition', `attachment; filename="${slug}.${extensionFor(paste.language)}"`);
         res.set('Cache-Control', 'private, no-cache');
         res.type('text/plain; charset=utf-8').send(String(paste.content || ''));
@@ -150,13 +214,15 @@ function createApp(opts = {}) {
     app.get('/new', withUser, wrap(async (req, res) => {
         let fork = null;
         if (req.query.fork && SLUG_RE.test(String(req.query.fork))) {
-            try { const p = await live.getPaste(String(req.query.fork), { ...ctxOf(req), noView: true }); if (p && p.type === 'paste') fork = p; } catch { /* no fork, plain form */ }
+            try { const p = await source.getPaste(String(req.query.fork), { ...ctxOf(req), noView: true }); if (p && p.type === 'paste') fork = p; } catch { /* no fork, plain form */ }
         }
         html(res, pages.newPage({ user: req.user, fork }));
     }));
 
     // No-JS fallback: a plain form post becomes the same JSON create the API path uses.
-    app.post('/new', withUser, express.urlencoded({ extended: false, limit: '1mb' }), wrap(async (req, res) => {
+    // In community mode the anonymous-write budget applies here too (in 'live' mode Live enforces it).
+    const formLimiter = community ? anonWriteLimiter : (_req, _res, next) => next();
+    app.post('/new', withUser, formLimiter, express.urlencoded({ extended: false, limit: '1mb' }), wrap(async (req, res) => {
         const b = req.body || {};
         const values = {
             title: String(b.title || '').slice(0, 200),
@@ -169,7 +235,7 @@ function createApp(opts = {}) {
         if (values.visibility === 'private' && !req.user) values.visibility = 'unlisted';
         if (!values.content.trim()) return html(res, pages.newPage({ user: req.user, values, error: 'Paste something first — the content is empty.' }), 400);
         try {
-            const out = await live.createPaste({
+            const out = await source.createPaste({
                 title: values.title, content: values.content, language: values.language, visibility: values.visibility,
                 burn_after_read: values.burn_after_read, is_nsfw: values.is_nsfw,
             }, ctxOf(req));
@@ -187,7 +253,7 @@ function createApp(opts = {}) {
         if (!req.user) return res.redirect(`/auth/login?next=${encodeURIComponent('/my')}`);
         let pastes = [], total = 0, error = null;
         try {
-            const out = await live.listByUser(req.user.username, { limit: 100 }, ctxOf(req));
+            const out = await source.listByUser(req.user.username, { limit: 100 }, ctxOf(req));
             pastes = (out && out.pastes) || [];
             total = Number(out && out.total) || pastes.length;
         } catch (err) {

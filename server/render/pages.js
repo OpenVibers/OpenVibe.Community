@@ -217,7 +217,10 @@ function pastePage({ paste: p, related, user }) {
     const description = pasteDescription(p);
     const shot = isShot ? live.mediaPublicUrl(p.screenshot_url) || live.screenshotUrl(p.slug) : null;
     const indexable = (p.visibility === 'public' || p.visibility == null) && !Number(p.is_nsfw) && !Number(p.burn_after_read);
-    const isOwner = !!(user && p.user_id != null && (String(user.id) === String(p.user_id) || (p.username && user.username === p.username)));
+    // Community-authority pastes name their owner by Network subject; Live-proxied ones by name.
+    const isOwner = !!(user && (p.is_owner === true
+        || (p.owner_subject && user.subject_id && p.owner_subject === user.subject_id)
+        || (p.user_id != null && !p.owner_subject && (String(user.id) === String(p.user_id) || (p.username && user.username === p.username)))));
     const hl = isShot ? null : highlight(p.content, p.language);
     const ext = extensionFor(p.language);
 

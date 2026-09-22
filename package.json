@@ -2,7 +2,7 @@
   "name": "openvibe-community",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenVibe.Community — the people of OpenVibe. Home of pastes; forums and submissions to follow. Part of the OpenVibe network (pastes stored by OpenVibe.Media via OpenVibe.Live, identity by OpenVibe.Network).",
+  "description": "OpenVibe.Community — the people of OpenVibe. Home of pastes; forums and submissions to follow. Part of the OpenVibe network (identity by OpenVibe.Network; pastes via OpenVibe.Live until PASTES_AUTHORITY=community makes this site their authority).",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -13,15 +13,18 @@
   "author": "OpenVibe Community",
   "license": "MIT",
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
     "highlight.js": "^11.11.1",
+    "multer": "^2.4.0",
+    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.5.0",
     "openvibe-shared": "file:./vendor/openvibe-shared"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

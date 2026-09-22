@@ -10,7 +10,9 @@ const { createApp } = require('./app');
 const app = createApp();
 const server = app.listen(config.port, config.host, () => {
     console.log(`[Community] ${config.nodeEnv} on http://${config.host}:${config.port} → ${config.baseUrl}`);
-    console.log(`[Community] pastes via ${config.liveInternalUrl}/api/pastes, identity via ${config.networkUrl}`);
+    console.log(config.pastesAuthority === 'community'
+        ? `[Community] pastes: this site is the authority (${config.dbPath}), identity via ${config.networkUrl}`
+        : `[Community] pastes via ${config.liveInternalUrl}/api/pastes, identity via ${config.networkUrl}`);
 });
 server.keepAliveTimeout = 65_000;
 

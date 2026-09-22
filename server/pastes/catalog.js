@@ -8,11 +8,15 @@
  * public pastes (Media's page cap) in memory for a short while and answers trending,
  * related, language counts and the views/language browse modes from it. Everything here is
  * fetched anonymously, so nothing unlisted or private can ever appear on a shared page.
+ *
+ * With the community authority (source.local) the store answers and the window is kept only
+ * LOCAL_TTL_MS — long enough that one page's latest/trending/languages share a single query.
  */
-const live = require('../live-client');
+const source = require('./source');
 
 const WINDOW = 200;             // Media's maximum page size
 const TTL_MS = 45 * 1000;       // fresh enough for a community feed, cheap enough for Live
+const LOCAL_TTL_MS = 2000;
 const PER_PAGE = 24;
 
 let _recent = { at: 0, promise: null, pastes: [] };
@@ -25,8 +29,8 @@ function _textOnlyPublic(rows) {
 async function recent() {
     const now = Date.now();
     if (_recent.promise) return _recent.promise;
-    if (now - _recent.at < TTL_MS) return _recent.pastes;
-    _recent.promise = live.listPastes({ limit: WINDOW, offset: 0 })
+    if (now - _recent.at < (source.local ? LOCAL_TTL_MS : TTL_MS)) return _recent.pastes;
+    _recent.promise = source.listPastes({ limit: WINDOW, offset: 0 })
         .then((out) => { _recent = { at: Date.now(), promise: null, pastes: _textOnlyPublic(out && out.pastes) }; return _recent.pastes; })
         .catch((err) => { console.warn('[Catalog] recent pastes unavailable:', err.message); _recent.promise = null; _recent.at = Date.now() - TTL_MS + 5000; return _recent.pastes; });
     return _recent.promise;
@@ -76,13 +80,13 @@ async function browse(query = {}, ctx = {}) {
     let pastes, total, windowed = false;
 
     if (sort === 'new' && !lang) {
-        const out = await live.listPastes({ limit: PER_PAGE, offset, search: q || undefined, type: 'paste' }, ctx);
+        const out = await source.listPastes({ limit: PER_PAGE, offset, search: q || undefined, type: 'paste' }, ctx);
         pastes = _textOnlyPublic(out && out.pastes);
         total = Number(out && out.total) || pastes.length;
     } else {
         let rows;
         if (q) {
-            const out = await live.listPastes({ limit: WINDOW, offset: 0, search: q, type: 'paste' }, ctx);
+            const out = await source.listPastes({ limit: WINDOW, offset: 0, search: q, type: 'paste' }, ctx);
             rows = _textOnlyPublic(out && out.pastes);
         } else {
             rows = await recent();
