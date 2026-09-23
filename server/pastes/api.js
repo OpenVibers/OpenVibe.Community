@@ -6,7 +6,10 @@
  * Same paths, bodies, status codes and response shapes the browser clients already use against
  * OpenVibe.Live's proxy (which fronted OpenVibe.Media); the rules live in service.js.
  *
- *   GET    /                         list (?limit&offset&type&search&sort&origin&username&include_unlisted)
+ *   GET    /                         list (?limit&offset&type&search&sort&origin&username&include_unlisted&since&pinned_first)
+ *                                    sort=newest (default) | oldest | top (views, a like worth five views);
+ *                                    since= created at or after (ISO 8601 or 'YYYY-MM-DD HH:MM:SS' UTC);
+ *                                    pinned_first=0 leaves pinned pastes in sort order (feeds that merge lists)
  *                                    ?needs_ai=1 — AI work queue, community.paste.moderate only
  *   POST   /                         create (JSON text paste, or multipart with a `screenshot` file)
  *   GET    /config                   limits

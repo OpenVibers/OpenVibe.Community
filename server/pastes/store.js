@@ -186,7 +186,10 @@ function softDelete(db, id) {
  *   opts.search           substring of title or content
  *   opts.origin           'user' | 'ai' (default: all)
  *   opts.needsAi          pastes without an AI summary, any visibility (staff work queue)
- *   opts.sort             'oldest' | newest (default)
+ *   opts.sort             'oldest' | 'top' (views, a like worth five) | newest (default)
+ *   opts.since            created at or after this 'YYYY-MM-DD HH:MM:SS' (UTC) moment
+ *   opts.pinnedFirst      pinned pastes lead the list (default true); feeds that merge this list
+ *                         with others by date or score turn it off so the order is the sort alone
  * Returns { rows, total }.
  */
 function listPastes(db, opts = {}) {
@@ -205,11 +208,17 @@ function listPastes(db, opts = {}) {
         where.push("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')");
         params.push(q, q);
     }
+    // datetime() on both sides: imported rows may carry ISO text, which must compare by time.
+    if (opts.since) { where.push('datetime(created_at) >= datetime(?)'); params.push(opts.since); }
     const dir = opts.sort === 'oldest' ? 'ASC' : 'DESC';
+    const pinned = opts.pinnedFirst === false ? '' : 'pinned DESC, ';
+    const order = opts.sort === 'top'
+        ? `${pinned}(views + 5 * likes) DESC, created_at DESC, id DESC`
+        : `${pinned}created_at ${dir}, id ${dir}`;
     const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 50, 1), 500);
     const offset = Math.max(parseInt(opts.offset, 10) || 0, 0);
     const clause = where.join(' AND ');
-    const rows = db.prepare(`SELECT * FROM pastes WHERE ${clause} ORDER BY pinned DESC, created_at ${dir}, id ${dir} LIMIT ? OFFSET ?`)
+    const rows = db.prepare(`SELECT * FROM pastes WHERE ${clause} ORDER BY ${order} LIMIT ? OFFSET ?`)
         .all(...params, limit, offset);
     const { total } = db.prepare(`SELECT COUNT(*) AS total FROM pastes WHERE ${clause}`).get(...params);
     return { rows, total };

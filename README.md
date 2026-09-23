@@ -46,7 +46,11 @@ With `PASTES_AUTHORITY=community`, `/api/pastes/*` is Community's native API
 (`server/pastes/api.js` → `service.js` → `store.js`) with the paths, bodies, status codes and
 response shapes the browser clients already use, and every page, `/p/:slug/raw`,
 `/p/:slug/screenshot` and `/p/:slug/download` reads from the store (never from Media, which
-redirects its old paste URLs here after cutover).
+redirects its old paste URLs here after cutover). The list (`GET /api/pastes`) also takes
+`origin=user|ai` (people's pastes or AI output), `sort=newest|oldest|top` (`top`: views, a like
+worth five), `since=` (created at or after; ISO 8601 or `YYYY-MM-DD HH:MM:SS` UTC) and
+`pinned_first=0` (pinned pastes stay in sort order), which is how OpenVibe.Live's Content and
+Moments feeds read it.
 
 - **People are Network subjects** (`usr_…`, `gst_…`), never service-local integers. A browser's
   owner is the JWT's `subject_id` (older tokens are resolved once through the Network and

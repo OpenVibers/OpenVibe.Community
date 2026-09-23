@@ -54,6 +54,14 @@ const truthy = (v) => v === true || v === 1 || v === '1' || v === 'true' || v ==
 const intIn = (v, def, min, max) => Math.min(Math.max(parseInt(v, 10) || def, min), max);
 
 function parseJson(text) { try { return text ? JSON.parse(text) : null; } catch { return null; } }
+/** A list's ?since= as 'YYYY-MM-DD HH:MM:SS' (UTC), from that form or ISO 8601; null when absent or unreadable. */
+function sinceParam(value) {
+    if (value == null || value === '') return null;
+    const s = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(s)) return s.length === 10 ? `${s} 00:00:00` : s;
+    const t = Date.parse(s);
+    return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 19) : null;
+}
 
 function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
@@ -291,7 +299,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (needsAi && !hasCap(v, 'community.paste.moderate')) fail(403, 'needs_ai requires community.paste.moderate');
             const limit = intIn(q.limit, 50, 1, 200);
             const offset = Math.max(parseInt(q.offset, 10) || 0, 0);
-            const opts = { limit, offset, type: q.type, sort: q.sort, origin: q.origin, needsAi, search: q.search ? String(q.search).slice(0, 200) : null };
+            const opts = {
+                limit, offset, type: q.type, sort: q.sort, origin: q.origin, needsAi, search: q.search ? String(q.search).slice(0, 200) : null,
+                since: sinceParam(q.since), pinnedFirst: !['0', 'false'].includes(String(q.pinned_first)),
+            };
             // ?username= lists one person's pastes (Live resolved it to its own id; we go through
             // the projection cache). Their own unlisted/private ones only for them (or staff).
             if (q.username && q.username !== 'all') {
