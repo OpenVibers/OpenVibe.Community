@@ -9,7 +9,10 @@
  * service's capability for the route):
  *   - resolve: services with community.comment.write may resolve any ref; browsers (signed in or
  *     not) only refs of the types in BROWSER_REF_TYPES. Community's own refs must exist.
- *   - read: anyone, except hidden threads (moderators only; everyone else gets 404).
+ *   - read: anyone, except hidden threads (moderators only; everyone else gets 404). Browsers
+ *     address a thread only by its unguessable access_id (cth_…, what resolve hands them as
+ *     `id`); the sequential id works for services only, so nobody can walk thread ids and learn
+ *     the refs (unlisted paste slugs, private pages) and comments of entities they were not given.
  *   - comment: people (browser or service X-OV-Subject), anonymous with an anon_name, or AI output
  *     from a service (origin ai, never attributed). Not on locked threads (moderators still may).
  *   - delete: the comment's author, or a moderator.
@@ -42,6 +45,7 @@ const BROWSER_REF_TYPES = {
 };
 const VISIBILITIES = ['public', 'hidden', 'locked'];
 const MAX_MESSAGE = 5000;
+const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 const PAGE = 30;
 const REPLY_PAGE = 20;
 
@@ -56,17 +60,21 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
         return ref;
     }
 
+    /** The id a viewer addresses the thread by: services keep the sequential id they store; browsers get the access id. */
+    const threadIdFor = (t, v) => (v && v.kind === 'service' ? t.id : t.access_id);
+
     function shapeThread(t, v) {
-        if (t.visibility === 'hidden' && !moderator(v)) return { id: t.id, ref: refOf(t), visibility: 'hidden', comment_count: null };
-        return { id: t.id, ref: refOf(t), visibility: t.visibility, comment_count: t.comment_count, created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
+        const id = threadIdFor(t, v);
+        if (t.visibility === 'hidden' && !moderator(v)) return { id, access_id: t.access_id, ref: refOf(t), visibility: 'hidden', comment_count: null };
+        return { id, access_id: t.access_id, ref: refOf(t), visibility: t.visibility, comment_count: t.comment_count, created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
     }
 
-    function shapeComment(c, v, projections, votes) {
+    function shapeComment(c, v, projections, votes, threadId) {
         const deleted = !!c.deleted_at;
         const a = deleted ? null : authors.author(c.author_subject, c.origin, projections);
         const out = {
             id: c.id,
-            thread_id: c.thread_id,
+            thread_id: threadId,
             parent_id: c.parent_id || null,
             origin: c.origin,
             author: a,
@@ -81,29 +89,37 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             updated_at: isoTime(c.updated_at),
             can_delete: !deleted && (moderator(v) || !!(v && v.subject && c.author_subject === v.subject)),
         };
-        if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes));
+        if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId));
         return out;
     }
 
-    async function shapeComments(rows, v) {
+    async function shapeComments(rows, v, t) {
         const all = [];
         for (const r of rows) { all.push(r); if (r.replies) all.push(...r.replies); }
         const projections = await authors.projectionsFor(all.map((c) => c.author_subject));
         const votes = myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
-        return rows.map((r) => shapeComment(r, v, projections, votes));
+        return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v)));
+    }
+
+    /** A thread by the id this viewer may use: the access id for anyone, the sequential id for services only. */
+    function threadById(v, id) {
+        const s = String(id == null ? '' : id);
+        if (ACCESS_ID_RE.test(s)) return store.getThreadByAccessId(db, s);
+        if (v && v.kind === 'service' && /^\d{1,15}$/.test(s)) return store.getThread(db, Number(s));
+        return null;
     }
 
     /** The thread, or 404 — hidden threads look missing to everyone but moderators. */
-    function visibleThread(v, id) {
-        const t = /^\d{1,15}$/.test(String(id)) ? store.getThread(db, Number(id)) : null;
+    function visible(v, t) {
         if (!t || (t.visibility === 'hidden' && !moderator(v))) fail(404, 'thread.not_found', 'Comment thread not found');
         return t;
     }
+    const visibleThread = (v, id) => visible(v, threadById(v, id));
 
     function visibleComment(v, id) {
         const c = /^\d{1,15}$/.test(String(id)) ? store.getComment(db, Number(id)) : null;
         if (!c || c.deleted_at) fail(404, 'comment.not_found', 'Comment not found');
-        return { comment: c, thread: visibleThread(v, c.thread_id) };
+        return { comment: c, thread: visible(v, store.getThread(db, c.thread_id)) };
     }
 
     /** Community's own entities must exist (and be visible) before anyone opens a thread on them. */
@@ -163,7 +179,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             } else {
                 ({ rows, hasMore } = store.listTopLevel(db, t.id, { after, sort: q.sort === 'new' ? 'new' : 'old', limit, replyLimit: REPLY_PAGE }));
             }
-            const comments = await shapeComments(rows, v);
+            const comments = await shapeComments(rows, v, t);
             return {
                 thread: shapeThread(t, v),
                 comments,
@@ -203,7 +219,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             commentLimiter.check(key, message);
             const c = store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message });
             commentLimiter.record(key, message);
-            return { comment: (await shapeComments([c], v))[0] };
+            return { comment: (await shapeComments([c], v, t))[0] };
         },
 
         /** DELETE /comments/:id — the author or a moderator. */
@@ -234,7 +250,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators change a thread\'s visibility');
             const visibility = body.visibility;
             if (!VISIBILITIES.includes(visibility)) fail(400, 'thread.invalid_visibility', `visibility must be one of ${VISIBILITIES.join(', ')}`);
-            const t = /^\d{1,15}$/.test(String(id)) ? store.getThread(db, Number(id)) : null;
+            const t = threadById(v, id);
             if (!t) fail(404, 'thread.not_found', 'Comment thread not found');
             return { thread: shapeThread(store.setThreadVisibility(db, t.id, visibility), v) };
         },

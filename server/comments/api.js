@@ -5,6 +5,7 @@
  *
  *   POST   /threads/resolve             { ref: EntityRef } → get-or-create (201 created, 200 existing)
  *   GET    /threads/:id                 thread + first page (?after=<id>&sort=old|new&limit=, ?parent=<id>)
+ *                                        :id is the access id (cth_…); the sequential id is for services only
  *   POST   /threads/:id/comments        { message, parent_id?, anon_name? }
  *   PUT    /threads/:id/visibility      { visibility: public|hidden|locked }   moderators
  *   DELETE /:commentId                  author or moderator

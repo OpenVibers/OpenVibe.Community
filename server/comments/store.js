@@ -9,9 +9,15 @@
  * soft (message scrubbed); a deleted top-level comment that still has replies stays as a
  * tombstone so the replies keep their context.
  */
+const { newThreadAccessId } = require('../db');
 
 function getThread(db, id) {
     return db.prepare('SELECT * FROM comment_threads WHERE id = ?').get(id) || null;
+}
+
+/** A thread by the unguessable handle browsers use (server/db.js: access_id). */
+function getThreadByAccessId(db, accessId) {
+    return db.prepare('SELECT * FROM comment_threads WHERE access_id = ?').get(String(accessId)) || null;
 }
 
 function getThreadByRef(db, ref) {
@@ -26,9 +32,9 @@ function getThreadByRef(db, ref) {
  */
 function resolveThread(db, ref, { label = null, createdBy = null } = {}) {
     return db.transaction(() => {
-        const info = db.prepare(`INSERT INTO comment_threads (ref_service, ref_type, ref_id, ref_label, created_by) VALUES (?, ?, ?, ?, ?)
+        const info = db.prepare(`INSERT INTO comment_threads (ref_service, ref_type, ref_id, ref_label, created_by, access_id) VALUES (?, ?, ?, ?, ?, ?)
                                  ON CONFLICT(ref_service, ref_type, ref_id) DO NOTHING`)
-            .run(ref.service, ref.type, String(ref.id), label, createdBy);
+            .run(ref.service, ref.type, String(ref.id), label, createdBy, newThreadAccessId());
         if (!info.changes && label) {
             db.prepare('UPDATE comment_threads SET ref_label = ?, updated_at = CURRENT_TIMESTAMP WHERE ref_service = ? AND ref_type = ? AND ref_id = ? AND COALESCE(ref_label, \'\') <> ?')
                 .run(label, ref.service, ref.type, String(ref.id), label);
@@ -99,4 +105,4 @@ function listReplies(db, parentId, { after = null, limit = 50 } = {}) {
     return { rows, hasMore };
 }
 
-module.exports = { getThread, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, softDeleteComment, listTopLevel, listReplies };
+module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, softDeleteComment, listTopLevel, listReplies };

@@ -168,6 +168,11 @@ Who may do what:
   `X-OV-Origin: ai` (stored with origin `ai` and no author, shown as "OpenVibe AI").
   `community.comment.moderate` moderates — as itself (no `X-OV-Subject`), or for a person it
   vouches is staff with `X-OV-Staff: 1`.
+- **Thread ids**: every thread has an unguessable access id (`cth_` + 22 characters). Browsers
+  get it as the thread's `id` (from resolve) and can address a thread only by it; the sequential
+  id works for services only (their resolve answer carries it as `id`, plus `access_id` to hand to
+  a browser). Nobody can walk thread ids to find the refs and comments of entities they were not
+  given.
 - **Locked** threads can be read but take no comments or votes (moderators still may);
   **hidden** threads are 404 for everyone but moderators.
 - Paste comments stay in `paste_comments` behind `/api/pastes/:slug/comments` for now.

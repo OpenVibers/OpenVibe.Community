@@ -11,6 +11,7 @@
  *
  * Schema creation is idempotent (CREATE … IF NOT EXISTS) and runs on open.
  */
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
@@ -137,6 +138,7 @@ CREATE TABLE IF NOT EXISTS comment_threads (
     created_by TEXT,                    -- subject or service principal that first resolved it
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    access_id TEXT,                     -- unguessable handle for browsers (migrate() fills old rows, unique index)
     UNIQUE (ref_service, ref_type, ref_id)
 );
 
@@ -323,9 +325,32 @@ function openDb(file) {
     db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
     db.exec(SCHEMA);
+    migrate(db);
     registerFunctions(db);
     return db;
 }
+
+/**
+ * Additive changes to tables that already exist (CREATE TABLE IF NOT EXISTS never alters one).
+ * Idempotent: every boot checks and fills in only what is missing.
+ *
+ *   comment_threads.access_id — the unguessable handle browsers address a thread by (128 random
+ *   bits); the sequential id is for services only, so threads cannot be enumerated. Threads made
+ *   before the column existed get one here.
+ */
+function migrate(db) {
+    const cols = new Set(db.prepare('PRAGMA table_info(comment_threads)').all().map((c) => c.name));
+    if (!cols.has('access_id')) db.exec('ALTER TABLE comment_threads ADD COLUMN access_id TEXT');
+    const missing = db.prepare('SELECT id FROM comment_threads WHERE access_id IS NULL').all();
+    if (missing.length) {
+        const set = db.prepare('UPDATE comment_threads SET access_id = ? WHERE id = ?');
+        db.transaction(() => { for (const r of missing) set.run(newThreadAccessId(), r.id); })();
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_threads_access ON comment_threads(access_id)');
+}
+
+/** cth_ + 22 base64url characters (16 random bytes). */
+function newThreadAccessId() { return `cth_${crypto.randomBytes(16).toString('base64url')}`; }
 
 let _shared = null;
 /** The process-wide database at COMMUNITY_DB_PATH (opened on first use). */
@@ -334,4 +359,4 @@ function getDb() {
     return _shared;
 }
 
-module.exports = { openDb, getDb, registerFunctions, SCHEMA };
+module.exports = { openDb, getDb, registerFunctions, SCHEMA, newThreadAccessId };
