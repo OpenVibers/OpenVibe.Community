@@ -23,7 +23,8 @@ function sourceUrl(ref) {
     const id = encodeURIComponent(ref.id);
     if (ref.service === 'live' && ref.type === 'vod') return `${config.liveUrl}/vod/${id}`;
     if (ref.service === 'live' && ref.type === 'clip') return `${config.liveUrl}/clip/${id}`;
-    if (ref.service === 'live' && ref.type === 'channel') return `${config.liveUrl}/${id}`;
+    if (ref.service === 'live' && ref.type === 'channel') return `${config.liveUrl}/@${id}`;   // Live's channel page is /@<username>
+    if (ref.service === 'live' && ref.type === 'stream') return `${config.liveUrl}/stream/${id}`;
     if (ref.service === 'community' && ref.type === 'paste') return `/p/${id}`;
     return null;
 }
