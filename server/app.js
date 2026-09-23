@@ -158,6 +158,9 @@ function createApp(opts = {}) {
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
+    // What this server runs (ADR-016); the shared navbar's release-watch polls it.
+    const release = require('openvibe-shared/release').createRelease({ service: 'community', root: require('path').join(__dirname, '..') });
+    app.get('/release.json', release.handler);
     app.get('/api/ready', (_req, res) => res.json({ ready: true }));
 
     // ── Static assets (content-hashed ?v= → immutable) ───────
