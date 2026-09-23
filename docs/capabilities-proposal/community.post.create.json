@@ -1,0 +1,27 @@
+{
+  "id": "community.post.create",
+  "version": "1.1",
+  "owner": "community",
+  "status": "active",
+  "visibility": "public",
+  "description": "Forum writes as a service: create threads and replies in a space, vote on threads, and edit or delete one's own posts, as the acting subject (X-OV-Subject) or as origin \"ai\" (no author, labelled as AI). Space visibility (public, members, staff), locks and limits are checked by Community.",
+  "outputSchema": "common.entity-ref@1",
+  "permissions": [
+    "community:write"
+  ],
+  "resourceConstraints": [
+    "space_member"
+  ],
+  "quotaClass": "community-write",
+  "events": [
+    "community.thread.created",
+    "community.post.created"
+  ],
+  "implementedBy": [
+    "POST /api/v1/spaces/:space/threads",
+    "POST /api/v1/spaces/:space/threads/:slug/posts",
+    "POST /api/v1/spaces/:space/threads/:slug/votes",
+    "PUT|DELETE /api/v1/posts/:id",
+    "DELETE /api/v1/spaces/:space/threads/:slug"
+  ]
+}

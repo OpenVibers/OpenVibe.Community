@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * robots.txt, the dynamic sitemap and the RSS feed of latest pastes. JSON-LD builders live
- * here too so page templates stay about markup.
+ * robots.txt, the dynamic sitemap and the RSS feeds (latest pastes; latest threads overall and
+ * per space). JSON-LD builders live here too so page templates stay about markup.
  */
 const config = require('./config');
 const catalog = require('./pastes/catalog');
@@ -10,6 +10,11 @@ const { escapeHtml } = require('./render/highlight');
 const { abs, SITE_NAME, DEFAULT_DESCRIPTION } = require('./render/layout');
 
 const SITEMAP_TTL_MS = 60 * 60 * 1000;
+
+// The forum service (server/forum/service.js), when the app has one: threads join the sitemap
+// and get their own feeds.
+let _forum = null;
+function useForum(forum) { _forum = forum || null; _sitemap = null; }
 
 function isoDate(v) {
     if (!v) return null;
@@ -74,6 +79,45 @@ function pasteLd(paste, { description, image }) {
     return base;
 }
 
+/** Who wrote a thread or post, for JSON-LD: a person, the AI label (never a person), or anonymous. */
+function discussionAuthorLd(a) {
+    if (!a) return { '@type': 'Person', name: 'Anonymous' };
+    if (a.is_ai) return { '@type': 'Organization', name: a.display_name || 'OpenVibe AI' };
+    const name = a.display_name || a.username || 'Anonymous';
+    return a.username ? { '@type': 'Person', name, url: `${config.liveUrl}/@${encodeURIComponent(a.username)}` } : { '@type': 'Person', name };
+}
+
+/** DiscussionForumPosting for a thread page: the opening post, counters and the replies on the page. */
+function threadLd({ space, thread, posts, opening, description }) {
+    const { markdownToText } = require('./render/markdown');
+    const url = abs(`/s/${space.slug}/t/${thread.slug}`);
+    const replies = posts.filter((p) => !p.is_opening && !p.deleted).slice(0, 20);
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'DiscussionForumPosting',
+        headline: clean(thread.title, 110),
+        text: opening && !opening.deleted ? markdownToText(opening.body_markdown, 5000) : description,
+        url,
+        mainEntityOfPage: url,
+        author: discussionAuthorLd(thread.author),
+        datePublished: isoDate(thread.created_at) || undefined,
+        dateModified: isoDate((opening && opening.updated_at) || thread.created_at) || undefined,
+        isPartOf: { '@type': 'CollectionPage', name: space.name, url: abs(`/s/${space.slug}`) },
+        commentCount: thread.reply_count,
+        interactionStatistic: [
+            { '@type': 'InteractionCounter', interactionType: 'https://schema.org/CommentAction', userInteractionCount: thread.reply_count },
+            { '@type': 'InteractionCounter', interactionType: 'https://schema.org/LikeAction', userInteractionCount: Math.max(Number(thread.score) || 0, 0) },
+        ],
+        comment: replies.map((p) => ({
+            '@type': 'Comment',
+            text: markdownToText(p.body_markdown, 2000),
+            author: discussionAuthorLd(p.author),
+            datePublished: isoDate(p.created_at) || undefined,
+            url: `${url}#post-${p.id}`,
+        })),
+    };
+}
+
 // ── robots.txt ───────────────────────────────────────────────
 function robotsTxt() {
     return [
@@ -83,6 +127,7 @@ function robotsTxt() {
         'Disallow: /auth/',
         'Disallow: /my',
         'Disallow: /new',
+        'Disallow: /s/*/new',
         'Disallow: /*?sso=',
         '',
         `Sitemap: ${config.baseUrl}/sitemap.xml`,
@@ -103,6 +148,12 @@ async function buildSitemap() {
     for (const p of await catalog.recent()) {
         if (Number(p.is_nsfw) || Number(p.burn_after_read)) continue;
         add(`/p/${p.slug}`, isoDate(p.updated_at || p.created_at), 'weekly', '0.6');
+    }
+    if (_forum) {
+        add('/s', null, 'hourly', '0.8');
+        add('/pulse', null, 'hourly', '0.5');
+        for (const s of _forum.publicSpaces()) add(`/s/${s.slug}`, s.last_activity_at || null, 'hourly', '0.7');
+        for (const t of _forum.recentPublic({ limit: 1000 })) add(`/s/${t.space_slug}/t/${t.slug}`, isoDate(t.last_activity_at || t.created_at), 'daily', '0.6');
     }
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`;
 }
@@ -143,6 +194,36 @@ ${items.join('\n')}
     res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(xml);
 }
 
+// ── RSS feeds of the latest threads (/s/feed.xml, /s/:space/feed.xml) ──
+function threadFeed({ space = null, threads }) {
+    const { markdownToText } = require('./render/markdown');
+    const items = threads.map((t) => {
+        const url = abs(`/s/${t.space_slug}/t/${t.slug}`);
+        return `    <item>
+      <title>${escapeHtml(t.title)}</title>
+      <link>${escapeHtml(url)}</link>
+      <guid isPermaLink="true">${escapeHtml(url)}</guid>
+      ${isoDate(t.created_at) ? `<pubDate>${new Date(isoDate(t.created_at)).toUTCString()}</pubDate>` : ''}
+      <category>${escapeHtml(t.space_name)}</category>
+      <description>${escapeHtml(markdownToText(t.opening, 300))}</description>
+    </item>`;
+    });
+    const link = abs(space ? `/s/${space.slug}` : '/s');
+    const self = abs(space ? `/s/${space.slug}/feed.xml` : '/s/feed.xml');
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>${escapeHtml(space ? `${SITE_NAME} — ${space.name}` : `${SITE_NAME} — latest threads`)}</title>
+    <link>${escapeHtml(link)}</link>
+    <atom:link href="${escapeHtml(self)}" rel="self" type="application/rss+xml"/>
+    <description>${escapeHtml(space ? (space.description || space.name) : 'New threads in the public spaces of OpenVibe.Community.')}</description>
+    <language>en</language>
+${items.join('\n')}
+  </channel>
+</rss>
+`;
+}
+
 function resetCaches() { _sitemap = null; _sitemapAt = 0; }
 
-module.exports = { isoDate, clean, websiteLd, breadcrumbLd, pasteLd, robotsTxt, buildSitemap, sitemapHandler, feedHandler, resetCaches };
+module.exports = { isoDate, clean, websiteLd, breadcrumbLd, pasteLd, threadLd, discussionAuthorLd, robotsTxt, buildSitemap, sitemapHandler, feedHandler, threadFeed, useForum, resetCaches };

@@ -13,13 +13,15 @@
  *       openvibe.community. It names the person it acts for in X-OV-Subject; with no subject the
  *       write is anonymous, unless X-OV-Origin: ai says it is AI output (never attributed to a
  *       person: subject stays null). X-OV-Source-Ref may carry a JSON EntityRef (e.g. the stream).
- *       X-OV-Staff: 1 vouches that the acting person is staff; it needs community.paste.moderate.
+ *       X-OV-Staff: 1 vouches that the acting person is staff; it needs community.paste.moderate
+ *       (pastes) or community.comment.moderate (comments and the forum).
  *
  * Identity never comes from a request body or query. A request that presents a service token is
  * judged on that token alone: a bad one is refused, never downgraded to anonymous.
  */
 const contracts = require('openvibe-contracts');
 const { extractToken, claimsToUser, decodeJwtPayload } = require('../auth/routes');
+const { checkCapability } = require('./capabilities');
 
 const { ids, capabilities, serviceAuth, http } = contracts;
 const STAFF_ROLES = new Set(['admin', 'global_mod']);
@@ -70,13 +72,19 @@ function createViewerResolver({ auth, config, network }) {
             }
         }
 
-        let staff = false;
+        // `staff` is paste staff (community.paste.moderate). `vouchesStaff` records the header for
+        // discussions, where it counts together with community.comment.moderate
+        // (identity/capabilities.js discussionStaff). Either grant makes the header acceptable.
+        let staff = false, vouchesStaff = false;
         if (req.get('x-ov-staff') === '1') {
             const c = capabilities.check(claims, 'community.paste.moderate');
-            if (!c.allowed) throw new ViewerError(403, c.code, 'X-OV-Staff needs community.paste.moderate');
-            staff = true;
+            if (!c.allowed && !checkCapability(claims, 'community.comment.moderate').allowed) {
+                throw new ViewerError(403, c.code, 'X-OV-Staff needs community.paste.moderate or community.comment.moderate');
+            }
+            staff = c.allowed;
+            vouchesStaff = true;
         }
-        return { kind: 'service', service: claims.sub, claims, subject, origin, sourceRef, staff };
+        return { kind: 'service', service: claims.sub, claims, subject, origin, sourceRef, staff, vouchesStaff };
     }
 
     async function fromUserToken(token) {

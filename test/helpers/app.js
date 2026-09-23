@@ -9,6 +9,7 @@ const mockMedia = require('./mock-media');
  * opts.authority  'live' (default) or 'community' — the latter runs the native paste API on a
  *                 fresh in-memory database, with Network and Media mocks behind it.
  * opts.pasteLimits  overrides for service.js limits (e.g. { cooldownSeconds: 0 }).
+ * opts.appOpts      passed through to createApp (commentLimits, forumLimits, relayOptions, …).
  */
 async function boot(opts = {}) {
     const liveSrv = await mockLive.start();
@@ -31,7 +32,7 @@ async function boot(opts = {}) {
     process.env.COMMUNITY_DB_PATH = ':memory:';
     for (const k of Object.keys(require.cache)) if (k.includes('/server/')) delete require.cache[k];
     const { createApp } = require('../../server/app');
-    const appOpts = {};
+    const appOpts = { ...(opts.appOpts || {}) };
     if (opts.authority === 'community') {
         appOpts.db = require('../../server/db').openDb(':memory:');
         appOpts.pasteLimits = opts.pasteLimits;

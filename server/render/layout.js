@@ -14,7 +14,7 @@ const { escapeHtml } = require('./highlight');
 
 const SITE_NAME = 'OpenVibe.Community';
 const NETWORK_URL = 'https://openvibe.network';
-const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, and soon spaces, threads and submissions. Free speech within the rules.';
+const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, spaces and threads, and soon submissions. Free speech within the rules.';
 const DEFAULT_OG_IMAGE = `${config.baseUrl}/og-default.png`;
 
 // Content-hashed asset URLs so browsers and nginx can cache them for a year and still pick up
@@ -45,6 +45,8 @@ function navbarInit(opts) {
         apiBase: NETWORK_URL,
         links: [
             { label: 'Pastes', href: '/pastes', active: opts.active === 'pastes' },
+            { label: 'Spaces', href: '/s', active: opts.active === 'spaces' },
+            { label: 'Pulse', href: '/pulse', active: opts.active === 'pulse' },
             { label: 'New paste', href: '/new', icon: 'fa-plus', active: opts.active === 'new' },
         ],
         menu: { after: [{ label: 'My pastes', href: '/my', icon: 'fa-paste' }] },
@@ -68,6 +70,8 @@ function footerInit(opts) {
             heading: 'Community',
             items: [
                 { name: 'Pastes', url: '/pastes' },
+                { name: 'Spaces', url: '/s' },
+                { name: 'Pulse', url: '/pulse' },
                 { name: 'New paste', url: '/new' },
                 { name: 'My pastes', url: '/my' },
                 { name: 'What is coming', url: '/#coming' },
@@ -80,7 +84,8 @@ function footerInit(opts) {
 /**
  * @param {object} o
  *   title, description, canonicalPath, robots ('index,follow'), ogType ('website'|'article'),
- *   ogImage, jsonLd (array), body (main HTML), active ('home'|'pastes'|'new'|'my'),
+ *   ogImage, jsonLd (array), body (main HTML), active ('home'|'pastes'|'spaces'|'pulse'|'new'|'my'),
+ *   feeds ([{ title, href }] RSS alternates; default: the latest-pastes feed),
  *   historyType ('page'|'paste'), historyTitle, footerVariant ('full'|'compact'), bodyClass,
  *   published/modified (ISO, for article:*), noChrome (error pages during outages)
  */
@@ -116,7 +121,7 @@ ${o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.m
 <meta name="twitter:description" content="${escapeHtml(description)}">
 <meta name="twitter:image" content="${escapeHtml(ogImage)}">
 ${require('openvibe-shared/app-icon').headTags({ site: 'community', iconBase: '/assets' })}
-<link rel="alternate" type="application/rss+xml" title="${SITE_NAME} — latest pastes" href="/feed.xml">
+${(o.feeds || [{ title: `${SITE_NAME} — latest pastes`, href: '/feed.xml' }]).map((f) => `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(f.title)}" href="${escapeHtml(f.href)}">`).join('\n')}
 <script src="${NETWORK_URL}/shared/theme-loader.js" defer></script>
 <link rel="stylesheet" href="${asset('css/community.css')}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">

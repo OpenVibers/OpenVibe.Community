@@ -55,8 +55,10 @@ const intIn = (v, def, min, max) => Math.min(Math.max(parseInt(v, 10) || def, mi
 
 function parseJson(text) { try { return text ? JSON.parse(text) : null; } catch { return null; } }
 
-function createPasteService({ db, network = null, media = null, config = {}, limits = {} } = {}) {
+function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
+    // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
+    const tell = (fn) => { if (!pulse) return; try { fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
     const visitorSecret = process.env.VIEW_HASH_SECRET
         || crypto.createHash('sha256').update(`community-views:${(config.oauth && config.oauth.clientSecret) || crypto.randomBytes(16).toString('hex')}`).digest('hex');
 
@@ -269,6 +271,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     }
 
     function created(row, extra = {}) {
+        tell((p) => p.pasteCreated(row));
         return { id: row.id, slug: row.slug, url: `/p/${row.slug}`, ...extra };
     }
 
@@ -433,6 +436,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (body.pinned !== undefined && isStaff(v)) patch.pinned = truthy(body.pinned) ? 1 : 0;
             if (!Object.keys(patch).length) fail(400, 'Nothing to update');
             const row = store.updatePaste(db, p.id, patch, v.subject || null);
+            tell((pl) => pl.pasteChanged(row));
             return { paste: await shapeOne(row, v) };
         },
 
@@ -442,6 +446,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const p = visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
             store.softDelete(db, p.id);
+            tell((pl) => pl.pasteGone(p.slug));
             return { success: true };
         },
 
@@ -570,6 +575,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     if (!p) { skipped++; continue; }
                     if (action === 'delete') store.softDelete(db, p.id);
                     else store.setVisibility(db, p.id, action);
+                    if (action !== 'public') tell((pl) => pl.pasteGone(p.slug));
                     done++;
                 }
             })();

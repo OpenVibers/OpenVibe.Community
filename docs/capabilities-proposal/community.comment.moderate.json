@@ -1,0 +1,27 @@
+{
+  "id": "community.comment.moderate",
+  "version": "1.0",
+  "owner": "community",
+  "status": "active",
+  "visibility": "internal",
+  "description": "Moderation of discussions: set a comment thread's visibility (public, hidden, locked — e.g. when the owner service hides the entity), delete any comment or forum post, pin and lock forum threads, read hidden threads, administer the Discord relay. Acting as itself (no X-OV-Subject) the service is the moderator; acting for a person it must vouch with X-OV-Staff: 1 that the person is staff.",
+  "permissions": [
+    "community:moderate"
+  ],
+  "resourceConstraints": [
+    "none"
+  ],
+  "quotaClass": "community-moderate",
+  "events": [
+    "community.comment.moderated",
+    "community.thread.moderated"
+  ],
+  "implementedBy": [
+    "PUT /api/v1/comments/threads/:id/visibility",
+    "DELETE /api/v1/comments/:commentId",
+    "PUT /api/v1/spaces/:space/threads/:slug/state",
+    "DELETE /api/v1/spaces/:space/threads/:slug",
+    "PUT|DELETE /api/v1/posts/:id",
+    "GET|POST|PUT /api/v1/relay/*"
+  ]
+}

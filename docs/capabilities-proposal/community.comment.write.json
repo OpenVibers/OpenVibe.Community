@@ -1,0 +1,29 @@
+{
+  "id": "community.comment.write",
+  "version": "1.0",
+  "owner": "community",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Typed comment threads as a service: resolve the thread of any EntityRef (browsers are limited to an allowlist of types), and comment, vote and delete one's own comments as the acting subject (X-OV-Subject), or comment as origin \"ai\" (never attributed to a person, roadmap 33). Ownership and limits are checked by Community.",
+  "inputSchema": "common.entity-ref@1",
+  "outputSchema": "common.entity-ref@1",
+  "permissions": [
+    "community:write"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "community-write",
+  "events": [
+    "community.comment.created",
+    "community.comment.deleted",
+    "community.comment.voted"
+  ],
+  "implementedBy": [
+    "POST /api/v1/comments/threads/resolve",
+    "GET /api/v1/comments/threads/:id",
+    "POST /api/v1/comments/threads/:id/comments",
+    "DELETE /api/v1/comments/:commentId",
+    "POST /api/v1/comments/:commentId/votes"
+  ]
+}

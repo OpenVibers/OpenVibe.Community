@@ -51,6 +51,21 @@ module.exports = {
     //   'live'      — proxy to OpenVibe.Live (which stores in Media). The default until cutover.
     //   'community' — this site's own database is the authority (server/pastes/api.js).
     pastesAuthority: process.env.PASTES_AUTHORITY === 'community' ? 'community' : 'live',
-    // SQLite file for Community's own data (pastes once authority=community).
+    // SQLite file for Community's own data: comments, the forum, Pulse, the relay's bookkeeping,
+    // and pastes once authority=community.
     dbPath: process.env.COMMUNITY_DB_PATH || './data/community.db',
+
+    // Browser origins allowed to call the embeddable APIs (/api/v1/comments, /api/v1/pulse)
+    // with a Bearer Network JWT. No cookies cross origins.
+    apiCorsOrigins: (process.env.API_CORS_ORIGINS || 'https://openvibe.live,https://openvibe.media,https://openvibe.network,https://openvibe.tools,https://openvibe.games')
+        .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean),
+
+    // Discord relay (outbound: new threads → a Discord webhook per mapped space). Off by default.
+    // Webhook URLs live in environment variables named by relay_mappings.webhook_url_ref.
+    discordRelay: {
+        enabled: /^(1|true|yes|on)$/i.test(process.env.DISCORD_RELAY_ENABLED || ''),
+        pollMs: parseInt(process.env.DISCORD_RELAY_POLL_MS, 10) || 30_000,
+        backoffMs: parseInt(process.env.DISCORD_RELAY_BACKOFF_MS, 10) || 30_000,
+        maxAttempts: parseInt(process.env.DISCORD_RELAY_MAX_ATTEMPTS, 10) || 6,
+    },
 };

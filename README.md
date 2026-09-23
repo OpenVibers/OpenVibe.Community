@@ -3,8 +3,9 @@
 **https://openvibe.community — the people of OpenVibe.**
 
 The community hub of the OpenVibe network: community-run, open source, free speech within
-the rules. Today it is the home of **pastes** (code, text and screenshots with a link);
-spaces, threads and submissions follow.
+the rules. It is the home of **pastes** (code, text and screenshots with a link), the
+**forum** (spaces, threads and posts), the **comment threads** every other OpenVibe product
+embeds, and **Pulse**, the network's public activity. Submissions follow.
 
 It is a small Node/Express app (CommonJS, no framework, one SQLite database) that
 server-renders every page — crawlers and no-JS readers get the whole thing — and adds a
@@ -92,12 +93,22 @@ Pages (server-rendered HTML):
 | `GET /p/:slug/download` | The text as an attachment (`slug.ext`); screenshots bounce to the image |
 | `GET /new`, `POST /new` | Create (signed-in or anonymous). `?fork=slug` prefills. The POST is the no-JS fallback; with JS the form talks to `/api/pastes` |
 | `GET /my` | The signed-in user's pastes (public, unlisted and private); anonymous → sign-in |
+| `GET /s` | Spaces |
+| `GET /s/:space` | Threads — `?sort=hot\|new\|top`, `?page=` |
+| `GET /s/:space/t/:slug` | A thread with its posts (`?page=`), reply / vote / moderation forms |
+| `GET /s/:space/new`, `POST /s/:space/new` | Start a thread (signed in) |
+| `POST /s/:space/t/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete) |
+| `GET /pulse` | Public activity across the network — `?origin=user\|ai\|system`, `?after=` |
 
 API and machine endpoints:
 
 | Route | What |
 | --- | --- |
 | `ANY /api/pastes/*` | `live`: transparent proxy to Live `/api/pastes/*` — list, get, create, `screenshot` (multipart), `:slug/copy`, `:slug/like`, comments, delete… bodies stream through untouched. `community`: the native API (same surface, plus `/:slug/versions`) |
+| `/api/v1/comments/*` | Typed comment threads — see [Comments API](#comments-api) |
+| `/api/v1/spaces/*`, `/api/v1/posts/*` | The forum — see [Forum](#forum-spaces-threads-posts) |
+| `/api/v1/pulse/*` | Pulse — see [Pulse](#pulse) |
+| `/api/v1/relay/*` | Discord relay administration (staff) — see [Discord relay](#discord-relay) |
 | `GET /api/health`, `GET /api/ready` | Liveness / readiness |
 | `GET /auth/login` | → Network `/oauth/authorize`. `?next=` (same-site path, this origin, or `https://openvibe.network/…`), `?silent=1` adds `prompt=none` |
 | `GET /auth/callback` | Code exchange; sets cookies. `error=login_required` → `next` + `?sso=none` |
@@ -105,18 +116,198 @@ API and machine endpoints:
 | `GET /auth/me` | Offline-verified profile from `ov_token` |
 | `POST /auth/refresh` | Rotate via refresh token |
 | `GET /robots.txt`, `GET /sitemap.xml`, `GET /feed.xml` | SEO + RSS of the latest pastes |
+| `GET /s/feed.xml`, `GET /s/:space/feed.xml` | RSS of the latest threads (public spaces) |
 
 Cookies are host-only for `openvibe.community`: `ov_token` (24 h access JWT, JS-readable so
 the shared navbar can use it), `ov_refresh` (httpOnly, `/auth`), `ov_sso_hint`
 (`account`/`guest`, 1 year, JS-readable — the navbar only tries a silent sign-in when it says
 `account`).
 
+## Comments API
+
+`/api/v1/comments` is the comment system every OpenVibe product embeds instead of owning
+comment tables. A thread belongs to one entity, named by an EntityRef
+(`common.entity-ref@1`: `{ service, type, id, label? }`), and is created the first time anyone
+resolves it. Errors are `application/problem+json` (`errors.problem@1`, with the legacy
+`error` field).
+
+| Route | What |
+| --- | --- |
+| `POST /threads/resolve` `{ ref }` | Get-or-create the entity's thread (201 created, 200 existing; idempotent, unique on service+type+id) |
+| `GET /threads/:id` | The thread + first page of top-level comments, replies nested one level. `?after=<last id>`, `?sort=old\|new`, `?limit=`; `?parent=<id>` pages one comment's replies |
+| `POST /threads/:id/comments` `{ message, parent_id?, anon_name? }` | Comment. A reply to a reply joins the top-level comment's replies |
+| `DELETE /:commentId` | The author or a moderator (soft; a top-level comment with replies stays as a tombstone) |
+| `POST /:commentId/votes` `{ value: 1\|-1\|0 }` | Add, change or remove your vote (people only) |
+| `PUT /threads/:id/visibility` `{ visibility: public\|hidden\|locked }` | Moderators — e.g. the owner service hides the thread of an entity it took down |
+
+Who may do what:
+
+- **Browsers** (the Network JWT as `ov_token` cookie here, or `Authorization: Bearer` from
+  another OpenVibe site through CORS — `API_CORS_ORIGINS`, never cookies) resolve threads only
+  for these types: `live` vod, clip, stream, channel · `media` object · `community` paste, post
+  · `wiki` page · `blog` post · `reviews` entity. Community's own refs must exist and be
+  visible. Labels are only taken from services.
+- **Anonymous** visitors comment with an `anon_name`, under the same 20-writes-per-10-minutes
+  budget per address as anonymous pastes. People are limited per subject (10 s cooldown,
+  5 per minute, no duplicate in a row; 60 votes a minute), whichever way they write.
+- **Services** (Network service token, audience `openvibe.community`): `community.comment.write`
+  resolves any ref and comments/votes/deletes as `X-OV-Subject`, or as AI with
+  `X-OV-Origin: ai` (stored with origin `ai` and no author, shown as "OpenVibe AI").
+  `community.comment.moderate` moderates — as itself (no `X-OV-Subject`), or for a person it
+  vouches is staff with `X-OV-Staff: 1`.
+- **Locked** threads can be read but take no comments or votes (moderators still may);
+  **hidden** threads are 404 for everyone but moderators.
+- Paste comments stay in `paste_comments` behind `/api/pastes/:slug/comments` for now.
+
+Embedding it — server-side, from another product's backend (the usual way; the person is the
+one your own session says it is):
+
+```js
+const COMMUNITY = 'http://127.0.0.1:4200/api/v1/comments';
+const token = await tokens.authHeaders();          // openvibe-contracts serviceAuth token client,
+                                                   // audience openvibe.community, community.comment.write
+const ref = { service: 'live', type: 'vod', id: String(vod.id), label: vod.title };
+const { thread } = await (await fetch(`${COMMUNITY}/threads/resolve`, {
+    method: 'POST', headers: { ...token, 'Content-Type': 'application/json' }, body: JSON.stringify({ ref }),
+})).json();
+const page = await (await fetch(`${COMMUNITY}/threads/${thread.id}`, { headers: token })).json();
+// page.comments[i] = { id, author: { subject, username, display_name, avatar_url } | null, anon_name,
+//                      display_name, origin, message, score, my_vote, reply_count, replies: [...], ... }
+await fetch(`${COMMUNITY}/threads/${thread.id}/comments`, {
+    method: 'POST',
+    headers: { ...token, 'X-OV-Subject': viewer.subjectId, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'Great VOD!' }),
+});
+```
+
+In the browser, from a page on an allowed origin that holds the visitor's Network JWT:
+
+```js
+const api = (path, opts = {}) => fetch(`https://openvibe.community/api/v1/comments${path}`, {
+    ...opts, headers: { Authorization: `Bearer ${networkJwt}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+}).then((r) => r.json());
+const { thread } = await api('/threads/resolve', { method: 'POST', body: JSON.stringify({ ref: { service: 'live', type: 'clip', id: clipId } }) });
+let { comments, next_cursor } = await api(`/threads/${thread.id}`);
+if (next_cursor) ({ comments } = await api(`/threads/${thread.id}?after=${next_cursor}`));
+await api(`/${comments[0].id}/votes`, { method: 'POST', body: JSON.stringify({ value: 1 }) });
+```
+
+Render `message` as text (it is plain text, never HTML).
+
+## Forum: spaces, threads, posts
+
+Spaces hold threads; a thread is its opening post plus replies (Markdown). Seeded spaces:
+`general`, `feedback` (feature requests), `showcase`. Space visibility: `public` (anyone
+reads, people post), `members` (signed-in people only; every Network account counts as a
+member for now), `staff` (moderators only; looks missing to everyone else).
+
+- **Pages work without JavaScript** — sorting and pagination are links, replying, voting,
+  pin/lock and delete are plain form posts (SameSite=Lax cookie; a foreign `Origin` is
+  refused). Thread pages carry canonical, Open Graph `article`, `DiscussionForumPosting`
+  JSON-LD (author, dates, counters, the replies on the page as `Comment`s) and breadcrumbs;
+  members/staff spaces are `noindex,nofollow` and never in the sitemap or feeds. The sitemap
+  lists `/s`, `/pulse`, public spaces and the latest 1000 threads; `/s/*/new` is disallowed in
+  robots.txt.
+- **Sorting**: `hot` (default), `new`, `top`; pinned threads lead every sort. Hot is the
+  deterministic `ov_hot(score, age_hours) = (score + 1) / (age_hours + 2) ^ 1.5`
+  (`server/db.js`), computed against one `now` per page.
+- **Markdown** (`server/render/markdown.js`) is a safe subset: everything is escaped first and
+  only fixed tags are written — paragraphs, line breaks, headings (demoted to h3–h6), quotes,
+  lists, `---`, fenced code (highlighted like pastes), inline code, bold/italic/strike, links
+  (http(s), mailto, same-site paths, fragments; `rel="nofollow ugc noopener"`). Raw HTML is
+  shown as text.
+- **Writers**: people (browser JWT, or a service with `community.post.create` naming them in
+  `X-OV-Subject`) and AI output (`X-OV-Origin: ai` — no author, labelled as AI). Anonymous
+  visitors read. Limits per person: a thread every 30 s, 3 a minute, 20 a day; a post every
+  10 s, 6 a minute, no duplicate in a row. Edits keep every revision in `post_versions`;
+  deletes are soft (tombstones keep the numbering; deleting the opening post deletes the
+  thread). Moderators (admin/global_mod browsers; services with `community.comment.moderate`)
+  pin, lock and delete; locked threads take no replies or votes.
+
+API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
+
+| Route | What |
+| --- | --- |
+| `GET /spaces` · `GET /spaces/:space` | Spaces the caller can open · one space |
+| `GET /spaces/:space/threads?sort=&page=&limit=` | Threads (server pagination: `page`, `pages`, `total`) |
+| `POST /spaces/:space/threads` `{ title, body }` | New thread (`community.post.create` for services) |
+| `GET /spaces/:space/threads/:slug?page=` | Thread + posts (`body_markdown` and rendered `body_html`) |
+| `DELETE /spaces/:space/threads/:slug` | Author or moderator |
+| `POST /spaces/:space/threads/:slug/posts` `{ body }` | Reply |
+| `POST /spaces/:space/threads/:slug/votes` `{ value: 1\|-1\|0 }` | Vote |
+| `PUT /spaces/:space/threads/:slug/state` `{ pinned?, locked? }` | Moderators |
+| `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` · `GET /posts/:id/versions` | Author or moderator |
+
+Votes (comments and threads) are one UPSERT per person plus a score recomputed from the vote
+rows in the same IMMEDIATE transaction (`server/votes.js`), so concurrent votes cannot drift
+a score.
+
+## Discord relay
+
+Outbound only, and off unless `DISCORD_RELAY_ENABLED=true`. When a thread is created in a
+public space that has an enabled mapping, Community posts "New thread in s/<space> by <name>"
+with the title, an excerpt and a link to the thread to that mapping's Discord webhook.
+
+- A mapping (`relay_mappings`) names the **environment variable** that holds the webhook URL
+  (`webhook_url_ref`, e.g. `DISCORD_WEBHOOK_FEEDBACK`); the URL itself never enters the
+  database or any API response. Put the variable in `/etc/openvibe/community.env`.
+- One delivery per (thread, mapping) — the dedupe key in `relay_deliveries`. Network errors,
+  timeouts, 5xx, 429 (its `retry_after` honoured) and an unset variable are retried with
+  exponential backoff (`DISCORD_RELAY_BACKOFF_MS` · 2^(attempt−1), at most an hour) up to
+  `DISCORD_RELAY_MAX_ATTEMPTS`; other 4xx fail at once. Mentions are disabled.
+- Loop prevention: a thread whose origin is `discord` is never relayed out (checked when
+  queueing and when sending). Members/staff spaces are never relayed.
+- Staff (admin/global_mod browsers, or services with `community.comment.moderate`):
+  `GET /api/v1/relay/deliveries?status=failed` shows what failed and why,
+  `POST /api/v1/relay/deliveries/:id/retry` queues one again,
+  `GET|POST /api/v1/relay/mappings` and `PUT /api/v1/relay/mappings/:id { enabled }` manage
+  mappings (`POST { space: 'feedback', webhook_url_ref: 'DISCORD_WEBHOOK_FEEDBACK' }`).
+
+## Pulse
+
+A read model of public activity across the network, with provenance (`pulse_items`, unique
+per source service/type/id).
+
+- **Community's own**: new public pastes written by a person (not burn-after-read, not NSFW),
+  new threads and replies in public spaces — recorded at write time, removed when deleted or
+  made non-public, and re-checked against their source on every read, so private or unlisted
+  things never show.
+- **Other services** publish with `community.pulse.write`:
+  `POST /api/v1/pulse/items { ref, title, url, origin?, occurred_at?, visibility? }` — the
+  ref's `service` must be the caller's own (`svc:live` → `live`), `visibility` other than
+  `public` is refused, `X-OV-Subject` names the person for origin `user`. Re-posting a source
+  updates its title and link; origin, actor and time stay the first record's.
+  `DELETE /api/v1/pulse/items/:service/:type/:id` retracts one.
+- **Reading**: `GET /api/v1/pulse?origin=user|ai|system&after=<cursor>&limit=` (newest first,
+  keyset cursor), and the `/pulse` page. AI items carry `label: 'AI'` and never an actor —
+  they are never attributed to a person (roadmap §33); system items name no one either.
+
+## Capabilities
+
+Community checks service tokens against these capabilities (manifests in
+`docs/capabilities-proposal/`, same shape as OpenVibe.Contracts' `manifests/capabilities`):
+
+| Id | Status | Used for |
+| --- | --- | --- |
+| `community.paste.create` / `.write` / `.moderate` | in contracts | pastes |
+| `community.comment.write` | **proposed** | comment threads as a person or AI |
+| `community.comment.moderate` | **proposed** | thread visibility, comment/post/thread moderation, relay admin |
+| `community.pulse.write` | **proposed** | publishing to Pulse |
+| `community.post.create` | planned in contracts → **active** proposed | forum writes |
+
+Until a contracts release carries the proposed ids, `openvibe-contracts`' `capabilities.check`
+answers `capability.unknown` for them, so `server/identity/capabilities.js` decides those ids
+locally with the library's own matching rule (the exact id or a `prefix.*` grant). Ids the
+library knows always go through the library.
+
 ## SEO
 
 Every page carries a title, description, canonical, robots, Open Graph + Twitter card and
 JSON-LD (`WebSite` on the home page, `Article`/`ImageObject` with author and `datePublished`
-on paste pages, `BreadcrumbList` on both). Unlisted/private pastes and search result pages
-are `noindex`. The sitemap lists home, `/pastes` and the latest public pastes (cached 1 h).
+on paste pages, `DiscussionForumPosting` on threads, `BreadcrumbList` everywhere).
+Unlisted/private pastes, search result pages and members/staff spaces are `noindex`. The
+sitemap lists home, `/pastes`, the latest public pastes, `/s`, `/pulse`, public spaces and
+their latest threads (cached 1 h).
 
 ## Configuration
 
@@ -138,6 +329,10 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `OV_MEDIA_INTERNAL_URL` | `http://127.0.0.1:4100` | Media file store for new screenshots (`community` authority) |
 | `PASTES_AUTHORITY` | `live` | `live` = proxy to Live; `community` = this site's database is the authority |
 | `COMMUNITY_DB_PATH` | `./data/community.db` | SQLite file (the systemd unit sets `/var/lib/openvibe-community/community.db`) |
+| `API_CORS_ORIGINS` | Live, Media, Network, Tools, Games origins | Browser origins that may call `/api/v1/comments` and `/api/v1/pulse` with a Bearer JWT |
+| `DISCORD_RELAY_ENABLED` | off | `true` turns the outbound Discord relay on |
+| `DISCORD_RELAY_POLL_MS` / `DISCORD_RELAY_BACKOFF_MS` / `DISCORD_RELAY_MAX_ATTEMPTS` | `30000` / `30000` / `6` | Relay worker cadence, first retry delay, attempts before `failed` |
+| *(any name)* e.g. `DISCORD_WEBHOOK_FEEDBACK` | — | A Discord webhook URL, named by a relay mapping's `webhook_url_ref` |
 | `VIEW_HASH_SECRET` | derived from the client secret | Salt for hashed visitor ids in view counts |
 | `COOKIE_SECURE` | `true` in production | Set `false` for plain-http local dev |
 
@@ -160,9 +355,10 @@ deploy/nginx/openvibe.community.conf        # → /etc/nginx/sites-available/, T
 ```
 
 Update: `git pull && npm ci --omit=dev && systemctl restart openvibe-community`. The schema
-is created idempotently at boot (only when `PASTES_AUTHORITY=community`; in `live` mode the
-app writes nothing to disk). The database lives in the unit's `StateDirectory`
-(`/var/lib/openvibe-community`), so the code tree stays read-only.
+is created idempotently at boot in every mode (comments, the forum, Pulse and the relay live
+in Community's database whichever service owns pastes; the three seed spaces are inserted
+once). The database lives in the unit's `StateDirectory` (`/var/lib/openvibe-community`), so
+the code tree stays read-only.
 
 Before flipping to `community`, the Network's `community` OAuth client needs the
 `identity.subject.resolve` capability (audience `openvibe.network`) and
@@ -195,8 +391,20 @@ server/
   pastes/importer.js  Media export bundle → store (scripts/import-pastes.js is the CLI)
   pastes/source.js    where pages read pastes from (Live or the store)
   pastes/catalog.js   recent public pastes: trending, related, language filter
+  comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments)
+  forum/              spaces/threads/posts: store, service, api (/api/v1/spaces, /posts), routes (pages)
+  pulse/              Pulse read model: store, service (hooks + ingest), api (/api/v1/pulse)
+  relay/              Discord relay: discord.js (queue, worker, backoff), api (/api/v1/relay)
+  http/v1.js          /api/v1 helpers: problem errors, capability guards, cursors, CORS
+  identity/capabilities.js  capability checks incl. the proposed ids; discussion staff/moderators
+  identity/authors.js author display from subject_projection; the AI label
+  votes.js            race-safe up/down votes (comments, threads)
+  limits.js           per-person write limits
   render/layout.js    page shell: SEO head, shared chrome, hashed assets
   render/pages.js     home / browse / paste / new / my / error templates
+  render/forum.js     spaces / threads / thread / new-thread templates
+  render/pulse.js     the /pulse page
+  render/markdown.js  the safe Markdown subset for posts
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
@@ -204,14 +412,15 @@ vendor/openvibe-shared  unmodified copy of OpenVibe.Network/packages/openvibe-sh
 deploy/               systemd unit, nginx vhost
 scripts/import-pastes.js  Media paste bundle importer
 test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
+docs/capabilities-proposal/  capability manifests for the next contracts release
 ```
 
-## What is next (phase 2)
+## What is next
 
-Spaces (per-streamer / per-topic communities), threads (long-form forum discussion) and
-submissions (clips, art, ideas, reports for community review). These need storage of their
-own — the paste database is the first — and moderation tooling; the paste pages, auth layer and
-chrome are built to be reused by them.
+Spaces per streamer, game and project (with membership), inbound Discord relay (threads from
+Discord arrive with origin `discord` and are never relayed back), visibility changes for
+comment threads arriving through Events, moving paste comments onto the typed comment
+threads, and submissions (clips, art, ideas, reports for community review).
 
 ## Related services
 

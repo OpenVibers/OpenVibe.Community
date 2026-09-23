@@ -1,0 +1,23 @@
+{
+  "id": "community.pulse.write",
+  "version": "1.0",
+  "owner": "community",
+  "status": "active",
+  "visibility": "first-party",
+  "description": "Publish public activity of the calling service's own entities to Pulse (EntityRef + title + url + origin user|ai|system + occurred_at), or retract it. Only visibility public is accepted; the ref's service must be the caller's. Provenance is kept: the first record's origin, actor (X-OV-Subject, never for ai/system) and time stand.",
+  "inputSchema": "common.entity-ref@1",
+  "permissions": [
+    "community:write"
+  ],
+  "resourceConstraints": [
+    "owner"
+  ],
+  "quotaClass": "community-write",
+  "events": [
+    "community.pulse.item_recorded"
+  ],
+  "implementedBy": [
+    "POST /api/v1/pulse/items",
+    "DELETE /api/v1/pulse/items/:service/:type/:id"
+  ]
+}

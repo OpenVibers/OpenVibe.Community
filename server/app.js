@@ -7,13 +7,17 @@
  *
  *   Pages (server-rendered)            API / machine
  *   GET /               home           ALL /api/pastes/*       → see PASTES_AUTHORITY below
- *   GET /pastes         browse         GET /api/health, /api/ready
- *   GET /p/:slug        paste          GET /robots.txt, /sitemap.xml, /feed.xml
- *   GET /p/:slug/raw    raw text       /auth/login|callback|logout|me|refresh
- *   GET /p/:slug/screenshot → image
- *   GET /p/:slug/download
- *   GET|POST /new       create
- *   GET /my             signed-in user's pastes
+ *   GET /pastes         browse         /api/v1/comments/*      typed comment threads (comments/api.js)
+ *   GET /p/:slug        paste          /api/v1/spaces/*, /api/v1/posts/*   forum (forum/api.js)
+ *   GET /p/:slug/raw    raw text       /api/v1/pulse/*         Pulse (pulse/api.js)
+ *   GET /p/:slug/screenshot → image    /api/v1/relay/*         Discord relay admin (relay/api.js)
+ *   GET /p/:slug/download              GET /api/health, /api/ready
+ *   GET|POST /new       create         GET /robots.txt, /sitemap.xml, /feed.xml, /s/feed.xml
+ *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
+ *   GET /s …            spaces, threads, posts (forum/routes.js)
+ *   GET /pulse          the network's public activity
+ *
+ * Comments, the forum, Pulse and the relay live in Community's database in every mode.
  *
  * PASTES_AUTHORITY (config.pastesAuthority):
  *   'live' (default)  /api/pastes/* is a transparent proxy to OpenVibe.Live, pages read through
@@ -36,6 +40,20 @@ const pages = require('./render/pages');
 const { assetVersion } = require('./render/layout');
 const { createAuthClient, createAuthRoutes, optionalAuth } = require('./auth/routes');
 const { createPastesProxy } = require('./pastes/proxy');
+const { openDb, getDb } = require('./db');
+const { createNetworkIdentity } = require('./identity/network');
+const { createViewerResolver } = require('./identity/viewer');
+const v1 = require('./http/v1');
+const { createCommentService } = require('./comments/service');
+const { createCommentsApi } = require('./comments/api');
+const { createForumService } = require('./forum/service');
+const { createSpacesApi, createPostsApi } = require('./forum/api');
+const { createForumRoutes } = require('./forum/routes');
+const { createPulse } = require('./pulse/service');
+const { createPulseApi } = require('./pulse/api');
+const { createDiscordRelay } = require('./relay/discord');
+const { createRelayApi } = require('./relay/api');
+const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -81,22 +99,30 @@ function createApp(opts = {}) {
     app.use('/auth', createAuthRoutes(config, auth));
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'community', service: 'community', host: 'openvibe.community', name: 'OpenVibe.Community', profile: 'ugc' })); app.get('/tos', (_req, res) => res.redirect(301, '/terms')); }
 
-    // ── Paste authority ──────────────────────────────────────
+    // ── Community's database, identity, and what lives in it in every mode ──
+    const db = opts.db || (opts.dbPath ? openDb(opts.dbPath) : getDb());
+    const network = opts.network || createNetworkIdentity({ config, db });
+    const viewers = createViewerResolver({ auth, config, network });
+    const pulse = createPulse({ db, network, config });
+    const relay = opts.relay || createDiscordRelay({
+        db, config, enabled: config.discordRelay.enabled,
+        pollMs: config.discordRelay.pollMs, baseMs: config.discordRelay.backoffMs, maxAttempts: config.discordRelay.maxAttempts,
+        ...(opts.relayOptions || {}),
+    });
+    const forum = createForumService({ db, network, pulse, relay, limits: opts.forumLimits });
     const community = config.pastesAuthority === 'community';
-    let viewers = null;
+    const comments = createCommentService({ db, network, pastesLocal: community, limits: opts.commentLimits });
+    seo.useForum(forum);
+    Object.assign(app.locals, { db, network, pulse, relay, forum, comments });
+    if (opts.startRelay !== false) relay.start();
+
+    // ── Paste authority ──────────────────────────────────────
     if (community) {
-        const { openDb, getDb } = require('./db');
-        const { createNetworkIdentity } = require('./identity/network');
-        const { createViewerResolver } = require('./identity/viewer');
         const { createMediaFiles } = require('./media/files');
         const { createPasteService } = require('./pastes/service');
-        const db = opts.db || (opts.dbPath ? openDb(opts.dbPath) : getDb());
-        const network = opts.network || createNetworkIdentity({ config, db });
         const media = opts.media || createMediaFiles({ config });
-        const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits });
-        viewers = createViewerResolver({ auth, config, network });
+        const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits, pulse });
         source.use(service);
-        app.locals.db = db;
         app.locals.pastes = service;
     } else {
         source.use(null);
@@ -116,6 +142,20 @@ function createApp(opts = {}) {
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
     if (community) app.use('/api/pastes', require('./pastes/api').createPastesApi({ service: app.locals.pastes, viewers, anonWriteLimiter }));
     else app.use('/api/pastes', createPastesProxy({ liveUrl: opts.liveUrl }));
+
+    // ── /api/v1: comments, forum, Pulse, relay admin ─────────
+    // Opening a thread writes a row: browsers get 300 resolves per 10 minutes per address.
+    const resolveLimiter = rateLimit({
+        windowMs: 10 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false,
+        skip: (req) => !!(req.viewer && req.viewer.kind === 'service'),
+        message: { error: 'Too many requests — try again later' },
+    });
+    const cors = v1.cors(config.apiCorsOrigins);
+    app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter }));
+    app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers }));
+    app.use('/api/v1/spaces', createSpacesApi({ forum, viewers }));
+    app.use('/api/v1/posts', createPostsApi({ forum, viewers }));
+    app.use('/api/v1/relay', createRelayApi({ relay, db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     app.get('/api/ready', (_req, res) => res.json({ ready: true }));
@@ -247,6 +287,16 @@ function createApp(opts = {}) {
             const msg = (err.body && err.body.error) || (err.status ? `The paste service said no (${err.status}).` : 'The paste service is unavailable right now — try again in a moment.');
             return html(res, pages.newPage({ user: req.user, values, error: msg }), err.status && err.status < 500 ? err.status : 502);
         }
+    }));
+
+    // ── Forum and Pulse pages ────────────────────────────────
+    app.use(createForumRoutes({ forum, viewers, config }));
+    app.get('/pulse', viewers.middleware({ services: false }), wrap(async (req, res) => {
+        const origin = pulse.ORIGINS.includes(req.query.origin) ? req.query.origin : '';
+        let out;
+        try { out = await pulse.list({ origin, after: req.query.after }); }
+        catch (err) { if (err instanceof v1.ApiError) return res.redirect(302, origin ? `/pulse?origin=${origin}` : '/pulse'); throw err; }
+        html(res, pulsePage({ items: out.items, origin, after: req.query.after || null, nextCursor: out.next_cursor }));
     }));
 
     app.get('/my', withUser, wrap(async (req, res) => {

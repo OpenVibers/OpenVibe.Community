@@ -94,10 +94,11 @@ function homePage({ latest, trending, languages, user }) {
 <section class="hero">
   <p class="eyebrow">OpenVibe.Community</p>
   <h1>Share it with a link. Talk about it here.</h1>
-  <p class="lede">Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own. Spaces and threads are next.</p>
+  <p class="lede">Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own, and talk things through in <a href="/s">Spaces</a>.</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> Start a paste</a>
     <a class="btn" href="/pastes"><i class="fa-solid fa-paste" aria-hidden="true"></i> Browse pastes</a>
+    <a class="btn" href="/s"><i class="fa-solid fa-comments" aria-hidden="true"></i> Spaces</a>
     ${user ? `<a class="btn btn-ghost" href="/my"><i class="fa-solid fa-user" aria-hidden="true"></i> My pastes</a>` : `<a class="btn btn-ghost" href="/auth/login?next=%2F"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Sign in with your OpenVibe account</a>`}
   </div>
   <ul class="hero-points">
@@ -129,15 +130,15 @@ function homePage({ latest, trending, languages, user }) {
 <section class="section coming" id="coming">
   <h2>What is coming</h2>
   <div class="coming-grid">
-    <div class="coming-item"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><h3>Spaces</h3><p>Places for the communities around each streamer, game and project — run by the people in them.</p></div>
-    <div class="coming-item"><i class="fa-solid fa-comments" aria-hidden="true"></i><h3>Threads</h3><p>Long-form discussion that outlives a chat scrollback. Forums, the way they should have stayed.</p></div>
+    <div class="coming-item"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><h3><a href="/s">Spaces</a></h3><p>Open now: General, Feedback and Showcase. Places for the communities around each streamer, game and project come next — run by the people in them.</p></div>
+    <div class="coming-item"><i class="fa-solid fa-comments" aria-hidden="true"></i><h3><a href="/s/general">Threads</a></h3><p>Long-form discussion that outlives a chat scrollback, readable without JavaScript. Forums, the way they should have stayed.</p></div>
     <div class="coming-item"><i class="fa-solid fa-inbox" aria-hidden="true"></i><h3>Submissions</h3><p>Send in clips, art, ideas and reports; the community reviews and features the best of it.</p></div>
   </div>
-  <p class="muted">Pastes are live today. The rest is being built in the open — follow along on <a href="https://github.com/OpenVibers" rel="noopener">GitHub</a> and <a href="https://discord.gg/M6MuRUaeJj" rel="noopener">Discord</a>.</p>
+  <p class="muted">Pastes, spaces, threads and the <a href="/pulse">Pulse</a> of the network are live today. The rest is being built in the open — follow along on <a href="https://github.com/OpenVibers" rel="noopener">GitHub</a> and <a href="https://discord.gg/M6MuRUaeJj" rel="noopener">Discord</a>.</p>
 </section>`;
     return renderPage({
         title: null,
-        description: 'The people of OpenVibe. A community-run, open source home for pastes — code, logs and screenshots with a link — and soon spaces, threads and submissions. Free speech within the rules.',
+        description: 'The people of OpenVibe. A community-run, open source home for pastes — code, logs and screenshots with a link — spaces and threads, and soon submissions. Free speech within the rules.',
         canonicalPath: '/',
         active: 'home',
         jsonLd: [seo.websiteLd()],
@@ -382,4 +383,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo };
+module.exports = { homePage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml };
