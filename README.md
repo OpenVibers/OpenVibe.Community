@@ -408,11 +408,11 @@ server/
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
-vendor/openvibe-shared  unmodified copy of OpenVibe.Network/packages/openvibe-shared
+(openvibe-shared is the pinned OpenVibe.Shared v1.0.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
 scripts/import-pastes.js  Media paste bundle importer
 test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
-docs/capabilities-proposal/  capability manifests for the next contracts release
+docs/capabilities-proposal/  Wave 5 capability manifests (released in openvibe-contracts v0.7.0)
 ```
 
 ## What is next
