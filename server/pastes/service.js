@@ -262,8 +262,9 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         return { ai_summary: String(body.ai_summary).slice(0, 2000), ai_tags: tags, ai_analyzed_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
     }
 
-    function slugFor(v, body) {
-        if (!isService(v) || body.slug == null || body.slug === '') return store.generateSlug(db);
+    /** A service may name the slug (Live's imports); otherwise it is generated — secret unless the paste is public. */
+    function slugFor(v, body, visibility) {
+        if (!isService(v) || body.slug == null || body.slug === '') return store.generateSlug(db, { secret: visibility !== 'public' });
         const slug = String(body.slug);
         if (!SERVICE_SLUG_RE.test(slug) || RESERVED_SLUGS.has(slug.toLowerCase())) fail(400, 'Invalid slug');
         if (db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(slug)) fail(409, 'Slug already taken');
@@ -356,15 +357,16 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!content || typeof content !== 'string' || content.trim().length === 0) fail(400, 'Content is required');
             if (content.length > L.maxSizeKb * 1024) fail(400, `Paste too large (max ${L.maxSizeKb} KB)`);
             const metadata = serviceMetadata(v, body);
+            const visibility = visibilityOf(body.visibility, !!v.subject);
             const row = store.insertPaste(db, {
-                slug: slugFor(v, body),
+                slug: slugFor(v, body, visibility),
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'paste',
                 title: store.sanitizeTitle(body.title),
                 content: content.trim(),
                 language: store.detectLanguage(content, body.language),
-                visibility: visibilityOf(body.visibility, !!v.subject),
+                visibility,
                 stream_ref: streamRefFor(v, body),
                 metadata: metadata ? JSON.stringify(metadata) : null,
                 burn_after_read: truthy(body.burn_after_read) ? 1 : 0,
@@ -381,7 +383,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!IMAGE_MIME.test(file.mimetype || '')) fail(400, 'Only PNG, JPEG, WebP, or GIF images allowed');
             if (file.buffer.length > L.screenshotMaxSizeMb * 1024 * 1024) fail(400, `File too large (max ${L.screenshotMaxSizeMb} MB)`);
             if (!media) fail(503, 'Media service unavailable');
-            const slug = slugFor(v, body);
+            const visibility = visibilityOf(body.visibility, !!v.subject);
+            const slug = slugFor(v, body, visibility);
             const extra = serviceMetadata(v, body);
             const bytes = stripImageMetadata(file.buffer, file.mimetype);
             let stored;
@@ -407,7 +410,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 title: store.sanitizeTitle(body.title || 'Screenshot'),
                 content: String(body.description || body.content || ''),
                 language: 'text',
-                visibility: visibilityOf(body.visibility, !!v.subject),
+                visibility,
                 screenshot_url: stored.url,
                 media_ref: stored.media_ref,
                 stream_ref: streamRefFor(v, body),
@@ -467,16 +470,17 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             // A lasting copy would outlive the burn; only the owner (or staff) may fork one.
             if (original.burn_after_read && !canSeeHidden(v, original)) fail(403, 'Burn-after-read pastes cannot be forked');
             pasteRateCheck(v);
+            // A fork never widens who can find the content: unlisted stays unlisted (and gets a secret slug).
+            const visibility = visibilityOf(original.visibility, !!v.subject);
             const row = store.insertPaste(db, {
-                slug: store.generateSlug(db),
+                slug: store.generateSlug(db, { secret: visibility !== 'public' }),
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'paste',
                 title: store.sanitizeTitle(`Fork of ${original.title}`),
                 content: original.content,
                 language: original.language,
-                // A fork never widens who can find the content: unlisted stays unlisted.
-                visibility: visibilityOf(original.visibility, !!v.subject),
+                visibility,
                 forked_from: original.id,
             });
             return created(row, { paste: await shapeOne(row, v) });

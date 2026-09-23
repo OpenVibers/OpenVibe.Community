@@ -64,6 +64,9 @@ redirects its old paste URLs here after cutover).
   (`POST ${OV_MEDIA_INTERNAL_URL}/api/v1/community/files`, service token with
   `media.object.upload`); the paste keeps the public URL and `media_ref`
   `legacy:community:file:<key>`. Imported pastes keep their existing Media screenshot URLs.
+- **Slugs**: public pastes get a short `adj-noun-NN` slug; a new unlisted or private paste (and
+  a fork of one) gets `adj-noun-` + 16 random base62 characters, because its slug is the only
+  thing keeping it unlisted. Existing slugs never change and keep working.
 - **Deletes are soft** (content scrubbed, slug kept reserved); edits append `paste_versions`.
 
 Moving the data: `node scripts/import-pastes.js <bundle.json> [--dry-run] [--id-fix-cutoff

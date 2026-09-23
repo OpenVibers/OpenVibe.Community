@@ -50,9 +50,29 @@ const SLUG_NOUNS = [
     'trout', 'tulip', 'vale', 'vine', 'viper', 'wave', 'wren', 'wolf',
 ];
 
-/** A free adj-noun-NN slug. Deleted pastes keep theirs, so an old link never points somewhere new. */
-function generateSlug(db) {
+const SECRET_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const SECRET_CHARS = 16;     // 62^16 ≈ 2^95, on top of the words
+
+/**
+ * A free slug. Deleted pastes keep theirs, so an old link never points somewhere new.
+ *
+ * Public pastes get a short adj-noun-NN slug (listed anyway, so nothing to guess). An unlisted or
+ * private paste's slug is the only thing keeping it unlisted, so `secret` adds 16 random base62
+ * characters (adj-noun-XXXXXXXXXXXXXXXX): the ~1.5M word/number slugs could be walked, these
+ * cannot. Existing slugs never change.
+ */
+function generateSlug(db, { secret = false } = {}) {
     const taken = db.prepare('SELECT 1 FROM pastes WHERE slug = ?');
+    const words = () => `${SLUG_ADJECTIVES[crypto.randomInt(SLUG_ADJECTIVES.length)]}-${SLUG_NOUNS[crypto.randomInt(SLUG_NOUNS.length)]}`;
+    if (secret) {
+        for (let i = 0; i < 10; i++) {
+            let tail = '';
+            for (let j = 0; j < SECRET_CHARS; j++) tail += SECRET_ALPHABET[crypto.randomInt(SECRET_ALPHABET.length)];
+            const slug = `${words()}-${tail}`;
+            if (!taken.get(slug)) return slug;
+        }
+        throw new Error('Could not generate a unique paste slug');
+    }
     for (let i = 0; i < 10; i++) {
         const slug = `${SLUG_ADJECTIVES[crypto.randomInt(SLUG_ADJECTIVES.length)]}-${SLUG_NOUNS[crypto.randomInt(SLUG_NOUNS.length)]}-${crypto.randomInt(10, 100)}`;
         if (!taken.get(slug)) return slug;

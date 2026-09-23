@@ -7,6 +7,7 @@
  *   - burn-after-read pastes: every way of reading the content counts as the read (?no_view=1,
  *     download, fork), and they never appear in public lists, search, feeds or the home page.
  *   - a fork of an unlisted paste is not published as a public paste.
+ *   - unlisted (and private) pastes get slugs nobody can guess; existing slugs keep working.
  */
 const assert = require('assert');
 const { boot, check, done } = require('./helpers/app');
@@ -135,6 +136,37 @@ const { boot, check, done } = require('./helpers/app');
         const pub = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'public body' } });
         const pf = await call(`/api/pastes/${pub.json().slug}/fork`, { method: 'POST', cookie: samJwt, json: {} });
         assert.strictEqual(pf.json().paste.visibility, 'public', 'forks of public pastes stay public');
+    });
+
+    // ── unlisted slugs cannot be guessed ─────────────────────
+    await check('new unlisted/private pastes get a high-entropy slug; public ones keep the short form; old slugs still open', async () => {
+        const SECRET = /^[a-z]+-[a-z]+-[A-Za-z0-9]{16}$/;
+        const SHORT = /^[a-z]+-[a-z]+-\d{2,4}$/;
+        const slugs = new Set();
+        for (const [who, visibility] of [[{ cookie: alexJwt }, 'unlisted'], [{ cookie: alexJwt }, 'private'], [{}, 'unlisted'], [{}, 'private']]) {
+            const r = await call('/api/pastes', { method: 'POST', ...who, json: { content: `hidden ${visibility}`, visibility }, ip: '192.0.2.61' });
+            assert.strictEqual(r.status, 201, r.text);
+            assert.match(r.json().slug, SECRET, `${visibility} (${who.cookie ? 'signed in' : 'anonymous'})`);
+            slugs.add(r.json().slug);
+        }
+        const fork = await call(`/api/pastes/${[...slugs][0]}/fork`, { method: 'POST', cookie: samJwt, json: {} });
+        assert.strictEqual(fork.status, 201, fork.text);
+        assert.match(fork.json().slug, SECRET, 'a fork of an unlisted paste is unlisted, with a secret slug');
+        const service = await call('/api/pastes', { method: 'POST', token: net.signService({ cap: [CREATE] }), headers: { 'x-ov-subject': alex.subject_id }, json: { content: 'svc hidden', visibility: 'unlisted' } });
+        assert.strictEqual(service.status, 201, service.text);
+        assert.match(service.json().slug, SECRET, 'service-created unlisted pastes too, unless the service names the slug');
+        const pub = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'public words' } });
+        assert.match(pub.json().slug, SHORT, 'public pastes are listed anyway: short slug');
+        // A paste made before this change (short slug, unlisted) still opens by its slug.
+        t.db.prepare("INSERT INTO pastes (slug, type, title, content, language, visibility) VALUES ('calm-otter-42', 'paste', 'old', 'old unlisted words', 'text', 'unlisted')").run();
+        const old = await call('/api/pastes/calm-otter-42');
+        assert.strictEqual(old.status, 200, old.text);
+        assert.strictEqual(old.json().paste.content, 'old unlisted words');
+        assert.strictEqual((await call('/p/calm-otter-42/raw')).status, 200);
+        // The secret part is really random.
+        const { generateSlug } = require('../server/pastes/store');
+        const many = new Set(Array.from({ length: 2000 }, () => generateSlug(t.db, { secret: true }).split('-')[2]));
+        assert.strictEqual(many.size, 2000);
     });
 
     await t.close();
