@@ -109,7 +109,8 @@ API and machine endpoints:
 | `/api/v1/spaces/*`, `/api/v1/posts/*` | The forum — see [Forum](#forum-spaces-threads-posts) |
 | `/api/v1/pulse/*` | Pulse — see [Pulse](#pulse) |
 | `/api/v1/relay/*` | Discord relay administration (staff) — see [Discord relay](#discord-relay) |
-| `GET /api/health`, `GET /api/ready` | Liveness / readiness |
+| `GET /api/health`, `GET /api/ready` | Liveness / readiness (see below) |
+| `GET /metrics` | Prometheus text for direct loopback callers only (404 through nginx) |
 | `GET /auth/login` | → Network `/oauth/authorize`. `?next=` (same-site path, this origin, or `https://openvibe.network/…`), `?silent=1` adds `prompt=none` |
 | `GET /auth/callback` | Code exchange; sets cookies. `error=login_required` → `next` + `?sso=none` |
 | `GET /auth/logout` | Clears session, sets `ov_sso_hint=guest`, honours `?next=` |
@@ -117,6 +118,18 @@ API and machine endpoints:
 | `POST /auth/refresh` | Rotate via refresh token |
 | `GET /robots.txt`, `GET /sitemap.xml`, `GET /feed.xml` | SEO + RSS of the latest pastes |
 | `GET /s/feed.xml`, `GET /s/:space/feed.xml` | RSS of the latest threads (public spaces) |
+
+**Readiness and metrics (Track O).** `GET /api/ready` (openvibe-shared/ready) answers 503 only
+when the required `db` check fails (a real query on Community's SQLite). `network_jwks` (the
+Network signing key; without it nobody can sign in or write as a signed-in viewer or service),
+`live` (in `PASTES_AUTHORITY=live`: paste pages and `/api/pastes` read through Live) and `media`
+(in `community` mode: screenshot and file uploads) are optional: a failure keeps the site ready
+(comments, forum, Pulse and public reads still work) and is listed in `degraded` with
+`status: "degraded"`. Every check reports `status`, `required`, `latency_ms` and `checked_at`.
+Until Track O this route returned `{ "ready": true }` unconditionally. `GET /metrics` serves HTTP
+golden signals by route template (`http_requests_total{method,route,status_class}`,
+`http_request_duration_seconds`, `http_requests_in_flight`), process metrics and
+`release_info`; content counts (pastes, comments, threads) are deliberately not metrics.
 
 Cookies are host-only for `openvibe.community`: `ov_token` (24 h access JWT, JS-readable so
 the shared navbar can use it), `ov_refresh` (httpOnly, `/auth`), `ov_sso_hint`

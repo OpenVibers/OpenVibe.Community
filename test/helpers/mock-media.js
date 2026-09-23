@@ -16,6 +16,7 @@ function start({ publicPem, issuer }) {
         req.on('data', (c) => chunks.push(c));
         req.on('end', () => {
             const json = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+            if (req.method === 'GET' && req.url === '/healthz') return json(200, { ok: true, service: 'mock-media' });
             if (req.method !== 'POST' || req.url !== '/api/v1/community/files') return json(404, { error: 'not found' });
             const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
             if (!v.ok) return json(401, { code: v.code, error: v.reason });

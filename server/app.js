@@ -11,7 +11,7 @@
  *   GET /p/:slug        paste          /api/v1/spaces/*, /api/v1/posts/*   forum (forum/api.js)
  *   GET /p/:slug/raw    raw text       /api/v1/pulse/*         Pulse (pulse/api.js)
  *   GET /p/:slug/screenshot → image    /api/v1/relay/*         Discord relay admin (relay/api.js)
- *   GET /p/:slug/download              GET /api/health, /api/ready
+ *   GET /p/:slug/download              GET /api/health, /api/ready, /release.json, /metrics (loopback)
  *   GET|POST /new       create         GET /robots.txt, /sitemap.xml, /feed.xml, /s/feed.xml
  *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
  *   GET /s …            spaces, threads, posts (forum/routes.js)
@@ -64,6 +64,12 @@ function createApp(opts = {}) {
     const app = express();
     app.disable('x-powered-by');
     app.set('trust proxy', config.trustProxy);
+    // What this server runs (ADR-016); the shared navbar's release-watch polls it.
+    const release = require('openvibe-shared/release').createRelease({ service: 'community', root: require('path').join(__dirname, '..') });
+    // HTTP golden signals by route template, process metrics, release_info; GET /metrics answers
+    // direct loopback callers only (Track O). Request metrics only: no content counts.
+    const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'community', release: release.release });
+    app.locals.metrics = metrics.registry;
 
     app.use(helmet({
         contentSecurityPolicy: {
@@ -158,10 +164,11 @@ function createApp(opts = {}) {
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
-    // What this server runs (ADR-016); the shared navbar's release-watch polls it.
-    const release = require('openvibe-shared/release').createRelease({ service: 'community', root: require('path').join(__dirname, '..') });
     app.get('/release.json', release.handler);
-    app.get('/api/ready', (_req, res) => res.json({ ready: true }));
+    // Readiness reports what is actually served: 503 only without the database; Network key,
+    // Live (live mode) and Media (community mode) failures degrade (server/observability.js).
+    const readiness = require('./observability').createCommunityReadiness({ db, auth, config, relay, release: release.release, fetchImpl: opts.fetchImpl });
+    app.get('/api/ready', readiness.handler);
 
     // ── Static assets (content-hashed ?v= → immutable) ───────
     app.use(express.static(PUBLIC_DIR, {
