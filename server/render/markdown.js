@@ -18,13 +18,92 @@ const { escapeHtml: esc, highlight } = require('./highlight');
 
 const MAX_SOURCE = 100_000;
 const MAX_QUOTE_DEPTH = 3;
-const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([\w+#.-]{0,32})\s*$/;
-const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
+// Every pattern here runs on untrusted text on each page view, so none may backtrack
+// super-linearly: trailing whitespace/#s are trimmed in code, not by competing \s* groups.
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})\s*([\w+#.-]{0,32})$/;
+const FENCE = { test: (line) => FENCE_RE.test(line.trimEnd()) };
+const HEADING_RE = /^ {0,3}(#{1,6})\s+([\s\S]*)$/;
 const QUOTE = /^ {0,3}>\s?(.*)$/;
 const HR = /^ {0,3}([-*_])(\s*\1){2,}\s*$/;
 const UL = /^ {0,3}[-*+]\s+(.*)$/;
 const OL = /^ {0,3}(\d{1,9})[.)]\s+(.*)$/;
 const SAFE_URL = /^(https?:\/\/|mailto:|\/(?![/\\])|#)/i;
+
+/** [, hashes, text] for an ATX heading (text without the optional closing #s), or null. */
+function headingMatch(line) {
+    const m = line.match(HEADING_RE);
+    if (!m) return null;
+    const text = m[2].trimEnd().replace(/#+$/, '').trimEnd();
+    return /[\u2028\u2029]/.test(text) ? null : [m[0], m[1], text];
+}
+const HEADING = { test: (line) => headingMatch(line) !== null };
+
+/**
+ * Same result as s.replace(/<open>([\s\S]*?\S)<close>/g, …) for a delimiter pair, in linear time:
+ * the lazy regex rescans to the end of the text for every opener that has no closer (quadratic).
+ * Content runs from the end of an opener to the first closer after it; once one opener finds no
+ * closer, no later opener can either, so the scan stops.
+ */
+function pairUp(s, open, close, wrap) {
+    const o = new RegExp(open.source, 'g');
+    const c = new RegExp(close.source, 'g');
+    let out = '';
+    let pos = 0;
+    for (;;) {
+        o.lastIndex = pos;
+        const m = o.exec(s);
+        if (!m) break;
+        const start = m.index + m[0].length;
+        c.lastIndex = start;
+        const k = c.exec(s);
+        if (!k) break;
+        const end = k.index + 1; // the closer pattern starts with the content's last (non-space) character
+        out += s.slice(pos, m.index) + wrap(m, s.slice(start, end));
+        pos = k.index + k[0].length;
+    }
+    return out + s.slice(pos);
+}
+
+/**
+ * Same result as s.replace(/(`+)([^`\n]|[^`\n][\s\S]*?[^`\n])\1(?!`)/g, …) in O(n log n): an opener
+ * is the tail of a backtick run (longest first, as the regex tries it), its closer the next whole
+ * run of exactly that length not preceded by a newline, with non-empty content not starting with one.
+ */
+function codeSpans(s, onCode) {
+    const runs = [];
+    const byLen = new Map();
+    const re = /`+/g;
+    let m;
+    while ((m = re.exec(s))) {
+        runs.push([m.index, m[0].length]);
+        if (s[m.index - 1] !== '\n') {
+            if (!byLen.has(m[0].length)) byLen.set(m[0].length, []);
+            byLen.get(m[0].length).push(m.index);
+        }
+    }
+    const nextAt = (list, from) => {
+        let lo = 0;
+        let hi = list.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid] < from) lo = mid + 1; else hi = mid; }
+        return lo < list.length ? list[lo] : -1;
+    };
+    let out = '';
+    let pos = 0;
+    for (const [at, len] of runs) {
+        if (at < pos) continue;
+        const contentStart = at + len;
+        if (contentStart >= s.length || s[contentStart] === '\n') continue;
+        for (let n = len; n >= 1; n--) {
+            const list = byLen.get(n);
+            const close = list ? nextAt(list, contentStart + 1) : -1;
+            if (close < 0) continue;
+            out += s.slice(pos, at + len - n) + onCode(s.slice(contentStart, close));
+            pos = close + n;
+            break;
+        }
+    }
+    return out + s.slice(pos);
+}
 
 function unescapeEntities(s) {
     return s.replace(/&(amp|lt|gt|quot|#39);/g, (_m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e]));
@@ -35,7 +114,7 @@ function inline(raw) {
     const slots = [];
     const hold = (html) => `\u0000${slots.push(html) - 1}\u0000`;
     // 1. code spans keep their content literal
-    let s = String(raw).replace(/(`+)([^`\n]|[^`\n][\s\S]*?[^`\n])\1(?!`)/g, (_m, _t, code) => hold(`<code>${esc(code)}</code>`));
+    let s = codeSpans(String(raw), (code) => hold(`<code>${esc(code)}</code>`));
     // 2. everything else is escaped before any tag is written
     s = esc(s);
     // 3. [text](url) — only safe schemes; the rest stays as text
@@ -62,12 +141,12 @@ function inline(raw) {
 
 /** Bold / italic / strike over already-escaped text. */
 function emphasis(s) {
-    return s
-        .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<strong>$1</strong>')
-        .replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, '$1<strong>$2</strong>')
+    s = pairUp(s, /\*\*(?=\S)/, /\S\*\*/, (_m, t) => `<strong>${t}</strong>`);
+    s = pairUp(s, /(^|[^\w])__(?=\S)/, /\S__(?!\w)/, (m, t) => `${m[1]}<strong>${t}</strong>`);
+    s = s
         .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])/g, '$1<em>$2</em>')
-        .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, '$1<em>$2</em>')
-        .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>');
+        .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, '$1<em>$2</em>');
+    return pairUp(s, /~~(?=\S)/, /\S~~/, (_m, t) => `<del>${t}</del>`);
 }
 
 function isBlockStart(line) {
@@ -81,7 +160,7 @@ function blocks(lines, depth) {
         const line = lines[i];
         if (!line.trim()) { i++; continue; }
 
-        let m = line.match(FENCE);
+        let m = line.trimEnd().match(FENCE_RE);
         if (m) {
             const fence = m[1], lang = m[2];
             const closing = new RegExp(`^ {0,3}\\${fence[0]}{${fence.length},}\\s*$`);
@@ -95,7 +174,7 @@ function blocks(lines, depth) {
             continue;
         }
         if (HR.test(line)) { out.push('<hr>'); i++; continue; }
-        m = line.match(HEADING);
+        m = headingMatch(line);
         if (m) { const level = Math.min(m[1].length + 2, 6); out.push(`<h${level}>${inline(m[2])}</h${level}>`); i++; continue; }
         if (QUOTE.test(line)) {
             const inner = [];
@@ -136,7 +215,7 @@ function renderMarkdown(source) {
 function markdownToText(source, max = 300) {
     const t = String(source == null ? '' : source).replace(/\u0000/g, '')
         .replace(/^ {0,3}(`{3,}|~{3,}).*$/gm, '')
-        .replace(/\[([^\]\n]*)\]\([^)\s]*\)/g, '$1')
+        .replace(/\[([^[\]\n]*)\]\([^)\s]*\)/g, '$1')
         .replace(/^ {0,3}(#{1,6}|>|[-*+]|\d{1,9}[.)])\s+/gm, '')
         .replace(/(\*\*|__|~~|`)/g, '')
         .replace(/\s+/g, ' ')

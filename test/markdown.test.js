@@ -47,6 +47,31 @@ const { check, done } = require('./helpers/app');
         assert.strictEqual(nul, '<p>ab</p>');
     });
 
+    await check('pathological posts render in linear time (no ReDoS)', () => {
+        let codeRuns = '';
+        for (let k = 1; codeRuns.length < 39000; k++) codeRuns += `a${'`'.repeat(k)}`;
+        const cases = {
+            heading: `# a${' '.repeat(6000)}x`,
+            fence: `\`\`\`${' '.repeat(39000)}!`,
+            strong: '**x '.repeat(10000),
+            underscore: ' __x'.repeat(10000),
+            strike: '~~x '.repeat(10000),
+            codeRuns,
+        };
+        for (const [name, src] of Object.entries(cases)) {
+            const started = Date.now();
+            md(src);
+            const ms = Date.now() - started;
+            assert.ok(ms < 1000, `renderMarkdown ${name} took ${ms}ms`);
+        }
+        const started = Date.now();
+        markdownToText('['.repeat(40000));
+        assert.ok(Date.now() - started < 1000, `markdownToText took ${Date.now() - started}ms`);
+        assert.strictEqual(md('# Title ##  '), '<h3>Title</h3>');
+        assert.strictEqual(md('``a`b`` and `c` ``d`'), '<p><code>a`b</code> and <code>c</code> `<code>d</code></p>');
+        assert.strictEqual(md('**a** **b **c** ~~d~~ x__y__ __z__'), '<p><strong>a</strong> <strong>b **c</strong> <del>d</del> x__y__ <strong>z</strong></p>');
+    });
+
     await check('markdownToText strips the syntax for descriptions and feeds', () => {
         assert.strictEqual(markdownToText('# Hi\n**b** [l](http://x) `c`\n\n- item'), 'Hi b l c item');
         assert.strictEqual(markdownToText('x'.repeat(50), 10), `${'x'.repeat(9)}…`);
