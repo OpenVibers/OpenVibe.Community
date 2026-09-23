@@ -14,7 +14,7 @@
  *   GET /p/:slug/download              GET /api/health, /api/ready, /release.json, /metrics (loopback)
  *   GET|POST /new       create         GET /robots.txt, /sitemap.xml, /feed.xml, /s/feed.xml
  *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
- *   GET /s …            spaces, threads, posts (forum/routes.js)
+ *   GET /s …            spaces, threads, posts (forum/routes.js)    POST /release-metrics (open tabs' update reports)
  *   GET /pulse          the network's public activity
  *   GET|POST /c/:accessId   one comment thread's own page (comments/routes.js)
  *
@@ -170,7 +170,9 @@ function createApp(opts = {}) {
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
-    app.get('/release.json', release.handler);
+    // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports (a same-origin
+    // sendBeacon, no auth) into /metrics as release_client_updates_total.
+    release.mount(app, { registry: metrics.registry });
     // Readiness reports what is actually served: 503 only without the database; Network key,
     // Live (live mode) and Media (community mode) failures degrade (server/observability.js).
     const readiness = require('./observability').createCommunityReadiness({ db, auth, config, relay, release: release.release, fetchImpl: opts.fetchImpl });

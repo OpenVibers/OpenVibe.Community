@@ -50,6 +50,20 @@ function raw(base, path, headers = {}) {
         assert.ok(!/pastes_total|comments_total|threads_total/.test(m.body), 'no content counts');
     });
 
+    await check('/release.json is a valid release manifest (Track R) and POST /release-metrics feeds /metrics', async () => {
+        const r = await t.get('/release.json');
+        assert.strictEqual(r.status, 200, r.text);
+        const rel = r.json();
+        assert.strictEqual(rel.service, 'community');
+        assert.deepStrictEqual(require('openvibe-contracts').validate('registry.release-manifest@1', rel).errors, []);
+        assert.strictEqual(rel.metrics_url, '/release-metrics');
+        // release-watch's beacon: same-origin, text/plain, no auth.
+        const b = await t.get('/release-metrics', { method: 'POST', headers: { 'content-type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ counts: { reloaded: { user: 2 } } }) });
+        assert.strictEqual(b.status, 204, b.text);
+        const m = await raw(t.base, '/metrics');
+        assert.ok(/release_client_updates_total\{outcome="reloaded",reason="user"\} 2/.test(m.body), m.body.split('\n').filter((l) => l.includes('release_client')).join('\n'));
+    });
+
     await check('Live down: still ready (comments, forum and Pulse are served), live degraded', async () => {
         await t.live.close();
         await new Promise((r) => setTimeout(r, 20));

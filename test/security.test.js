@@ -25,8 +25,10 @@ const { boot, check, done } = require('./helpers/app');
     const samJwt = net.sign({ id: 9, subject_id: sam.subject_id, username: 'sam', display_name: 'Sam', role: 'user' });
     const CREATE = 'community.paste.create', WRITE = 'community.paste.write', POST = 'community.post.create';
     const APP = 'app:app_01HZX3K5V7Q9M2N4P6R8T0W2Y4';
+    // An app token carries its developer project and env, as Network's do (identity.service-token-claims 1.2.0).
+    const PROJECT = 'prj_01J8ZQ4Y7N3M2K1H0G9F8E7D6C';
     const appToken = ({ cap = [CREATE, POST], env = 'production', onBehalfOf = null, sub = APP, actorType = 'app' } = {}) => net.signService({
-        sub, actorType, cap, extra: { env, project_id: 'prj_test', ns: ['prj_test'], ...(onBehalfOf ? { on_behalf_of: onBehalfOf } : {}) },
+        sub, actorType, cap, extra: { env, project_id: PROJECT, ns: [PROJECT], ...(onBehalfOf ? { on_behalf_of: onBehalfOf } : {}) },
     });
 
     const call = (path, { method = 'GET', token, cookie, headers = {}, json, ip } = {}) => {
@@ -79,6 +81,7 @@ const { boot, check, done } = require('./helpers/app');
     await check('sandbox app tokens are refused', async () => {
         const r = await call('/api/pastes', { method: 'POST', token: appToken({ env: 'sandbox' }), json: { content: 'sandbox' } });
         assert.strictEqual(r.status, 401, r.text);
+        assert.strictEqual(r.json().code, 'token.sandbox_refused', r.text);
     });
 
     // ── burn after read ──────────────────────────────────────

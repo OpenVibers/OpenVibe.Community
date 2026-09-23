@@ -124,6 +124,7 @@ API and machine endpoints:
 | `/api/v1/relay/*` | Discord relay administration (staff) — see [Discord relay](#discord-relay) |
 | `GET /api/health`, `GET /api/ready` | Liveness / readiness (see below) |
 | `GET /metrics` | Prometheus text for direct loopback callers only (404 through nginx) |
+| `GET /release.json`, `POST /release-metrics` | What this server runs (ADR-016 release manifest, `metrics_url: /release-metrics`); open tabs' update reports (release-watch's same-origin beacon, no auth) |
 | `GET /auth/login` | → Network `/oauth/authorize`. `?next=` (same-site path, this origin, or `https://openvibe.network/…`), `?silent=1` adds `prompt=none` |
 | `GET /auth/callback` | Code exchange; sets cookies. `error=login_required` → `next` + `?sso=none` |
 | `GET /auth/logout` | Clears session, sets `ov_sso_hint=guest`, honours `?next=` |
@@ -142,7 +143,9 @@ Network signing key; without it nobody can sign in or write as a signed-in viewe
 Until Track O this route returned `{ "ready": true }` unconditionally. `GET /metrics` serves HTTP
 golden signals by route template (`http_requests_total{method,route,status_class}`,
 `http_request_duration_seconds`, `http_requests_in_flight`), process metrics and
-`release_info`; content counts (pastes, comments, threads) are deliberately not metrics.
+`release_info`, and `release_client_updates_total{outcome,reason}` from the tabs' reports to
+`POST /release-metrics` (openvibe-shared `release.mount`); content counts (pastes, comments,
+threads) are deliberately not metrics.
 
 Cookies are host-only for `openvibe.community`: `ov_token` (24 h access JWT, JS-readable so
 the shared navbar can use it), `ov_refresh` (httpOnly, `/auth`), `ov_sso_hint`
@@ -430,7 +433,7 @@ Community checks service tokens against these capabilities (manifests in
 | `community.pulse.write` | active in contracts (v0.7.0) | publishing to Pulse |
 | `community.post.create` | active in contracts (v0.7.0) | forum writes |
 
-This repository pins `openvibe-contracts` v0.11.0, which knows every id above, so they all go
+This repository pins `openvibe-contracts` v0.33.0, which knows every id above, so they all go
 through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
 the installed contracts do not know locally, with the library's own matching rule (the exact id
 or a `prefix.*` grant).
@@ -550,7 +553,7 @@ server/
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
-(openvibe-shared is the pinned OpenVibe.Shared v1.0.0 release, installed by npm)
+(openvibe-shared is the pinned OpenVibe.Shared v1.5.1 release, installed by npm)
 deploy/               systemd unit, nginx vhost
 scripts/import-pastes.js  Media paste bundle importer
 scripts/import-live-comments.js  Live's VOD/clip comments → Community threads (dry run by default)
