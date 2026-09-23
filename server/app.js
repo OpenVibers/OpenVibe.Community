@@ -49,6 +49,7 @@ const { createCommentService } = require('./comments/service');
 const { createCommentsApi } = require('./comments/api');
 const { createCommentPages } = require('./comments/routes');
 const { createForumService } = require('./forum/service');
+const { createVipGate } = require('./vip');
 const { createSpacesApi, createPostsApi } = require('./forum/api');
 const { createForumRoutes } = require('./forum/routes');
 const { createPulse } = require('./pulse/service');
@@ -118,11 +119,13 @@ function createApp(opts = {}) {
         webhookVars: config.discordRelay.webhookVars,
         ...(opts.relayOptions || {}),
     });
-    const forum = createForumService({ db, network, pulse, relay, limits: opts.forumLimits });
+    // OpenVibe.VIP: members-only spaces and threads (fails closed without a client secret or VIP).
+    const vip = opts.vip || createVipGate({ config, ...(opts.vipOptions || {}) });
+    const forum = createForumService({ db, network, pulse, relay, vip, limits: opts.forumLimits });
     const community = config.pastesAuthority === 'community';
     const comments = createCommentService({ db, network, pastesLocal: community, limits: opts.commentLimits });
     seo.useForum(forum);
-    Object.assign(app.locals, { db, network, pulse, relay, forum, comments });
+    Object.assign(app.locals, { db, network, pulse, relay, vip, forum, comments });
     if (opts.startRelay !== false) relay.start();
 
     // ── Paste authority ──────────────────────────────────────

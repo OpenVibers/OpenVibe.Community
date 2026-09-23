@@ -38,7 +38,10 @@ function pager(href, page, pages, labels = ['Newer', 'Older']) {
   </nav>`;
 }
 
-const visBadge = (s) => (VIS_LABELS[s.visibility] ? ` <span class="badge badge-vis"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${esc(VIS_LABELS[s.visibility])}</span>` : '');
+const visBadge = (s) => (VIS_LABELS[s.visibility] ? ` <span class="badge badge-vis"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${esc(VIS_LABELS[s.visibility])}</span>` : '') + vipBadge(s);
+/** A members-only (OpenVibe.VIP) space or thread. */
+const vipBadge = (x) => (x && x.members_only ? ` <span class="badge badge-vis badge-vip" title="For this creator's OpenVibe.VIP members"><i class="fa-solid fa-star" aria-hidden="true"></i> VIP members only</span>` : '');
+const vipJoin = (mo, label = 'Join on OpenVibe.VIP') => (mo && mo.join_url ? `<a class="btn btn-primary" href="${esc(mo.join_url)}" rel="noopener">${esc(label)}</a>` : '');
 
 // ── /s ───────────────────────────────────────────────────────
 function spacesPage({ spaces }) {
@@ -73,7 +76,7 @@ function threadRow(t, space) {
     return `<li class="thread-row">
     <span class="thread-score" title="Score">${num(t.score)}</span>
     <div class="thread-main">
-      <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>
+      <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>${vipBadge(t)}
       <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
     </div>
   </li>`;
@@ -81,7 +84,7 @@ function threadRow(t, space) {
 
 function spacePage({ space, threads, sort, page, pages, total, user }) {
     const tabs = Object.keys(SORT_LABELS).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
-    const indexable = space.visibility === 'public';
+    const indexable = space.visibility === 'public' && !space.members_only;
     const body = `
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › <span aria-current="page">${esc(space.name)}</span></nav>
@@ -127,7 +130,8 @@ function voteForm(base, thread, viewer) {
 function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '' }) {
     const base = `/s/${space.slug}/t/${thread.slug}`;
     const opening = posts.find((p) => p.is_opening) || null;
-    const indexable = space.visibility === 'public';
+    const gated = !!(space.members_only || thread.members_only);
+    const indexable = space.visibility === 'public' && !gated;
     const first = (page - 1) * perPage;
     const replyBlock = viewer.can_reply
         ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply">
@@ -141,6 +145,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     ${viewer.can_moderate ? `<form method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
     <form method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
     ${viewer.can_delete ? `<form method="post" action="${esc(base)}/delete"><button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
+    ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
   </div>` : '';
 
     const body = `
@@ -149,7 +154,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
   <header class="thread-head">
     ${voteForm(base, thread, viewer)}
     <div>
-      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}</h1>
+      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
     </div>
   </header>
@@ -158,7 +163,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
   ${pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Earlier', 'Later'])}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
-    const description = seo.clean(opening ? markdownToText(opening.body_markdown, 200) : thread.title, 200) || thread.title;
+    const description = gated ? `A thread for VIP members in ${space.name} on OpenVibe.Community.` : (seo.clean(opening ? markdownToText(opening.body_markdown, 200) : thread.title, 200) || thread.title);
     return renderPage({
         title: `${thread.title}${page > 1 ? ` (page ${page})` : ''}`,
         description,
@@ -173,7 +178,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         footerVariant: 'compact',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [
-            seo.threadLd({ space, thread, posts, opening, description }),
+            ...(gated ? [] : [seo.threadLd({ space, thread, posts, opening, description })]),
             seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
         ],
         body,
@@ -186,6 +191,7 @@ function newThreadPage({ space, user, values = {}, error = null }) {
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   <label class="field"><span>Title</span><input type="text" name="title" minlength="3" maxlength="200" required value="${esc(values.title || '')}" placeholder="What is it about?"></label>
   <label class="field"><span>Post (Markdown)</span><textarea name="body" rows="14" maxlength="40000" required placeholder="Say it, own it.">${esc(values.body || '')}</textarea></label>
+  <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">
     <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
     <span class="muted small">Posting as <strong>${esc(user.display_name || user.username || 'you')}</strong>. By posting you agree to the <a href="/terms">rules</a>.</span>
@@ -208,4 +214,39 @@ ${form}`;
     });
 }
 
-module.exports = { spacesPage, spacePage, threadPage, newThreadPage, spaceHref, who };
+// ── members-only teaser (403) ────────────────────────────────
+/**
+ * What someone without the creator's VIP membership sees: the space (and thread title), why, and
+ * the join link — never a post. `reason` is VIP's (not_signed_in, not_a_member, vip_unavailable, …).
+ */
+function membersOnlyPage({ space, thread = null, members_only: mo = null, reason, user, next = '/s' }) {
+    const creator = mo && mo.owner_username ? `@${mo.owner_username}` : 'this creator';
+    const why = reason === 'not_signed_in' || !user
+        ? `<p><a class="btn" href="/auth/login?next=${encodeURIComponent(next)}">Sign in</a> if you are already a member.</p>`
+        : reason === 'vip_unavailable' || reason === 'entitlement_unknown'
+            ? '<p class="muted">We could not confirm your membership just now. Try again in a moment.</p>'
+            : '<p class="muted">Your account does not have an active membership for this.</p>';
+    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › ${thread ? `<a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(seo.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
+    const body = `
+<header class="page-head">
+  ${crumbs}
+  <h1>${esc(thread ? thread.title : space.name)} <span class="badge badge-vis badge-vip"><i class="fa-solid fa-star" aria-hidden="true"></i> VIP members only</span></h1>
+  ${!thread && space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
+</header>
+<section class="members-only">
+  <p>This ${thread ? 'thread' : 'space'} is for members of ${esc(creator)} on OpenVibe.VIP. Members read and reply; everyone else sees this page.</p>
+  <p>${vipJoin(mo)}</p>
+  ${why}
+</section>`;
+    return renderPage({
+        title: `${thread ? thread.title : space.name} · members only`,
+        description: `For ${creator}'s OpenVibe.VIP members on OpenVibe.Community.`,
+        canonicalPath: thread ? `/s/${space.slug}/t/${thread.slug}` : `/s/${space.slug}`,
+        robots: 'noindex,nofollow',
+        active: 'spaces',
+        footerVariant: 'compact',
+        body,
+    });
+}
+
+module.exports = { spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, spaceHref, who };

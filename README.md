@@ -31,6 +31,7 @@ Pastes moved to Community in roadmap Wave 5. `PASTES_AUTHORITY` picks who owns t
 | Identity / SSO | **OpenVibe.Network** (OAuth2 + RS256 JWKS) | OAuth client `community` |
 | Raw text, screenshots | OpenVibe.Media public host | 302 from `/p/:slug/raw`, `/p/:slug/screenshot` |
 | Shared chrome, themes | `https://openvibe.network/shared/*.js` | loaded in every page |
+| VIP memberships (members-only spaces/threads) | **OpenVibe.VIP** (`POST /api/v1/policies/evaluate`) | `OV_VIP_INTERNAL_URL`, service token (audience `openvibe.vip`, `vip.resource.policy.evaluate`) |
 
 Why go through Live and not straight to Media: the visitor's JWT names the account by its
 **Network** id, while the `user_id` Media stores for pastes is **Live's** own — different
@@ -320,13 +321,50 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | --- | --- |
 | `GET /spaces` · `GET /spaces/:space` | Spaces the caller can open · one space |
 | `GET /spaces/:space/threads?sort=&page=&limit=` | Threads (server pagination: `page`, `pages`, `total`) |
-| `POST /spaces/:space/threads` `{ title, body }` | New thread (`community.post.create` for services) |
+| `POST /spaces/:space/threads` `{ title, body, members_only? }` | New thread (`community.post.create` for services); `members_only: true` gates it to the author's VIP members |
 | `GET /spaces/:space/threads/:slug?page=` | Thread + posts (`body_markdown` and rendered `body_html`) |
 | `DELETE /spaces/:space/threads/:slug` | Author or moderator |
 | `POST /spaces/:space/threads/:slug/posts` `{ body }` | Reply |
 | `POST /spaces/:space/threads/:slug/votes` `{ value: 1\|-1\|0 }` | Vote |
 | `PUT /spaces/:space/threads/:slug/state` `{ pinned?, locked? }` | Moderators |
+| `PUT /spaces/:space/members-only` `{ owner: 'usr_…' \| null }` | Moderators: gate a space to a creator's VIP members (or open it) |
+| `PUT /spaces/:space/threads/:slug/members-only` `{ owner: 'usr_…' \| true \| null }` | The author (to their own members) or moderators (any creator) |
 | `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` · `GET /posts/:id/versions` | Author or moderator |
+
+### Members-only spaces and threads (OpenVibe.VIP)
+
+A space or a single thread can be for one creator's [OpenVibe.VIP](https://github.com/OpenVibers/OpenVibe.VIP)
+members: `members_only_owner` holds the creator's Network subject (`usr_…`). Moderators gate spaces
+(for any creator) and threads; a thread's author gates it to their own members (and opens it again),
+by the API, the `members_only` box on the new-thread form, or the button on the thread page.
+
+- **Reading and posting need an active entitlement**: listing a gated space's threads, reading a
+  thread, starting a thread, replying, voting, editing and post history. Community asks VIP
+  `POST /api/v1/policies/evaluate` `{ subject, resource: { service: 'community', type: 'space'|'thread', id },
+  owner, fallback: { requirement: 'member', binding: 'community:members_only' } }` — the owner is the
+  one Community stored, and the creator's own VIP rule for that resource (plan or perk requirement) wins
+  over the default gate. A gated thread in a gated space needs both.
+- **The owner and discussion moderators always pass** (the owner without asking VIP).
+- **Fails closed**: signed out, not a member, VIP down, a refused token or no `OV_OAUTH_CLIENT_SECRET`
+  are all `403 vip.members_only` `{ reason, gate, members_only: { owner, owner_username, join_url } }`.
+  Pages show a `noindex` teaser (space name, or the thread title) with the join link to the creator's
+  page on openvibe.vip, never a post.
+- **Listings** keep a gated thread's title with `members_only` (never a body); gated spaces are listed
+  with their join link.
+- **Never public**: gated spaces and threads stay out of Pulse (not recorded, removed when gated later,
+  and filtered at read time), the Discord relay (not queued; pending deliveries dropped; re-checked at
+  send), the sitemap, the RSS feeds (a gated space's feed is 404) and JSON-LD; a member's view of a
+  gated thread is `noindex` as well.
+- **Convergence**: answers are cached per viewer and resource (`server/vip/`, VIP's `createVipCache`):
+  a "yes" at most `VIP_CACHE_TTL_MS` (30 s), a "no" 10 s, a failure 2 s. Community has no Events inbox,
+  so **once VIP stops granting** (it applied Billing's `billing.entitlement.changed` and emitted
+  `vip.membership.changed`) **Community stops within 30 s**; the end-to-end bound from Billing's change
+  is VIP's (seconds with events, at most `VIP_PROJECTION_MAX_AGE_MS` + 30 s without; see the table in
+  OpenVibe.VIP's README). `app.locals.vip.cache.handleEvent(envelope)` converges at once if an Events
+  subscription is added later. `test/members-only.test.js` proves both.
+- The client (`server/vip/vip-client.js`) is OpenVibe.VIP's `client/vip-client.js` vendored at 2accbeb
+  until VIP publishes a tag to pin.
+- **Grant needed** on the Network: `community` → `vip.resource.policy.evaluate` on `openvibe.vip`.
 
 Votes (comments and threads) are one UPSERT per person plus a score recomputed from the vote
 rows in the same IMMEDIATE transaction (`server/votes.js`), so concurrent votes cannot drift
@@ -428,6 +466,10 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | *(any name)* e.g. `DISCORD_WEBHOOK_FEEDBACK` | — | A Discord webhook URL, named by a relay mapping's `webhook_url_ref` |
 | `VIEW_HASH_SECRET` | derived from the client secret | Salt for hashed visitor ids in view counts |
 | `COOKIE_SECURE` | `true` in production | Set `false` for plain-http local dev |
+| `OV_VIP_INTERNAL_URL` | `http://127.0.0.1:4620` | OpenVibe.VIP's API (members-only spaces and threads) |
+| `OV_VIP_URL` | `https://openvibe.vip` | Public VIP site, for join links |
+| `VIP_TIMEOUT_MS` | `2000` | One VIP call |
+| `VIP_CACHE_TTL_MS` / `VIP_CACHE_DENY_TTL_MS` / `VIP_CACHE_UNAVAILABLE_TTL_MS` | `30000` / `10000` / `2000` | How long a yes / no / failure is cached (the yes TTL is the convergence bound) |
 
 ## Run
 
@@ -487,6 +529,7 @@ server/
   comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments),
                       routes (the /c/:accessId page), live-import (Live's old VOD/clip comments)
   forum/              spaces/threads/posts: store, service, api (/api/v1/spaces, /posts), routes (pages)
+  vip/                OpenVibe.VIP gate for members-only spaces/threads (index.js) + the vendored client
   pulse/              Pulse read model: store, service (hooks + ingest), api (/api/v1/pulse)
   relay/              Discord relay: discord.js (queue, worker, backoff), api (/api/v1/relay)
   http/v1.js          /api/v1 helpers: problem errors, capability guards, cursors, CORS
@@ -496,7 +539,7 @@ server/
   limits.js           per-person write limits
   render/layout.js    page shell: SEO head, shared chrome, hashed assets
   render/pages.js     home / browse / paste / new / my / error templates
-  render/forum.js     spaces / threads / thread / new-thread templates
+  render/forum.js     spaces / threads / thread / new-thread / members-only teaser templates
   render/pulse.js     the /pulse page
   render/comments.js  a comment thread's own page
   render/markdown.js  the safe Markdown subset for posts

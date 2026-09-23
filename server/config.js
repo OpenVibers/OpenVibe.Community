@@ -60,6 +60,20 @@ module.exports = {
     apiCorsOrigins: (process.env.API_CORS_ORIGINS || 'https://openvibe.live,https://openvibe.media,https://openvibe.network,https://openvibe.tools,https://openvibe.games')
         .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean),
 
+    // OpenVibe.VIP — members-only spaces and threads (forum/service.js). Every answer comes from
+    // VIP's POST /api/v1/policies/evaluate (capability vip.resource.policy.evaluate, client
+    // credentials of client `community`), cached per viewer: a "yes" at most ttlMs (the convergence
+    // bound after VIP stops granting), a "no" denyTtlMs, a failure unavailableTtlMs. Without a
+    // client secret or with VIP down, nobody but the owner and discussion moderators gets in.
+    vip: {
+        internalUrl: (process.env.OV_VIP_INTERNAL_URL || 'http://127.0.0.1:4620').replace(/\/$/, ''),
+        publicUrl: (process.env.OV_VIP_URL || 'https://openvibe.vip').replace(/\/$/, ''),
+        timeoutMs: parseInt(process.env.VIP_TIMEOUT_MS, 10) || 2000,
+        ttlMs: parseInt(process.env.VIP_CACHE_TTL_MS, 10) || 30_000,
+        denyTtlMs: parseInt(process.env.VIP_CACHE_DENY_TTL_MS, 10) || 10_000,
+        unavailableTtlMs: parseInt(process.env.VIP_CACHE_UNAVAILABLE_TTL_MS, 10) || 2_000,
+    },
+
     // Discord relay (outbound: new threads → a Discord webhook per mapped space). Off by default.
     // Webhook URLs live in environment variables named by relay_mappings.webhook_url_ref.
     discordRelay: {

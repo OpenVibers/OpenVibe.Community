@@ -339,6 +339,8 @@ function openDb(file) {
  *   bits); the sequential id is for services only, so threads cannot be enumerated. Threads made
  *   before the column existed get one here.
  *   comments.edited_at — when the author last edited the text (null: never edited).
+ *   spaces.members_only_owner, threads.members_only_owner — members-only for a creator's OpenVibe.VIP
+ *   members (their Network subject); NULL: not gated. See forum/service.js.
  */
 function migrate(db) {
     const cols = new Set(db.prepare('PRAGMA table_info(comment_threads)').all().map((c) => c.name));
@@ -351,6 +353,11 @@ function migrate(db) {
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_threads_access ON comment_threads(access_id)');
     const commentCols = new Set(db.prepare('PRAGMA table_info(comments)').all().map((c) => c.name));
     if (!commentCols.has('edited_at')) db.exec('ALTER TABLE comments ADD COLUMN edited_at DATETIME');
+    // Members-only (OpenVibe.VIP): the creator (usr_…) whose members may read and post.
+    for (const table of ['spaces', 'threads']) {
+        const c = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((x) => x.name));
+        if (!c.has('members_only_owner')) db.exec(`ALTER TABLE ${table} ADD COLUMN members_only_owner TEXT`);
+    }
 }
 
 /** cth_ + 22 base64url characters (16 random bytes). */

@@ -51,6 +51,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         if (!enabled || !thread || !space) return 0;
         if (thread.origin === 'discord') return 0;       // loop prevention
         if (space.visibility !== 'public') return 0;     // members/staff spaces never leave the site
+        if (space.members_only_owner || thread.members_only_owner) return 0;   // nor do VIP members-only ones
         const mappings = db.prepare("SELECT * FROM relay_mappings WHERE space_id = ? AND direction = 'out' AND enabled = 1").all(space.id);
         let queued = 0;
         const insert = db.prepare(`INSERT INTO relay_deliveries (thread_id, mapping_id, dedupe_key, next_attempt_at) VALUES (?, ?, ?, ?)
@@ -108,6 +109,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         const space = thread ? forumStore.getSpaceById(db, thread.space_id) : null;
         if (!thread || thread.deleted_at || !space) return record(d, { ok: false, error: 'thread is gone' });
         if (thread.origin === 'discord') return record(d, { ok: false, error: 'loop prevention: thread came from Discord' });
+        if (space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return record(d, { ok: false, error: 'the thread is no longer public (members-only or a restricted space)' });
         if (!refAllowed(d.webhook_url_ref)) return record(d, { ok: false, error: 'webhook_url_ref is not an allowed webhook variable' });
         const url = env[d.webhook_url_ref];
         if (!url) return record(d, { ok: false, retry: true, error: `webhook URL variable ${d.webhook_url_ref} is not set` });

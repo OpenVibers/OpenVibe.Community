@@ -13,10 +13,15 @@
  *   POST   /spaces/:space/threads/:slug/posts { body }    reply
  *   POST   /spaces/:space/threads/:slug/votes { value }   1 | -1 | 0
  *   PUT    /spaces/:space/threads/:slug/state { pinned?, locked? }   moderators
+ *   PUT    /spaces/:space/members-only { owner: 'usr_…' | null }        moderators (OpenVibe.VIP gate)
+ *   PUT    /spaces/:space/threads/:slug/members-only { owner | true | null }   the author (own members) or moderators
+ *   POST   /spaces/:space/threads { …, members_only: true | { owner } }        start a members-only thread
  *   PUT    /posts/:id { body }   DELETE /posts/:id   GET /posts/:id/versions
  *
  * Services write with community.post.create (as X-OV-Subject, or as AI with X-OV-Origin: ai) and
- * moderate with community.comment.moderate. Errors are problem+json.
+ * moderate with community.comment.moderate. Errors are problem+json. A members-only space or thread
+ * refuses readers and writers without the creator's VIP membership with 403 vip.members_only
+ * ({ reason, gate, members_only: { owner, owner_username, join_url } }).
  */
 const express = require('express');
 const contracts = require('openvibe-contracts');
@@ -42,6 +47,8 @@ function createSpacesApi({ forum, viewers }) {
     router.post('/:space/threads/:slug/posts', write, jsonBody, run((req) => forum.reply(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
     router.post('/:space/threads/:slug/votes', write, jsonBody, run((req) => forum.voteThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/threads/:slug/state', serviceCap(MOD), jsonBody, run((req) => forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/members-only', writeOrMod, jsonBody, run((req) => forum.setThreadMembersOnly(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/members-only', serviceCap(MOD), jsonBody, run((req) => forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

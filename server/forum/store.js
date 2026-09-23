@@ -57,11 +57,11 @@ function getThreadBySlug(db, spaceId, slug) {
 }
 
 /** New thread + its opening post, in one transaction. → { thread, post } */
-function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown }) {
+function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null }) {
     return db.transaction(() => {
         const slug = uniqueSlug(db, space_id, slugify(title));
-        const info = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin) VALUES (?, ?, ?, ?, ?)')
-            .run(space_id, slug, title, author_subject, origin);
+        const info = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(space_id, slug, title, author_subject, origin, members_only_owner);
         const threadId = info.lastInsertRowid;
         const p = db.prepare('INSERT INTO posts (thread_id, author_subject, origin, is_opening, body_markdown) VALUES (?, ?, ?, 1, ?)')
             .run(threadId, author_subject, origin, body_markdown);
@@ -89,10 +89,11 @@ function listThreads(db, spaceId, { sort = 'hot', limit = 25, offset = 0, now = 
     return { rows, total };
 }
 
-/** Latest threads across spaces of the given visibilities (sitemap, feeds). */
+/** Latest threads across spaces of the given visibilities (sitemap, feeds); members-only ones never. */
 function recentThreads(db, { visibilities = ['public'], limit = 50, spaceSlug = null } = {}) {
     return db.prepare(`SELECT t.*, s.slug AS space_slug, s.name AS space_name FROM threads t JOIN spaces s ON s.id = t.space_id
                        WHERE t.deleted_at IS NULL AND s.visibility IN (${visibilities.map(() => '?').join(', ')}) AND (? IS NULL OR s.slug = ?)
+                         AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL
                        ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(...visibilities, spaceSlug, spaceSlug, limit);
 }
 
@@ -102,6 +103,16 @@ function setThreadFlags(db, id, { pinned, locked }) {
     if (locked !== undefined) { sets.push('locked = ?'); params.push(locked ? 1 : 0); }
     if (sets.length) db.prepare(`UPDATE threads SET ${sets.join(', ')} WHERE id = ?`).run(...params, id);
     return getThread(db, id);
+}
+
+/** Members-only for a creator's VIP members (owner = their usr_ subject), or open (null). */
+function setThreadMembersOnly(db, id, owner) {
+    db.prepare('UPDATE threads SET members_only_owner = ? WHERE id = ?').run(owner || null, id);
+    return getThread(db, id);
+}
+function setSpaceMembersOnly(db, id, owner) {
+    db.prepare('UPDATE spaces SET members_only_owner = ? WHERE id = ?').run(owner || null, id);
+    return getSpaceById(db, id);
 }
 
 function softDeleteThread(db, id) {
@@ -177,6 +188,6 @@ function countPostsSince(db, subject, sinceSql) {
 module.exports = {
     SORTS, slugify,
     listSpaces, getSpace, getSpaceById,
-    getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, softDeleteThread, countThreadsSince,
+    getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
     getPost, addPost, listPosts, editPost, listPostVersions, softDeletePost, countPostsSince,
 };

@@ -9,7 +9,10 @@
  *   GET  /s/:space/feed.xml              RSS: latest threads of one public space
  *   GET  /s/:space/new   POST /s/:space/new               start a thread
  *   GET  /s/:space/t/:slug                                a thread (?page=)
- *   POST /s/:space/t/:slug/reply | /vote | /state | /delete   no-JS forms
+ *   POST /s/:space/t/:slug/reply | /vote | /state | /delete | /members-only   no-JS forms
+ *
+ * A members-only (OpenVibe.VIP) space or thread the viewer may not use renders a teaser with the
+ * creator's join link (403), never its posts.
  *
  * Form posts carry the ov_token cookie (SameSite=Lax, so other sites cannot post as the
  * visitor); an Origin header from somewhere else is refused as well.
@@ -31,7 +34,10 @@ function createForumRoutes({ forum, viewers, config }) {
     /** Render an ApiError as a page: sign-in for 401, the error page for the rest. */
     function failPage(req, res, err, next) {
         if (!(err instanceof ApiError)) return next(err);
-        if (err.status === 401) return login(res, req.originalUrl.replace(/\/(reply|vote|state|delete)$/, ''));
+        if (err.status === 401) return login(res, req.originalUrl.replace(/\/(reply|vote|state|delete|members-only)$/, ''));
+        if (err.code === 'vip.members_only' && err.extra) {
+            return html(res, forumPages.membersOnlyPage({ ...err.extra, user: req.user, next: req.originalUrl.replace(/\/(reply|vote|state|delete|members-only|new)$/, '') }), 403);
+        }
         const titles = { 404: 'Not found', 403: 'Not allowed', 429: 'Slow down' };
         return html(res, pages.errorPage({ status: err.status, title: titles[err.status] || 'That did not work', message: err.message }), err.status);
     }
@@ -43,7 +49,7 @@ function createForumRoutes({ forum, viewers, config }) {
     }
 
     router.get('/s', withViewer, wrap(async (req, res, next) => {
-        try { html(res, forumPages.spacesPage({ ...forum.listSpaces(req.viewer), user: req.user })); } catch (err) { failPage(req, res, err, next); }
+        try { html(res, forumPages.spacesPage({ ...(await forum.listSpaces(req.viewer)), user: req.user })); } catch (err) { failPage(req, res, err, next); }
     }));
 
     router.get('/s/feed.xml', (_req, res) => {
@@ -64,23 +70,26 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.get('/s/:space/new', withViewer, (req, res, next) => {
+    router.get('/s/:space/new', withViewer, wrap(async (req, res, next) => {
         try {
-            const { space } = forum.space(req.viewer, req.params.space);
+            // A members-only space: the teaser, not the form, for someone who may not post there.
+            await forum.listThreads(req.viewer, req.params.space, { limit: 1 });
+            const { space } = await forum.space(req.viewer, req.params.space);
             html(res, forumPages.newThreadPage({ space, user: req.user }));
         } catch (err) { failPage(req, res, err, next); }
-    });
+    }));
 
     router.post('/s/:space/new', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         const values = { title: String((req.body || {}).title || '').slice(0, 200), body: String((req.body || {}).body || '').slice(0, 40_000) };
+        if ((req.body || {}).members_only === '1') values.members_only = true;
         try {
             const out = await forum.createThread(req.viewer, req.params.space, values);
             seo.resetCaches();
             res.redirect(303, out.thread.url);
         } catch (err) {
-            if (!(err instanceof ApiError) || err.status === 401 || err.status === 404) return failPage(req, res, err, next);
+            if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);
             try {
-                const { space } = forum.space(req.viewer, req.params.space);
+                const { space } = await forum.space(req.viewer, req.params.space);
                 html(res, forumPages.newThreadPage({ space, user: req.user, values, error: err.message }), err.status);
             } catch (e) { failPage(req, res, e, next); }
         }
@@ -102,7 +111,7 @@ function createForumRoutes({ forum, viewers, config }) {
             const out = await forum.reply(req.viewer, req.params.space, req.params.slug, { body: draft });
             res.redirect(303, out.url);
         } catch (err) {
-            if (!(err instanceof ApiError) || err.status === 401 || err.status === 404) return failPage(req, res, err, next);
+            if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);
             try {
                 // The reply form lives on the thread's last page; show it there with the error and the draft.
                 const probe = await forum.getThread(req.viewer, req.params.space, req.params.slug, {});
@@ -114,12 +123,21 @@ function createForumRoutes({ forum, viewers, config }) {
 
     const back = (req) => `/s/${encodeURIComponent(req.params.space)}/t/${encodeURIComponent(req.params.slug)}`;
 
-    router.post('/s/:space/t/:slug/vote', withViewer, sameOrigin, form, (req, res, next) => {
+    router.post('/s/:space/t/:slug/vote', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         try {
-            forum.voteThread(req.viewer, req.params.space, req.params.slug, { value: (req.body || {}).value });
+            await forum.voteThread(req.viewer, req.params.space, req.params.slug, { value: (req.body || {}).value });
             res.redirect(303, back(req));
         } catch (err) { failPage(req, res, err, next); }
-    });
+    }));
+
+    // Members-only on/off (no JS): on gates the thread to its author's VIP members.
+    router.post('/s/:space/t/:slug/members-only', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.setThreadMembersOnly(req.viewer, req.params.space, req.params.slug, { members_only: (req.body || {}).on === '1' ? true : null });
+            seo.resetCaches();
+            res.redirect(303, back(req));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
 
     router.post('/s/:space/t/:slug/state', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         const b = req.body || {};

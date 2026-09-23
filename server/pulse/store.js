@@ -30,7 +30,7 @@ function removeItem(db, service, type, id) {
 /**
  * Newest first, keyset-paginated by (occurred_at, id). Community's own items are re-checked
  * against their source at read time — a paste made private, a deleted post or a thread in a
- * space that stopped being public never shows, even if nothing removed its item.
+ * space that stopped being public (or became members-only) never shows, even if nothing removed its item.
  *   opts.origin   'user' | 'ai' | 'system'
  *   opts.before   [occurred_at, id] of the last item already seen
  * → { rows, hasMore }
@@ -43,9 +43,11 @@ function listItems(db, { origin = null, before = null, limit = 30 } = {}) {
           AND (i.source_service <> 'community'
                OR (i.source_type = 'paste' AND EXISTS (SELECT 1 FROM pastes p WHERE p.slug = i.source_id AND p.deleted_at IS NULL AND p.visibility = 'public'))
                OR (i.source_type = 'thread' AND EXISTS (SELECT 1 FROM threads t JOIN spaces s ON s.id = t.space_id
-                                                        WHERE t.id = CAST(i.source_id AS INTEGER) AND t.deleted_at IS NULL AND s.visibility = 'public'))
+                                                        WHERE t.id = CAST(i.source_id AS INTEGER) AND t.deleted_at IS NULL AND s.visibility = 'public'
+                                                          AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL))
                OR (i.source_type = 'post' AND EXISTS (SELECT 1 FROM posts po JOIN threads t ON t.id = po.thread_id JOIN spaces s ON s.id = t.space_id
-                                                      WHERE po.id = CAST(i.source_id AS INTEGER) AND po.deleted_at IS NULL AND t.deleted_at IS NULL AND s.visibility = 'public')))
+                                                      WHERE po.id = CAST(i.source_id AS INTEGER) AND po.deleted_at IS NULL AND t.deleted_at IS NULL AND s.visibility = 'public'
+                                                        AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL)))
         ORDER BY i.occurred_at DESC, i.id DESC
         LIMIT @limit`).all({ origin, at: before ? before[0] : null, id: before ? before[1] : null, limit: limit + 1 });
     const hasMore = rows.length > limit;

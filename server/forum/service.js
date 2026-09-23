@@ -16,6 +16,16 @@
  *
  * Side effects of a new thread/post: a Pulse item (public spaces) and, for threads, a Discord
  * relay delivery per mapping (relay/discord.js; off unless DISCORD_RELAY_ENABLED).
+ *
+ * Members-only (OpenVibe.VIP): a space or a single thread can be for one creator's VIP members
+ * (members_only_owner = the creator's usr_ subject). Reading its threads and posts, starting a
+ * thread, replying, voting and editing need an active entitlement, asked of VIP
+ * (POST /policies/evaluate with that owner, through vip/index.js's cache); a gated thread in a gated
+ * space needs both. The owner and discussion moderators always pass; every doubt (signed out, VIP
+ * down, no grant) is a 403 vip.members_only with the reason and a join link. Listings keep a gated
+ * thread's title with its members_only flag, never a body; gated things never reach Pulse, the Discord
+ * relay, sitemaps or feeds. Moderators gate spaces (for any creator) and threads; a thread's author
+ * gates it to their own members.
  */
 const store = require('./store');
 const { applyVote, myVotes, parseVote } = require('../votes');
@@ -24,6 +34,7 @@ const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
 const { discussionModerator } = require('../identity/capabilities');
 const { renderMarkdown } = require('../render/markdown');
+const { isUserSubject } = require('../vip');
 
 const THREADS_PER_PAGE = 25;
 const POSTS_PER_PAGE = 50;
@@ -31,7 +42,7 @@ const TITLE_MIN = 3, TITLE_MAX = 200;
 const BODY_MAX = 40_000;
 const THREADS_PER_DAY = 20;
 
-function createForumService({ db, network = null, pulse = null, relay = null, limits = {} } = {}) {
+function createForumService({ db, network = null, pulse = null, relay = null, vip = null, limits = {} } = {}) {
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
@@ -47,6 +58,47 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
         if (space.visibility === 'public') return true;
         if (space.visibility === 'members') return person(v) || moderator(v);
         return moderator(v);
+    }
+
+    // ── members-only (OpenVibe.VIP) ──────────────────────────
+    /** { owner, join_url } for a gated row, null for an open one. */
+    async function membersOnly(owner, projections = null) {
+        if (!owner) return null;
+        const p = (projections || await authors.projectionsFor([owner])).get(owner);
+        const username = p && p.username ? p.username : null;
+        return { owner, owner_username: username, join_url: vip ? vip.joinUrl(owner, username) : null };
+    }
+
+    /**
+     * Throw 403 vip.members_only unless the viewer may use every gated level named: the space and/or
+     * the thread. Moderators pass; the owner passes; the rest is VIP's answer (fail closed).
+     */
+    async function requireMembership(v, space, thread = null) {
+        if (moderator(v)) return;
+        const gates = [];
+        if (space && space.members_only_owner) gates.push({ type: 'space', id: space.slug, owner: space.members_only_owner });
+        if (thread && thread.members_only_owner) gates.push({ type: 'thread', id: String(thread.id), owner: thread.members_only_owner });
+        for (const g of gates) {
+            const subject = person(v) ? v.subject : null;
+            const d = vip ? await vip.check({ subject, type: g.type, id: g.id, owner: g.owner })
+                : (subject && subject === g.owner ? { allow: true } : { allow: false, reason: 'vip_unavailable' });
+            if (d.allow) continue;
+            const mo = await membersOnly(g.owner);
+            fail(403, 'vip.members_only', `Only members of this creator's OpenVibe.VIP can read and post in this ${g.type}`, {
+                reason: d.reason || 'denied', gate: g.type, members_only: mo,
+                space: { slug: space.slug, name: space.name, description: space.description || null },
+                thread: thread ? { slug: thread.slug, title: thread.title } : null,
+            });
+        }
+    }
+
+    /** A creator subject a viewer may gate something to: themselves, or anyone for moderators. */
+    function gateOwner(v, requested, fallbackOwner) {
+        if (requested === null || requested === false || requested === undefined) return null;
+        const owner = requested === true ? fallbackOwner : (typeof requested === 'object' ? requested.owner : requested);
+        if (!isUserSubject(owner)) fail(400, 'members_only.invalid_owner', 'members_only.owner must be the creator\'s Network subject (usr_…)');
+        if (!moderator(v) && !(person(v) && owner === v.subject)) fail(403, 'members_only.not_yours', 'You can only make things members-only for your own VIP members');
+        return owner;
     }
 
     /** The space, or 404 (staff spaces look missing) / 401 (members-only, signed out). */
@@ -96,8 +148,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
     const threadUrl = (space, t) => `/s/${space.slug}/t/${t.slug}`;
 
     function shapeThread(t, space, v, projections, votes) {
+        const mo = t.members_only_owner || null;
+        const p = mo && projections ? projections.get(mo) : null;
         return {
             id: t.id, space: space.slug, slug: t.slug, title: t.title, url: threadUrl(space, t),
+            members_only: mo ? { owner: mo, owner_username: p && p.username ? p.username : null, join_url: vip ? vip.joinUrl(mo, p && p.username) : null } : null,
             author: authors.author(t.author_subject, t.origin, projections), origin: t.origin,
             pinned: !!t.pinned, locked: !!t.locked, score: t.score, reply_count: t.reply_count,
             last_activity_at: isoTime(t.last_activity_at), created_at: isoTime(t.created_at),
@@ -120,17 +175,28 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
     }
 
     async function shapeThreads(rows, spaceOf, v) {
-        const projections = await authors.projectionsFor(rows.map((r) => r.author_subject));
+        const projections = await authors.projectionsFor([...rows.map((r) => r.author_subject), ...rows.map((r) => r.members_only_owner)]);
         const votes = myVotes(db, 'thread', rows.map((r) => r.id), v && v.subject);
         return rows.map((r) => shapeThread(r, spaceOf(r), v, projections, votes));
     }
 
-    function shapeSpace(s) {
+    function shapeSpace(s, mo = null) {
         return {
             slug: s.slug, name: s.name, description: s.description, visibility: s.visibility, url: `/s/${s.slug}`,
+            members_only: s.members_only_owner ? (mo || { owner: s.members_only_owner, owner_username: null, join_url: vip ? vip.joinUrl(s.members_only_owner) : null }) : null,
             thread_count: s.thread_count != null ? s.thread_count : undefined,
             last_activity_at: s.last_activity_at !== undefined ? isoTime(s.last_activity_at) : undefined,
         };
+    }
+
+    /** Newly gated threads leave Pulse and the Discord relay queue at once (reads re-check as well). */
+    function hideGated(threadIds) {
+        if (!threadIds.length) return;
+        if (pulse) hook(() => { for (const id of threadIds) { pulse.threadGone(id); for (const p of db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(id)) pulse.postGone(p.id); } });
+        hook(() => {
+            const del = db.prepare("DELETE FROM relay_deliveries WHERE thread_id = ? AND status = 'pending'");
+            for (const id of threadIds) del.run(id);
+        });
     }
 
     function removeThread(v, thread) {
@@ -148,25 +214,31 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
 
         isModerator: moderator,
 
-        /** Spaces this viewer can open, with thread counts. */
-        listSpaces(v) {
+        /** Spaces this viewer can open, with thread counts (members-only ones carry members_only). */
+        async listSpaces(v) {
             const vis = ['public'];
             if (person(v) || moderator(v)) vis.push('members');
             if (moderator(v)) vis.push('staff');
-            return { spaces: store.listSpaces(db, vis).map(shapeSpace) };
+            const rows = store.listSpaces(db, vis);
+            const projections = await authors.projectionsFor(rows.map((r) => r.members_only_owner));
+            return { spaces: await Promise.all(rows.map(async (r) => shapeSpace(r, await membersOnly(r.members_only_owner, projections)))) };
         },
 
-        space(v, slug) { return { space: shapeSpace(spaceFor(v, slug)) }; },
+        async space(v, slug) {
+            const s = spaceFor(v, slug);
+            return { space: shapeSpace(s, await membersOnly(s.members_only_owner)) };
+        },
 
         /** A page of threads. ?sort=hot|new|top&page= */
         async listThreads(v, spaceSlug, q = {}) {
             const space = spaceFor(v, spaceSlug);
+            await requireMembership(v, space);
             const sort = store.SORTS.includes(q.sort) ? q.sort : 'hot';
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
             const perPage = Math.min(Math.max(parseInt(q.limit, 10) || THREADS_PER_PAGE, 1), 100);
             const { rows, total } = store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date() });
             return {
-                space: shapeSpace(space), sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
+                space: shapeSpace(space, await membersOnly(space.members_only_owner)), sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
                 threads: await shapeThreads(rows, () => space, v),
             };
         },
@@ -174,12 +246,13 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
         /** A thread with a page of its posts. ?page= */
         async getThread(v, spaceSlug, threadSlug, q = {}) {
             const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            await requireMembership(v, space, thread);
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
             const { rows, total } = store.listPosts(db, thread.id, { limit: POSTS_PER_PAGE, offset: (page - 1) * POSTS_PER_PAGE });
-            const projections = await authors.projectionsFor([thread.author_subject, ...rows.map((p) => p.author_subject)]);
+            const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner, space.members_only_owner, ...rows.map((p) => p.author_subject)]);
             const votes = myVotes(db, 'thread', [thread.id], v && v.subject);
             return {
-                space: shapeSpace(space),
+                space: shapeSpace(space, await membersOnly(space.members_only_owner, projections)),
                 thread: shapeThread(thread, space, v, projections, votes),
                 posts: rows.map((p) => shapePost(p, v, projections)),
                 page, per_page: POSTS_PER_PAGE, pages: Math.max(Math.ceil(total / POSTS_PER_PAGE), 1), total,
@@ -189,15 +262,21 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
                     can_vote: person(v) && !thread.locked,
                     can_moderate: moderator(v),
                     can_delete: moderator(v) || (person(v) && thread.author_subject === v.subject),
+                    can_gate: moderator(v) || (person(v) && thread.author_subject === v.subject),
                 },
             };
         },
 
-        /** New thread { title, body } → { thread, post } */
+        /**
+         * New thread { title, body, members_only? } → { thread, post }. members_only: true gates it to
+         * the author's own VIP members; { owner } names the creator (moderators, or the author themselves).
+         */
         async createThread(v, spaceSlug, body = {}) {
             const space = spaceFor(v, spaceSlug);
             const w = writer(v);
             mayPostIn(v, space);
+            await requireMembership(v, space);
+            const gate = gateOwner(v, body.members_only, w.author);
             const title = cleanTitle(body.title);
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
@@ -205,11 +284,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
                 threadLimiter.check(w.key, title);
                 if (threadsPerDay > 0 && store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
             }
-            const { thread, post } = store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text });
+            const { thread, post } = store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate });
             threadLimiter.record(w.key, title);
             if (pulse) hook(() => pulse.threadCreated(thread, space));
             if (relay) hook(() => relay.enqueueThread(thread, space));
-            const projections = await authors.projectionsFor([thread.author_subject]);
+            const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner]);
             return { thread: shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections) };
         },
 
@@ -218,6 +297,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
             const { space, thread } = threadFor(v, spaceSlug, threadSlug);
             const w = writer(v);
             mayPostIn(v, space);
+            await requireMembership(v, space, thread);
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
             postLimiter.check(w.key, text);
@@ -233,7 +313,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
 
         /** Edit { body } — the author (not on a locked thread) or a moderator. */
         async editPost(v, postId, body = {}) {
-            const { post, thread } = postFor(v, postId);
+            const { post, thread, space } = postFor(v, postId);
+            await requireMembership(v, space, thread);
             const mine = person(v) && post.author_subject === v.subject;
             if (!mine && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator edits a post');
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
@@ -243,8 +324,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
         },
 
         /** Edit history — the author or a moderator. */
-        postVersions(v, postId) {
-            const { post } = postFor(v, postId);
+        async postVersions(v, postId) {
+            const { post, thread, space } = postFor(v, postId);
+            await requireMembership(v, space, thread);
             if (!(person(v) && post.author_subject === v.subject) && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator sees the history');
             const list = store.listPostVersions(db, post.id).map((r) => ({ ...r, created_at: isoTime(r.created_at) }));
             return { revision: post.revision, versions: list.length ? list : [{ revision: post.revision, body_markdown: post.body_markdown, edited_by: post.author_subject, created_at: isoTime(post.created_at) }] };
@@ -267,11 +349,12 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
         },
 
         /** Vote { value: 1 | -1 | 0 } → { score, upvotes, downvotes, my_vote } */
-        voteThread(v, spaceSlug, threadSlug, body = {}) {
+        async voteThread(v, spaceSlug, threadSlug, body = {}) {
             const value = parseVote(body.value);
             if (value === null) fail(400, 'vote.invalid', 'value must be 1, -1 or 0');
             if (!person(v)) fail(401, 'auth.required', 'Sign in to vote');
-            const { thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            await requireMembership(v, space, thread);
             if (thread.locked) fail(403, 'thread.locked', 'This thread is locked');
             voteLimiter.check(`s:${v.subject}`);
             const out = applyVote(db, 'thread', thread.id, v.subject, value);
@@ -292,6 +375,36 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
             return { thread: shapeThread(next, space, v, projections, null) };
         },
 
+        /**
+         * Members-only for a thread { owner: 'usr_…' | null } (or { members_only: … }). Its author gates
+         * it to themselves (and opens it again); moderators name any creator. Gating takes it out of
+         * Pulse and cancels pending Discord relay deliveries.
+         */
+        async setThreadMembersOnly(v, spaceSlug, threadSlug, body = {}) {
+            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const mine = person(v) && thread.author_subject === v.subject;
+            if (!mine && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator makes a thread members-only');
+            await requireMembership(v, space, null);
+            const requested = body.members_only !== undefined ? body.members_only : body.owner;
+            const owner = gateOwner(v, requested === undefined ? null : requested, thread.author_subject);
+            if (!owner && thread.members_only_owner && !moderator(v) && thread.members_only_owner !== v.subject) fail(403, 'members_only.not_yours', 'Only the creator it is gated to, or a moderator, opens it again');
+            const next = store.setThreadMembersOnly(db, thread.id, owner);
+            if (owner) hideGated([thread.id]);
+            const projections = await authors.projectionsFor([next.author_subject, next.members_only_owner]);
+            return { thread: shapeThread(next, space, v, projections, null) };
+        },
+
+        /** Members-only for a whole space { owner: 'usr_…' | null } — moderators. */
+        async setSpaceMembersOnly(v, spaceSlug, body = {}) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators make a space members-only');
+            const space = spaceFor(v, spaceSlug);
+            const requested = body.members_only !== undefined ? body.members_only : body.owner;
+            const owner = gateOwner(v, requested === undefined ? null : requested, null);
+            const next = store.setSpaceMembersOnly(db, space.id, owner);
+            if (owner) hideGated(db.prepare('SELECT id FROM threads WHERE space_id = ?').all(space.id).map((r) => r.id));
+            return { space: shapeSpace(next, await membersOnly(next.members_only_owner)) };
+        },
+
         /** Latest threads in public spaces, with their opening post (sitemap, feeds). */
         recentPublic({ limit = 50, space = null } = {}) {
             const rows = store.recentThreads(db, { visibilities: ['public'], limit, spaceSlug: space });
@@ -299,7 +412,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, li
             return rows.map((t) => ({ ...t, opening: (opening.get(t.id) || {}).body_markdown || '' }));
         },
 
-        publicSpaces() { return store.listSpaces(db, ['public']).map(shapeSpace); },
+        /** Public, open spaces (sitemap, feeds): members-only spaces are left out. */
+        publicSpaces() { return store.listSpaces(db, ['public']).filter((s) => !s.members_only_owner).map((s) => shapeSpace(s)); },
     };
 }
 
