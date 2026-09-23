@@ -89,7 +89,7 @@ function cors(origins) {
             res.set('Access-Control-Allow-Origin', origin);
             res.set('Vary', 'Origin');
             res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, traceparent, X-OpenVibe-Request-Id');
-            res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+            res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
             res.set('Access-Control-Expose-Headers', 'X-OpenVibe-Request-Id, Retry-After');
             res.set('Access-Control-Max-Age', '600');
         }

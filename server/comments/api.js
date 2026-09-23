@@ -8,6 +8,8 @@
  *                                        :id is the access id (cth_…); the sequential id is for services only
  *   POST   /threads/:id/comments        { message, parent_id?, anon_name? }
  *   PUT    /threads/:id/visibility      { visibility: public|hidden|locked }   moderators
+ *   GET    /:commentId                  one comment + its thread (ref included)   services only
+ *   PATCH  /:commentId                  { message }   the author only
  *   DELETE /:commentId                  author or moderator
  *   POST   /:commentId/votes            { value: 1|-1|0 }
  *
@@ -38,6 +40,8 @@ function createCommentsApi({ service, viewers, anonWriteLimiter, resolveLimiter 
     router.post('/threads/:id/comments', serviceCap(WRITE), anonWriteLimiter || passAnon, jsonBody,
         run((req) => service.add(req.viewer, req.params.id, req.body || {}), 201));
     router.put('/threads/:id/visibility', serviceCap(MOD), jsonBody, run((req) => service.setVisibility(req.viewer, req.params.id, req.body || {})));
+    router.get('/:commentId', read, run((req) => service.getComment(req.viewer, req.params.commentId)));
+    router.patch('/:commentId', serviceCap(WRITE), jsonBody, run((req) => service.edit(req.viewer, req.params.commentId, req.body || {})));
     router.delete('/:commentId', serviceAnyCap([WRITE, MOD]), run((req) => service.remove(req.viewer, req.params.commentId)));
     router.post('/:commentId/votes', serviceCap(WRITE), jsonBody, run((req) => service.vote(req.viewer, req.params.commentId, req.body || {})));
 

@@ -106,6 +106,7 @@ Pages (server-rendered HTML):
 | `GET /s/:space/new`, `POST /s/:space/new` | Start a thread (signed in) |
 | `POST /s/:space/t/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete) |
 | `GET /pulse` | Public activity across the network — `?origin=user\|ai\|system`, `?after=` |
+| `GET /c/:accessId`, `POST /c/:accessId` | One comment thread's own page — the same thread the owner product embeds (e.g. a Live VOD), newest first, `?after=` for older; signed-in people comment with the no-JS form. Opens only by the unguessable access id, `noindex` |
 
 API and machine endpoints:
 
@@ -156,6 +157,8 @@ resolves it. Errors are `application/problem+json` (`errors.problem@1`, with the
 | `POST /threads/resolve` `{ ref }` | Get-or-create the entity's thread (201 created, 200 existing; idempotent, unique on service+type+id) |
 | `GET /threads/:id` | The thread + first page of top-level comments, replies nested one level. `?after=<last id>`, `?sort=old\|new`, `?limit=`; `?parent=<id>` pages one comment's replies |
 | `POST /threads/:id/comments` `{ message, parent_id?, anon_name? }` | Comment. A reply to a reply joins the top-level comment's replies |
+| `GET /:commentId` | Services only: one comment and its thread (with the ref) — an owner product checks what a comment belongs to before it edits or deletes it for someone. Browsers get 404 (comment ids are sequential) |
+| `PATCH /:commentId` `{ message }` | The author only; sets `edited_at` |
 | `DELETE /:commentId` | The author or a moderator (soft; a top-level comment with replies stays as a tombstone) |
 | `POST /:commentId/votes` `{ value: 1\|-1\|0 }` | Add, change or remove your vote (people only) |
 | `PUT /threads/:id/visibility` `{ visibility: public\|hidden\|locked }` | Moderators — e.g. the owner service hides the thread of an entity it took down |
@@ -164,9 +167,13 @@ Who may do what:
 
 - **Browsers** (the Network JWT as `ov_token` cookie here, or `Authorization: Bearer` from
   another OpenVibe site through CORS — `API_CORS_ORIGINS`, never cookies) resolve threads only
-  for these types: `live` vod, clip, stream, channel · `media` object · `community` paste, post
+  for these types: `live` stream, channel · `media` object · `community` paste, post
   · `wiki` page · `blog` post · `reviews` entity. Community's own refs must exist and be
-  visible. Labels are only taken from services.
+  visible. Labels are only taken from services. Live VODs and clips are resolved by Live only:
+  a private one is missing to everyone but its owners and staff, which only Live can decide, so
+  Live hands the access id only to people who may see the item.
+- **Signed-in only**: threads of `live` vod and clip take no anonymous comments (Live's rule) —
+  a browser without a subject, or a service naming nobody, gets 401 `auth.required`.
 - **Anonymous** visitors comment with an `anon_name`, under the same 20-writes-per-10-minutes
   budget per address as anonymous pastes. People are limited per subject (10 s cooldown,
   5 per minute, no duplicate in a row; 60 votes a minute), whichever way they write.
@@ -183,6 +190,64 @@ Who may do what:
 - **Locked** threads can be read but take no comments or votes (moderators still may);
   **hidden** threads are 404 for everyone but moderators.
 - Paste comments stay in `paste_comments` behind `/api/pastes/:slug/comments` for now.
+- Comments carry `edited_at` (null until the author edits) and `can_edit` / `can_delete` for the
+  viewer.
+
+### Live's VOD and clip comments
+
+Since roadmap Wave 5 (exit criterion: Live and a second product share one Community thread),
+OpenVibe.Live keeps no comments of its own: its `/api/comments/:type/:id` routes are an adapter
+over the thread of `{ service: 'live', type: 'vod'|'clip', id }` (Live's
+`server/comments-client.js`). Live resolves the thread with its service token after its own
+visibility check, reads and comments as the signed-in person (`X-OV-Subject`), edits as the
+author, and deletes as the author, as staff (`X-OV-Staff: 1`) or — for the VOD's or clip's
+owner — as itself (`community.comment.moderate`). Deleting a VOD or clip hides its thread. The
+same thread is this site's page `/c/<access id>`; Live links to it under a public or unlisted
+item's comments.
+
+**Checking that both show the same thread** (production or local):
+
+1. Open a public VOD on Live (`https://openvibe.live/vod/<id>`), post a comment, and follow
+   "View this thread on OpenVibe.Community" under the comments. The page `/c/cth_…` lists the
+   same comments, newest first, with the same authors.
+2. Comment on that Community page while signed in, reload the Live VOD: the new comment is
+   there. Delete it on Live: it is gone from the Community page.
+3. Service-side, the same answer: `GET /api/v1/comments/threads/<id>?sort=new` with Live's token
+   returns the comments both pages render (`test/comments.test.js` checks the page against it).
+
+**Moving Live's old rows** (`scripts/import-live-comments.js`, `server/comments/live-import.js`):
+reads Live's `comments` table read-only, puts every row in exactly one bucket and prints the
+reconciliation `read = imported + held + excluded`. Imported rows keep their text and times
+(edits keep `edited_at`); the ledger is `legacy_id_map` (`live`/`comment`/<live id> → comment
+id), so re-running imports nothing twice. Authors become Network subjects from Live's
+`linked_accounts.subject_id` and the Network's identity map (system `live`); a row whose author
+maps nowhere (`unmapped_author`), maps two ways (`ambiguous_author`) or whose parent is held
+(`parent_held`) is **held** in `import_hold` (source type `live_comment`) and listed, and a later
+run imports it once the mapping exists. Deleted rows and replies under them, orphans and empty
+messages are **excluded**. Dry run is the default (everything rolled back); `--apply` requires
+`--backup <new file>`, an online backup of Community's database that is integrity-checked
+before anything is written. Community must be deployed first (the script refuses a database
+without `comments.edited_at` rather than migrate it from a dry run).
+
+Production (on the host, as the service's own user and environment through `systemd-run`, so
+no file in `/var/lib/openvibe-community` ends up owned by root). Order: deploy Community → dry
+run → apply → deploy Live → apply again (catches comments Live wrote in between; the ledger
+skips the rest) → verify as above.
+
+```
+RUN="sudo systemd-run --wait --pipe --collect -p User=ubuntu -p Group=ubuntu \
+  -p WorkingDirectory=/opt/openvibe.community -p EnvironmentFile=/etc/openvibe/community.env \
+  -E NODE_ENV=production -E COMMUNITY_DB_PATH=/var/lib/openvibe-community/community.db"
+ARGS="--live-db /opt/openvibe.live/data/live.db --community-db /var/lib/openvibe-community/community.db"
+
+$RUN /usr/bin/env node scripts/import-live-comments.js $ARGS                      # dry run
+$RUN /usr/bin/env node scripts/import-live-comments.js $ARGS --apply \
+  --backup /var/lib/openvibe-community/community.pre-live-comments-$(date -u +%Y%m%dT%H%M%SZ).db
+```
+
+Held rows: `sqlite3 /var/lib/openvibe-community/community.db "SELECT * FROM import_hold WHERE
+source_type = 'live_comment'"`. Rollback: stop Community, copy the backup over `community.db`
+(remove `community.db-wal`/`-shm`), start it; Live's own rows were never changed.
 
 Embedding it — server-side, from another product's backend (the usual way; the person is the
 one your own session says it is):
@@ -211,7 +276,7 @@ In the browser, from a page on an allowed origin that holds the visitor's Networ
 const api = (path, opts = {}) => fetch(`https://openvibe.community/api/v1/comments${path}`, {
     ...opts, headers: { Authorization: `Bearer ${networkJwt}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
 }).then((r) => r.json());
-const { thread } = await api('/threads/resolve', { method: 'POST', body: JSON.stringify({ ref: { service: 'live', type: 'clip', id: clipId } }) });
+const { thread } = await api('/threads/resolve', { method: 'POST', body: JSON.stringify({ ref: { service: 'live', type: 'stream', id: streamId } }) });
 let { comments, next_cursor } = await api(`/threads/${thread.id}`);
 if (next_cursor) ({ comments } = await api(`/threads/${thread.id}?after=${next_cursor}`));
 await api(`/${comments[0].id}/votes`, { method: 'POST', body: JSON.stringify({ value: 1 }) });
@@ -419,7 +484,8 @@ server/
   pastes/importer.js  Media export bundle → store (scripts/import-pastes.js is the CLI)
   pastes/source.js    where pages read pastes from (Live or the store)
   pastes/catalog.js   recent public pastes: trending, related, language filter
-  comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments)
+  comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments),
+                      routes (the /c/:accessId page), live-import (Live's old VOD/clip comments)
   forum/              spaces/threads/posts: store, service, api (/api/v1/spaces, /posts), routes (pages)
   pulse/              Pulse read model: store, service (hooks + ingest), api (/api/v1/pulse)
   relay/              Discord relay: discord.js (queue, worker, backoff), api (/api/v1/relay)
@@ -432,6 +498,7 @@ server/
   render/pages.js     home / browse / paste / new / my / error templates
   render/forum.js     spaces / threads / thread / new-thread templates
   render/pulse.js     the /pulse page
+  render/comments.js  a comment thread's own page
   render/markdown.js  the safe Markdown subset for posts
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
@@ -439,6 +506,7 @@ public/               css/community.css, js/community.js, favicon.svg, og-defaul
 (openvibe-shared is the pinned OpenVibe.Shared v1.0.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
 scripts/import-pastes.js  Media paste bundle importer
+scripts/import-live-comments.js  Live's VOD/clip comments → Community threads (dry run by default)
 test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
 docs/capabilities-proposal/  Wave 5 capability manifests (released in openvibe-contracts v0.7.0)
 ```

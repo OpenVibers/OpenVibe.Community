@@ -206,3 +206,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
   .thread-row, .pulse-item { flex-wrap: wrap; }
   .thread-head { gap: 10px; }
 }
+
+/* ── A comment thread's own page (/c/:accessId) ── */
+.comment-text { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-replies { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 0 18px; }
+.comment-replies .post { padding: 10px 14px; }

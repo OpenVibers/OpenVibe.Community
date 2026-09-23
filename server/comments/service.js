@@ -15,7 +15,11 @@
  *     the refs (unlisted paste slugs, private pages) and comments of entities they were not given.
  *   - comment: people (browser or service X-OV-Subject), anonymous with an anon_name, or AI output
  *     from a service (origin ai, never attributed). Not on locked threads (moderators still may).
+ *     Threads of the types in SIGNED_IN_ONLY take no anonymous comments (the owner product's rule).
+ *   - edit: the comment's author only (edited_at records it).
  *   - delete: the comment's author, or a moderator.
+ *   - one comment with its thread (getComment): services only — comment ids are sequential, so a
+ *     browser could otherwise walk them to the refs of threads it was never given.
  *   - vote: people only; 1, -1 or 0 (remove).
  *   - visibility public|hidden|locked: moderators.
  * A moderator is discussion staff (an admin/global_mod browser, or a service vouching with
@@ -34,14 +38,23 @@ const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
 const { discussionModerator: moderator } = require('../identity/capabilities');
 
-/** The entity types a browser may open a thread for (services with community.comment.write: any). */
+/**
+ * The entity types a browser may open a thread for (services with community.comment.write: any).
+ * Live VODs and clips are not here: a private one is missing to everyone but its owners and staff,
+ * and only Live can tell, so only Live opens their threads (and hands the access id to people who
+ * may see the item).
+ */
 const BROWSER_REF_TYPES = {
-    live: ['vod', 'clip', 'stream', 'channel'],
+    live: ['stream', 'channel'],
     media: ['object'],
     community: ['paste', 'post'],
     wiki: ['page'],
     blog: ['post'],
     reviews: ['entity'],
+};
+/** Threads that take comments from people only — no anonymous comments (Live's rule for VODs and clips). */
+const SIGNED_IN_ONLY = {
+    live: ['vod', 'clip'],
 };
 const VISIBILITIES = ['public', 'hidden', 'locked'];
 const MAX_MESSAGE = 5000;
@@ -87,6 +100,8 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             reply_count: c.reply_count,
             created_at: isoTime(c.created_at),
             updated_at: isoTime(c.updated_at),
+            edited_at: deleted ? null : isoTime(c.edited_at),
+            can_edit: !deleted && !!(v && v.subject && c.author_subject === v.subject),
             can_delete: !deleted && (moderator(v) || !!(v && v.subject && c.author_subject === v.subject)),
         };
         if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId));
@@ -136,6 +151,15 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
         }
     }
 
+    const signedInOnly = (t) => (SIGNED_IN_ONLY[t.ref_service] || []).includes(t.ref_type);
+
+    function cleanMessage(raw) {
+        const message = String(raw == null ? '' : raw).replace(/\u0000/g, '').trim();
+        if (!message) fail(400, 'comment.empty', 'Comment cannot be empty');
+        if (message.length > MAX_MESSAGE) fail(400, 'comment.too_long', `Comment must be under ${MAX_MESSAGE} characters`);
+        return message;
+    }
+
     const cursorId = (after) => {
         if (after == null || after === '') return null;
         if (!/^\d{1,15}$/.test(String(after))) fail(400, 'request.invalid_cursor', '`after` is the id of the last comment you have');
@@ -144,6 +168,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
 
     return {
         BROWSER_REF_TYPES,
+        SIGNED_IN_ONLY,
 
         /** POST /threads/resolve { ref } → { thread, created } */
         resolve(v, body = {}) {
@@ -197,9 +222,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
         async add(v, id, body = {}) {
             const t = visibleThread(v, id);
             if (t.visibility === 'locked' && !moderator(v)) fail(403, 'thread.locked', 'This comment thread is locked');
-            const message = String(body.message == null ? '' : body.message).replace(/\u0000/g, '').trim();
-            if (!message) fail(400, 'comment.empty', 'Comment cannot be empty');
-            if (message.length > MAX_MESSAGE) fail(400, 'comment.too_long', `Comment must be under ${MAX_MESSAGE} characters`);
+            const message = cleanMessage(body.message);
 
             let parentId = null;
             if (body.parent_id != null && body.parent_id !== '') {
@@ -211,6 +234,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
 
             const origin = v.origin === 'ai' ? 'ai' : 'user';
             const author = origin === 'ai' ? null : (v.subject || null);
+            if (!author && origin !== 'ai' && !moderator(v) && signedInOnly(t)) fail(401, 'auth.required', 'Sign in to comment here');
             let anonName = null;
             if (!author && origin !== 'ai') {
                 anonName = String(body.anon_name || '').trim().slice(0, 32).replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'Anonymous';
@@ -220,6 +244,27 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             const c = store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message });
             commentLimiter.record(key, message);
             return { comment: (await shapeComments([c], v, t))[0] };
+        },
+
+        /**
+         * GET /:commentId — one comment and its thread (with the ref), for services only: an owner
+         * product checks what a comment belongs to before it edits or deletes it for someone.
+         */
+        async getComment(v, commentId) {
+            if (!v || v.kind !== 'service') fail(404, 'comment.not_found', 'Comment not found');
+            const { comment: c, thread: t } = visibleComment(v, commentId);
+            return { comment: (await shapeComments([c], v, t))[0], thread: shapeThread(t, v) };
+        },
+
+        /** PATCH /:commentId { message } — the author only. */
+        async edit(v, commentId, body = {}) {
+            if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to edit a comment');
+            const { comment: c, thread: t } = visibleComment(v, commentId);
+            if (!(c.author_subject && c.author_subject === v.subject)) fail(403, 'comment.not_yours', 'Only the author can edit a comment');
+            if (t.visibility === 'locked' && !moderator(v)) fail(403, 'thread.locked', 'This comment thread is locked');
+            const message = cleanMessage(body.message);
+            const row = message === c.message ? c : store.editComment(db, c.id, message);
+            return { comment: (await shapeComments([row], v, t))[0] };
         },
 
         /** DELETE /comments/:id — the author or a moderator. */
@@ -257,4 +302,4 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
     };
 }
 
-module.exports = { createCommentService, BROWSER_REF_TYPES, VISIBILITIES };
+module.exports = { createCommentService, BROWSER_REF_TYPES, SIGNED_IN_ONLY, VISIBILITIES };

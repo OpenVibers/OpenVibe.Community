@@ -157,7 +157,8 @@ CREATE TABLE IF NOT EXISTS comments (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME,
-    deleted_by TEXT
+    deleted_by TEXT,
+    edited_at DATETIME                  -- the author last changed the text (migrate() adds it to older databases)
 );
 CREATE INDEX IF NOT EXISTS idx_comments_thread ON comments(thread_id, parent_id, id);
 CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id, id);
@@ -337,6 +338,7 @@ function openDb(file) {
  *   comment_threads.access_id — the unguessable handle browsers address a thread by (128 random
  *   bits); the sequential id is for services only, so threads cannot be enumerated. Threads made
  *   before the column existed get one here.
+ *   comments.edited_at — when the author last edited the text (null: never edited).
  */
 function migrate(db) {
     const cols = new Set(db.prepare('PRAGMA table_info(comment_threads)').all().map((c) => c.name));
@@ -347,6 +349,8 @@ function migrate(db) {
         db.transaction(() => { for (const r of missing) set.run(newThreadAccessId(), r.id); })();
     }
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_comment_threads_access ON comment_threads(access_id)');
+    const commentCols = new Set(db.prepare('PRAGMA table_info(comments)').all().map((c) => c.name));
+    if (!commentCols.has('edited_at')) db.exec('ALTER TABLE comments ADD COLUMN edited_at DATETIME');
 }
 
 /** cth_ + 22 base64url characters (16 random bytes). */

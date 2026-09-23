@@ -63,6 +63,12 @@ function insertComment(db, { thread_id, parent_id = null, author_subject = null,
     })();
 }
 
+/** The author's new text; edited_at records that it changed. → the row */
+function editComment(db, id, message) {
+    db.prepare('UPDATE comments SET message = ?, edited_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL').run(message, id);
+    return getComment(db, id);
+}
+
 /** Soft delete; counters recomputed from the rows. → changes */
 function softDeleteComment(db, id, deletedBy = null) {
     return db.transaction(() => {
@@ -105,4 +111,4 @@ function listReplies(db, parentId, { after = null, limit = 50 } = {}) {
     return { rows, hasMore };
 }
 
-module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, softDeleteComment, listTopLevel, listReplies };
+module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, editComment, softDeleteComment, listTopLevel, listReplies };

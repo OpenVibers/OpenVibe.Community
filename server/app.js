@@ -16,6 +16,7 @@
  *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
  *   GET /s …            spaces, threads, posts (forum/routes.js)
  *   GET /pulse          the network's public activity
+ *   GET|POST /c/:accessId   one comment thread's own page (comments/routes.js)
  *
  * Comments, the forum, Pulse and the relay live in Community's database in every mode.
  *
@@ -46,6 +47,7 @@ const { createViewerResolver } = require('./identity/viewer');
 const v1 = require('./http/v1');
 const { createCommentService } = require('./comments/service');
 const { createCommentsApi } = require('./comments/api');
+const { createCommentPages } = require('./comments/routes');
 const { createForumService } = require('./forum/service');
 const { createSpacesApi, createPostsApi } = require('./forum/api');
 const { createForumRoutes } = require('./forum/routes');
@@ -302,6 +304,7 @@ function createApp(opts = {}) {
 
     // ── Forum and Pulse pages ────────────────────────────────
     app.use(createForumRoutes({ forum, viewers, config }));
+    app.use(createCommentPages({ comments, viewers, config }));
     app.get('/pulse', viewers.middleware({ services: false }), wrap(async (req, res) => {
         const origin = pulse.ORIGINS.includes(req.query.origin) ? req.query.origin : '';
         let out;
