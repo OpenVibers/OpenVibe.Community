@@ -13,12 +13,16 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 
 ## How it fits the network
 
-Pastes are moving to Community (roadmap Wave 5). `PASTES_AUTHORITY` picks who owns them:
+Pastes moved to Community in roadmap Wave 5. `PASTES_AUTHORITY` picks who owns them:
 
-- **`live`** (default, today's production): the table below. Deploying the new code changes
-  nothing until the flag flips.
-- **`community`**: Community's own database is the authority — see
-  [Community as the paste authority](#community-as-the-paste-authority).
+- **`live`** (the code default, now the rollback mode): the table below.
+- **`community`** (production since 2026-09-22, about 23:35 UTC): Community's own database is
+  the authority — see [Community as the paste authority](#community-as-the-paste-authority).
+  The import brought 889 + 2 pastes, 60 comments and 48 likes; 5 rows (1 paste, 4 comments,
+  `ambiguous_owner`) wait in `import_hold`. Live and Tools forward paste writes here, and Media
+  answers old paste URLs with a 301 to this site. Comments, the forum and Pulse are deployed but
+  hold almost nothing yet (10 wiki comment threads, 0 forum threads), and the Discord relay is
+  off. A restore drill passed on 2026-09-23.
 
 | Concern | Where it lives | How Community reaches it |
 | --- | --- | --- |
@@ -313,16 +317,16 @@ Community checks service tokens against these capabilities (manifests in
 
 | Id | Status | Used for |
 | --- | --- | --- |
-| `community.paste.create` / `.write` / `.moderate` | in contracts | pastes |
-| `community.comment.write` | **proposed** | comment threads as a person or AI |
-| `community.comment.moderate` | **proposed** | thread visibility, comment/post/thread moderation, relay admin |
-| `community.pulse.write` | **proposed** | publishing to Pulse |
-| `community.post.create` | planned in contracts → **active** proposed | forum writes |
+| `community.paste.create` / `.write` / `.moderate` | active in contracts | pastes |
+| `community.comment.write` | active in contracts (v0.7.0) | comment threads as a person or AI |
+| `community.comment.moderate` | active in contracts (v0.7.0) | thread visibility, comment/post/thread moderation, relay admin |
+| `community.pulse.write` | active in contracts (v0.7.0) | publishing to Pulse |
+| `community.post.create` | active in contracts (v0.7.0) | forum writes |
 
-Until a contracts release carries the proposed ids, `openvibe-contracts`' `capabilities.check`
-answers `capability.unknown` for them, so `server/identity/capabilities.js` decides those ids
-locally with the library's own matching rule (the exact id or a `prefix.*` grant). Ids the
-library knows always go through the library.
+This repository pins `openvibe-contracts` v0.11.0, which knows every id above, so they all go
+through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
+the installed contracts do not know locally, with the library's own matching rule (the exact id
+or a `prefix.*` grant).
 
 ## SEO
 
@@ -384,10 +388,10 @@ in Community's database whichever service owns pastes; the three seed spaces are
 once). The database lives in the unit's `StateDirectory` (`/var/lib/openvibe-community`), so
 the code tree stays read-only.
 
-Before flipping to `community`, the Network's `community` OAuth client needs the
+Flipping to `community` (done in production on 2026-09-22) needed the Network's `community` OAuth client to have the
 `identity.subject.resolve` capability (audience `openvibe.network`) and
-`media.object.upload` (audience `openvibe.media`), and Live's service client needs the
-`community.paste.*` capabilities it will use.
+`media.object.upload` (audience `openvibe.media`), and Live's service client the
+`community.paste.*` capabilities it uses.
 
 The Network must have the OAuth client `community` registered with redirect
 `https://openvibe.community/auth/callback`, and serve the current `openvibe-shared`
