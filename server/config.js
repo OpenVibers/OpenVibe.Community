@@ -67,5 +67,7 @@ module.exports = {
         pollMs: parseInt(process.env.DISCORD_RELAY_POLL_MS, 10) || 30_000,
         backoffMs: parseInt(process.env.DISCORD_RELAY_BACKOFF_MS, 10) || 30_000,
         maxAttempts: parseInt(process.env.DISCORD_RELAY_MAX_ATTEMPTS, 10) || 6,
+        // The only variables a mapping may name (comma-separated exact names); unset = DISCORD_WEBHOOK_*.
+        webhookVars: (process.env.DISCORD_RELAY_WEBHOOK_VARS || '').split(',').map((s) => s.trim()).filter(Boolean),
     },
 };

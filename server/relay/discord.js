@@ -9,7 +9,10 @@
  *
  *   - Secrets never live in the database: a mapping stores webhook_url_ref, the NAME of an
  *     environment variable (e.g. DISCORD_WEBHOOK_FEEDBACK); the URL is read from process.env at
- *     send time.
+ *     send time. Only allow-listed names: DISCORD_RELAY_WEBHOOK_VARS (exact names) when set, else
+ *     DISCORD_WEBHOOK_*. Staff can therefore never point the relay at the URL in some other
+ *     variable (an internal service's base URL), nor learn which other variables are set; a
+ *     mapping outside the list is refused when made and never sent.
  *   - Loop prevention: a thread whose origin is 'discord' (a future inbound relay) is never
  *     relayed out, checked both when queueing and when sending.
  *   - Retries: network errors, timeouts, 5xx, 429 and a missing webhook variable are retried with
@@ -25,14 +28,19 @@ const { sqlTime, isoTime } = require('../http/v1');
 const { AI_DISPLAY_NAME } = require('../identity/authors');
 
 const ENV_NAME = /^[A-Z][A-Z0-9_]{1,63}$/;
+const WEBHOOK_VAR = /^DISCORD_WEBHOOK_[A-Z0-9_]+$/;
 const MAX_BACKOFF_MS = 60 * 60_000;
 const SEND_TIMEOUT_MS = 10_000;
 
 /** Discord markdown in names/titles shown as plain text. */
 const escapeDiscord = (s) => String(s || '').replace(/([\\*_~`|>#[\]])/g, '\\$1').replace(/@/g, '@\u200b');
 
-function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = globalThis.fetch, enabled = false, baseMs = 30_000, maxAttempts = 6, pollMs = 30_000, now = () => Date.now() } = {}) {
+/** webhookVars: exact allowed names, or null/empty for the DISCORD_WEBHOOK_* default. */
+function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = globalThis.fetch, enabled = false, baseMs = 30_000, maxAttempts = 6, pollMs = 30_000, now = () => Date.now(), webhookVars = null } = {}) {
     const base = (config.baseUrl || '').replace(/\/$/, '');
+    const allowed = Array.isArray(webhookVars) && webhookVars.length ? new Set(webhookVars) : null;
+    /** May a mapping name this variable? */
+    const refAllowed = (name) => typeof name === 'string' && ENV_NAME.test(name) && (allowed ? allowed.has(name) : WEBHOOK_VAR.test(name));
     let timer = null;
     let draining = null;
 
@@ -100,7 +108,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         const space = thread ? forumStore.getSpaceById(db, thread.space_id) : null;
         if (!thread || thread.deleted_at || !space) return record(d, { ok: false, error: 'thread is gone' });
         if (thread.origin === 'discord') return record(d, { ok: false, error: 'loop prevention: thread came from Discord' });
-        if (!ENV_NAME.test(d.webhook_url_ref)) return record(d, { ok: false, error: 'webhook_url_ref is not an environment variable name' });
+        if (!refAllowed(d.webhook_url_ref)) return record(d, { ok: false, error: 'webhook_url_ref is not an allowed webhook variable' });
         const url = env[d.webhook_url_ref];
         if (!url) return record(d, { ok: false, retry: true, error: `webhook URL variable ${d.webhook_url_ref} is not set` });
         if (!/^https?:\/\//i.test(url)) return record(d, { ok: false, error: `${d.webhook_url_ref} is not an http(s) URL` });
@@ -147,12 +155,13 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
 
     // ── admin (staff) ────────────────────────────────────────
     function shapeMapping(m) {
-        return { id: m.id, space: m.space_slug, direction: m.direction, webhook_url_ref: m.webhook_url_ref, webhook_configured: !!env[m.webhook_url_ref], enabled: !!m.enabled, created_at: isoTime(m.created_at) };
+        return { id: m.id, space: m.space_slug, direction: m.direction, webhook_url_ref: m.webhook_url_ref, webhook_configured: refAllowed(m.webhook_url_ref) && !!env[m.webhook_url_ref], enabled: !!m.enabled, created_at: isoTime(m.created_at) };
     }
     function listMappings() {
         return db.prepare('SELECT m.*, s.slug AS space_slug FROM relay_mappings m JOIN spaces s ON s.id = m.space_id ORDER BY m.id').all().map(shapeMapping);
     }
     function addMapping({ space_id, webhook_url_ref, enabled: on = true }) {
+        if (!refAllowed(webhook_url_ref)) throw new Error(`${webhook_url_ref} is not an allowed webhook variable`);
         db.prepare(`INSERT INTO relay_mappings (space_id, direction, webhook_url_ref, enabled) VALUES (?, 'out', ?, ?)
                     ON CONFLICT(space_id, direction, webhook_url_ref) DO UPDATE SET enabled = excluded.enabled`).run(space_id, webhook_url_ref, on ? 1 : 0);
         return shapeMapping(db.prepare("SELECT m.*, s.slug AS space_slug FROM relay_mappings m JOIN spaces s ON s.id = m.space_id WHERE m.space_id = ? AND m.direction = 'out' AND m.webhook_url_ref = ?").get(space_id, webhook_url_ref));
@@ -179,7 +188,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         return n;
     }
 
-    return { enabled, enqueueThread, drain, start, stop, listMappings, addMapping, setMappingEnabled, listDeliveries, retry, ENV_NAME, message };
+    return { enabled, enqueueThread, drain, start, stop, listMappings, addMapping, setMappingEnabled, listDeliveries, retry, ENV_NAME, refAllowed, message };
 }
 
-module.exports = { createDiscordRelay, escapeDiscord, ENV_NAME };
+module.exports = { createDiscordRelay, escapeDiscord, ENV_NAME, WEBHOOK_VAR };

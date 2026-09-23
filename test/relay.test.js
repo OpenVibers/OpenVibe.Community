@@ -225,6 +225,48 @@ function stubWebhook() {
         await t.close();
     });
 
+    await check('staff can map only allow-listed webhook variables, never the URL in some other env var', async () => {
+        const secretHits = [];
+        const internal = { url: 'http://127.0.0.1:9/internal', hits: secretHits };
+        const env = { DISCORD_WEBHOOK_GENERAL: `${hook.url}/api/webhooks/1/ok`, OV_MEDIA_INTERNAL_URL: internal.url, NETWORK_INTERNAL_URL: internal.url, DISCORD_WEBHOOKS_X: internal.url };
+        const fetchSpy = (url, o) => { if (String(url).startsWith(internal.url)) secretHits.push(url); return fetch(url, o); };
+        const t = await boot({ authority: 'community', appOpts: { relayOptions: { enabled: true, env, fetchImpl: fetchSpy }, forumLimits: { threads: { cooldownSec: 0 } } } });
+        const net = t.network;
+        const adminJwt = net.sign({ id: 1, subject_id: ids.newId('user'), username: 'boss', role: 'admin' });
+        const samJwt = net.sign({ id: 9, subject_id: net.addUser({ network_user_id: 9, username: 'sam' }).subject_id, username: 'sam', role: 'user' });
+        const call = (path, { method = 'GET', cookie, token, json } = {}) => t.get(path, { method, headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(json !== undefined ? { 'content-type': 'application/json' } : {}) }, body: json !== undefined ? JSON.stringify(json) : undefined, cookies: cookie ? [`ov_token=${cookie}`] : [] });
+        const map = (ref, who = { cookie: adminJwt }) => call('/api/v1/relay/mappings', { method: 'POST', json: { space: 'general', webhook_url_ref: ref }, ...who });
+        for (const ref of ['OV_MEDIA_INTERNAL_URL', 'NETWORK_INTERNAL_URL', 'DISCORD_WEBHOOKS_X', 'PATH', 'DISCORD_WEBHOOK_']) {
+            const r = await map(ref);
+            assert.strictEqual(r.status, 400, `${ref}: ${r.text}`);
+            assert.strictEqual(r.json().code, 'relay.ref_not_allowed');
+            const svc = await map(ref, { token: net.signService({ cap: ['community.comment.moderate'] }) });
+            assert.strictEqual(svc.status, 400, `${ref} as a service`);
+        }
+        assert.strictEqual(t.db.prepare('SELECT COUNT(*) AS n FROM relay_mappings').get().n, 0);
+        assert.throws(() => t.app.locals.relay.addMapping({ space_id: 1, webhook_url_ref: 'OV_MEDIA_INTERNAL_URL' }), /not an allowed webhook variable/);
+        // A mapping that predates the allow-list (straight into the table) is never sent to, and
+        // does not reveal whether that variable is set.
+        const general = t.db.prepare("SELECT id FROM spaces WHERE slug = 'general'").get();
+        t.db.prepare("INSERT INTO relay_mappings (space_id, direction, webhook_url_ref, enabled) VALUES (?, 'out', 'OV_MEDIA_INTERNAL_URL', 1)").run(general.id);
+        const listed = (await call('/api/v1/relay/mappings', { cookie: adminJwt })).json().mappings.find((m) => m.webhook_url_ref === 'OV_MEDIA_INTERNAL_URL');
+        assert.strictEqual(listed.webhook_configured, false);
+        assert.strictEqual((await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: samJwt, json: { title: 'Would go inside', body: 'hi' } })).status, 201);
+        await t.app.locals.relay.drain();
+        assert.deepStrictEqual(secretHits, [], 'nothing was sent to the internal URL');
+        const d = t.db.prepare("SELECT d.status, d.last_error FROM relay_deliveries d JOIN relay_mappings m ON m.id = d.mapping_id WHERE m.webhook_url_ref = 'OV_MEDIA_INTERNAL_URL'").get();
+        assert.strictEqual(d.status, 'failed');
+        assert.match(d.last_error, /not an allowed webhook variable/);
+        assert.strictEqual((await map('DISCORD_WEBHOOK_GENERAL')).status, 201, 'the conventional names still work');
+        await t.close();
+        // DISCORD_RELAY_WEBHOOK_VARS narrows it to exact names.
+        const { createDiscordRelay } = require('../server/relay/discord');
+        const strict = createDiscordRelay({ db: t.db, env, webhookVars: ['DISCORD_WEBHOOK_GENERAL'] });
+        assert.strictEqual(strict.refAllowed('DISCORD_WEBHOOK_GENERAL'), true);
+        assert.strictEqual(strict.refAllowed('DISCORD_WEBHOOK_OTHER'), false);
+        assert.strictEqual(createDiscordRelay({ db: t.db, env }).refAllowed('DISCORD_WEBHOOK_OTHER'), true);
+    });
+
     await hook.close();
     done();
 })();

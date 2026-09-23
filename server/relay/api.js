@@ -7,7 +7,7 @@
  *   GET  /deliveries?status=pending|delivered|failed&limit=   what was sent, what is failing and why
  *   POST /deliveries/:id/retry                                 queue a failed delivery again
  *   GET  /mappings                                             space → webhook variable name
- *   POST /mappings { space, webhook_url_ref, enabled? }        map a space (the URL stays in the env)
+ *   POST /mappings { space, webhook_url_ref, enabled? }        map a space (the URL stays in the env; allow-listed names only)
  *   PUT  /mappings/:id { enabled }
  *
  * Responses never contain a webhook URL, only the variable name and whether it is set.
@@ -47,6 +47,7 @@ function createRelayApi({ relay, db, viewers }) {
         if (!space) fail(400, 'relay.invalid_space', 'Unknown space');
         const ref = String(b.webhook_url_ref || '');
         if (!relay.ENV_NAME.test(ref)) fail(400, 'relay.invalid_ref', 'webhook_url_ref is the NAME of an environment variable (A-Z, 0-9, _), never the URL');
+        if (!relay.refAllowed(ref)) fail(400, 'relay.ref_not_allowed', 'webhook_url_ref must be an allowed webhook variable (DISCORD_RELAY_WEBHOOK_VARS, else DISCORD_WEBHOOK_*)');
         return { mapping: relay.addMapping({ space_id: space.id, webhook_url_ref: ref, enabled: b.enabled !== false }) };
     }, 201));
     router.put('/mappings/:id', jsonBody, run((req) => {

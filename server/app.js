@@ -113,6 +113,7 @@ function createApp(opts = {}) {
     const relay = opts.relay || createDiscordRelay({
         db, config, enabled: config.discordRelay.enabled,
         pollMs: config.discordRelay.pollMs, baseMs: config.discordRelay.backoffMs, maxAttempts: config.discordRelay.maxAttempts,
+        webhookVars: config.discordRelay.webhookVars,
         ...(opts.relayOptions || {}),
     });
     const forum = createForumService({ db, network, pulse, relay, limits: opts.forumLimits });

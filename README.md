@@ -271,7 +271,10 @@ with the title, an excerpt and a link to the thread to that mapping's Discord we
 
 - A mapping (`relay_mappings`) names the **environment variable** that holds the webhook URL
   (`webhook_url_ref`, e.g. `DISCORD_WEBHOOK_FEEDBACK`); the URL itself never enters the
-  database or any API response. Put the variable in `/etc/openvibe/community.env`.
+  database or any API response. Put the variable in `/etc/openvibe/community.env`. Only
+  allow-listed names can be mapped or sent to: `DISCORD_WEBHOOK_*`, or exactly the names in
+  `DISCORD_RELAY_WEBHOOK_VARS` when that is set — staff cannot point the relay at the URL in any
+  other variable (an internal service's base URL).
 - One delivery per (thread, mapping) — the dedupe key in `relay_deliveries`. Network errors,
   timeouts, 5xx, 429 (its `retry_after` honoured) and an unset variable are retried with
   exponential backoff (`DISCORD_RELAY_BACKOFF_MS` · 2^(attempt−1), at most an hour) up to
