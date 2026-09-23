@@ -154,7 +154,13 @@ const { boot, check, done } = require('./helpers/app');
         assert.match(fork.json().slug, SECRET, 'a fork of an unlisted paste is unlisted, with a secret slug');
         const service = await call('/api/pastes', { method: 'POST', token: net.signService({ cap: [CREATE] }), headers: { 'x-ov-subject': alex.subject_id }, json: { content: 'svc hidden', visibility: 'unlisted' } });
         assert.strictEqual(service.status, 201, service.text);
-        assert.match(service.json().slug, SECRET, 'service-created unlisted pastes too, unless the service names the slug');
+        assert.match(service.json().slug, SECRET, 'service-created unlisted pastes too');
+        // A service forwarding a person's body (Live's /api/pastes) cannot give an unlisted paste a chosen slug.
+        const named = await call('/api/pastes', { method: 'POST', token: net.signService({ cap: [CREATE] }), json: { content: 'weak', visibility: 'unlisted', slug: 'aaa' } });
+        assert.strictEqual(named.status, 201, named.text);
+        assert.match(named.json().slug, SECRET, 'a named slug is ignored for an unlisted paste');
+        const namedPub = await call('/api/pastes', { method: 'POST', token: net.signService({ cap: [CREATE] }), json: { content: 'imported', visibility: 'public', slug: 'imported-public-1' } });
+        assert.strictEqual(namedPub.json().slug, 'imported-public-1', 'a service still names a public paste\'s slug');
         const pub = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'public words' } });
         assert.match(pub.json().slug, SHORT, 'public pastes are listed anyway: short slug');
         // A paste made before this change (short slug, unlisted) still opens by its slug.

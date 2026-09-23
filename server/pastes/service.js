@@ -262,9 +262,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         return { ai_summary: String(body.ai_summary).slice(0, 2000), ai_tags: tags, ai_analyzed_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
     }
 
-    /** A service may name the slug (Live's imports); otherwise it is generated — secret unless the paste is public. */
+    /**
+     * A service may name the slug of a PUBLIC paste (Live's imports); otherwise it is generated. An
+     * unlisted or private paste always gets a secret slug: its slug is its only protection, and a
+     * service forwarding a person's request (Live's /api/pastes) passes their body through as-is.
+     */
     function slugFor(v, body, visibility) {
-        if (!isService(v) || body.slug == null || body.slug === '') return store.generateSlug(db, { secret: visibility !== 'public' });
+        if (!isService(v) || body.slug == null || body.slug === '' || visibility !== 'public') return store.generateSlug(db, { secret: visibility !== 'public' });
         const slug = String(body.slug);
         if (!SERVICE_SLUG_RE.test(slug) || RESERVED_SLUGS.has(slug.toLowerCase())) fail(400, 'Invalid slug');
         if (db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(slug)) fail(409, 'Slug already taken');
