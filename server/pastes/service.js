@@ -313,7 +313,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         /** GET /api/pastes/:slug — counts a page view unless noView; burns a spent burn-after-read paste. */
         async get(v, slug, ctx = {}) {
             const p = visible(v, slug);
-            if (!ctx.noView && !isOwner(v, p)) {
+            // ?no_view=1 skips view counting, never the burn: any read of a burn paste is the read.
+            if ((!ctx.noView || p.burn_after_read) && !isOwner(v, p)) {
                 if (p.burn_after_read) {
                     p.views = store.bumpViews(db, p.id);
                     if (p.views > 1) burn(p);
@@ -463,6 +464,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         async fork(v, slug) {
             const original = visible(v, slug);
             if (original.type !== 'paste') fail(400, 'Only text pastes can be forked');
+            // A lasting copy would outlive the burn; only the owner (or staff) may fork one.
+            if (original.burn_after_read && !canSeeHidden(v, original)) fail(403, 'Burn-after-read pastes cannot be forked');
             pasteRateCheck(v);
             const row = store.insertPaste(db, {
                 slug: store.generateSlug(db),
@@ -472,7 +475,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 title: store.sanitizeTitle(`Fork of ${original.title}`),
                 content: original.content,
                 language: original.language,
-                visibility: 'public',
+                // A fork never widens who can find the content: unlisted stays unlisted.
+                visibility: visibilityOf(original.visibility, !!v.subject),
                 forked_from: original.id,
             });
             return created(row, { paste: await shapeOne(row, v) });

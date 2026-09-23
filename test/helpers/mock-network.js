@@ -90,9 +90,9 @@ function start() {
         return jwt.sign({ sub: claims.id, ...claims }, privatePem, { algorithm: 'RS256', issuer, expiresIn: '1h', ...opts });
     }
     /** A client-credentials service token (identity.service-token-claims@1). */
-    function signService({ sub = 'svc:live', aud = ['openvibe.community'], cap = [], iss = issuer, expSec = 300, key = privatePem } = {}) {
+    function signService({ sub = 'svc:live', actorType = 'service', aud = ['openvibe.community'], cap = [], iss = issuer, expSec = 300, key = privatePem, extra = {} } = {}) {
         const now = Math.floor(Date.now() / 1000);
-        return serviceAuth.signServiceToken({ iss, sub, actor_type: 'service', aud, cap, iat: now, exp: now + expSec, jti: crypto.randomBytes(8).toString('hex') }, key);
+        return serviceAuth.signServiceToken({ iss, sub, actor_type: actorType, aud, cap, iat: now, exp: now + expSec, jti: crypto.randomBytes(8).toString('hex'), ...extra }, key);
     }
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => {
         const url = `http://127.0.0.1:${server.address().port}`;

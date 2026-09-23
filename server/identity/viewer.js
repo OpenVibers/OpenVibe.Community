@@ -15,6 +15,8 @@
  *       person: subject stays null). X-OV-Source-Ref may carry a JSON EntityRef (e.g. the stream).
  *       X-OV-Staff: 1 vouches that the acting person is staff; it needs community.paste.moderate
  *       (pastes) or community.comment.moderate (comments and the forum).
+ *       Developer-app (app:…) and module (mod:…) tokens act only for the person in their
+ *       on_behalf_of claim: X-OV-Subject naming anyone else is refused, and sandbox tokens are too.
  *
  * Identity never comes from a request body or query. A request that presents a service token is
  * judged on that token alone: a bad one is refused, never downgraded to anonymous.
@@ -50,6 +52,13 @@ function createViewerResolver({ auth, config, network }) {
         const r = serviceAuth.verifyServiceToken(token, { publicKey, issuer: config.networkUrl, audience: AUDIENCE });
         if (!r.ok) throw new ViewerError(401, r.code, r.reason);
         const claims = r.claims;
+        // Developer apps (app:…) and modules (mod:…) are third parties: they act only for the person
+        // who authorized them (the token's on_behalf_of), never for whoever X-OV-Subject names.
+        // Only first-party service principals (svc:…) are trusted to name the acting subject.
+        const firstParty = claims.actor_type === 'service' && String(claims.sub).startsWith('svc:');
+        if (!firstParty && claims.env !== undefined && claims.env !== 'production') {
+            throw new ViewerError(401, 'token.sandbox_refused', 'sandbox tokens are not accepted by openvibe.community');
+        }
 
         const originHeader = req.get('x-ov-origin');
         if (originHeader && originHeader !== 'ai' && originHeader !== 'user') throw new ViewerError(400, 'request.invalid_origin', 'X-OV-Origin must be "ai" or "user"');
@@ -59,8 +68,13 @@ function createViewerResolver({ auth, config, network }) {
         let subject = null;
         if (subjectHeader) {
             if (!isActingSubject(subjectHeader)) throw new ViewerError(400, 'subject.invalid', 'X-OV-Subject must be a usr_… or gst_… subject id');
+            if (!firstParty && subjectHeader !== claims.on_behalf_of) {
+                throw new ViewerError(403, 'subject.not_delegated', 'an app acts only for the person who authorized it (on_behalf_of)');
+            }
             // AI output is never attributed to a person, even if the caller also names one.
             subject = origin === 'ai' ? null : subjectHeader;
+        } else if (!firstParty && ids.isSubjectId('user', claims.on_behalf_of)) {
+            subject = origin === 'ai' ? null : claims.on_behalf_of;
         }
 
         let sourceRef = null;

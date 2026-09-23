@@ -161,7 +161,7 @@ function softDelete(db, id) {
 /**
  * List pastes.
  *   opts.ownerSubject     only this owner's pastes
- *   opts.includeHidden    also unlisted + private (only ever set for the owner or staff)
+ *   opts.includeHidden    also unlisted, private and burn-after-read (only ever set for the owner or staff)
  *   opts.type             'paste' | 'screenshot'
  *   opts.search           substring of title or content
  *   opts.origin           'user' | 'ai' (default: all)
@@ -174,7 +174,9 @@ function listPastes(db, opts = {}) {
     const params = [];
     // The AI work queue spans visibility (Media's rule) and takes rows nothing has annotated yet.
     if (opts.needsAi) where.push("COALESCE(ai_summary, '') = '' AND ai_analyzed_at IS NULL");
-    else if (!opts.includeHidden) where.push("visibility = 'public'");
+    // Burn-after-read pastes are link-only: listing them (with a content preview, or as a search
+    // hit) would give their content away without the read that burns them.
+    else if (!opts.includeHidden) where.push("visibility = 'public' AND burn_after_read = 0");
     if (opts.origin === 'user' || opts.origin === 'ai' || opts.origin === 'imported') { where.push('origin = ?'); params.push(opts.origin); }
     if (opts.ownerSubject !== undefined) { where.push('owner_subject = ?'); params.push(opts.ownerSubject); }
     if (opts.type === 'paste' || opts.type === 'screenshot') { where.push('type = ?'); params.push(opts.type); }
