@@ -113,8 +113,8 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
 
     router.get('/admin/stats', staffOnly, run(() => service.stats()));
     router.get('/admin/forks', staffOnly, run((req) => service.forks(req.query)));
-    router.delete('/admin/forks', staffOnly, run(() => service.deleteForks()));
-    router.post('/bulk', staffOnly, json, jsonErrors, run((req) => service.bulk(req.body || {})));
+    router.delete('/admin/forks', staffOnly, run((req) => service.deleteForks(req.viewer)));
+    router.post('/bulk', staffOnly, json, jsonErrors, run((req) => service.bulk(req.body || {}, req.viewer)));
 
     router.post('/screenshot', guard('community.paste.create'), anonWriteLimiter, withFile,
         run((req) => service.createScreenshot(req.viewer, req.body || {}, req.file, ctx(req)), 201));

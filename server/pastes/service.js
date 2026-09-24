@@ -17,6 +17,7 @@
  * the JSON response, or throws PasteError(status, body).
  */
 const crypto = require('crypto');
+const events = require('../events');
 const store = require('./store');
 const { stripImageMetadata } = require('../media/strip-metadata');
 const { capabilities } = require('openvibe-contracts');
@@ -454,7 +455,12 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (body.is_nsfw !== undefined) patch.is_nsfw = truthy(body.is_nsfw) ? 1 : 0;
             if (body.pinned !== undefined && isStaff(v)) patch.pinned = truthy(body.pinned) ? 1 : 0;
             if (!Object.keys(patch).length) fail(400, 'Nothing to update');
-            const row = store.updatePaste(db, p.id, patch, v.subject || null);
+            const row = db.transaction(() => {
+                const r = store.updatePaste(db, p.id, patch, v.subject || null);
+                // Staff editing someone else's paste goes to the moderation audit log (ADR-022).
+                if (!isOwner(v, p) && isStaff(v)) events.moderationAction(v, patch.visibility !== undefined && Object.keys(patch).length === 1 ? 'paste.visibility_changed' : 'paste.edited', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null }, { details: { fields: Object.keys(patch) } });
+                return r;
+            })();
             tell((pl) => pl.pasteChanged(row));
             return { paste: await shapeOne(row, v) };
         },
@@ -464,7 +470,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             needIdentity(v);
             const p = visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
-            store.softDelete(db, p.id);
+            db.transaction(() => {
+                store.softDelete(db, p.id);
+                if (!isOwner(v, p)) events.moderationAction(v, 'paste.deleted', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
+            })();
             tell((pl) => pl.pasteGone(p.slug));
             return { success: true };
         },
@@ -560,7 +569,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!c || c.paste_id !== p.id) fail(404, 'Comment not found');
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
             if (!isAuthor && !isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized to delete this comment');
-            store.softDeleteComment(db, c.id);
+            db.transaction(() => {
+                store.softDeleteComment(db, c.id);
+                if (!isAuthor && !isOwner(v, p)) events.moderationAction(v, 'comment.deleted', { type: 'paste_comment', id: String(c.id), owner_subject: c.author_subject || null }, { details: { paste: p.slug } });
+            })();
             return { message: 'Comment deleted' };
         },
 
@@ -585,9 +597,15 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { forks: forks.map((f) => ({ ...f, user_id: f.owner_subject || null })), total, limit, offset };
         },
 
-        deleteForks() { return { success: true, deleted: store.deleteAllForks(db) }; },
+        deleteForks(v) {
+            return db.transaction(() => {
+                const deleted = store.deleteAllForks(db);
+                events.moderationAction(v, 'forks.deleted', { type: 'pastes', id: 'forks' }, { details: { deleted } });
+                return { success: true, deleted };
+            })();
+        },
 
-        bulk(body = {}) {
+        bulk(body = {}, v = null) {
             const { slugs, action } = body;
             if (!Array.isArray(slugs) || !slugs.length) fail(400, 'No slugs provided');
             if (!['delete', 'public', 'unlisted', 'private'].includes(action)) fail(400, 'Invalid action');
@@ -601,6 +619,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     if (action !== 'public') tell((pl) => pl.pasteGone(p.slug));
                     done++;
                 }
+                if (done) events.moderationAction(v, 'pastes.bulk', { type: 'pastes', id: 'bulk' }, { details: { bulk_action: action, done, skipped } });
             })();
             return { done, skipped };
         },
@@ -621,7 +640,11 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');
             }
-            const row = store.setScreenshot(db, p.id, stored.url, stored.media_ref);
+            const row = db.transaction(() => {
+                const r = store.setScreenshot(db, p.id, stored.url, stored.media_ref);
+                events.moderationAction(v, 'paste.censored', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
+                return r;
+            })();
             return { paste: await shapeOne(row, v) };
         },
 

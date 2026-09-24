@@ -75,6 +75,32 @@ check('a comment on a Live VOD queues community.comment.created with its ref', (
     assert.ok(!JSON.stringify(evs).includes('nice stream'));
 });
 
+check('staff actions on someone else\'s content go to the moderation audit log (ADR-022); an owner\'s own do not', () => {
+    const { createPasteService } = require('../server/pastes/service');
+    const svc = createPasteService({ db });
+    const STAFF = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR';
+    pastes.insertPaste(db, { slug: 'mod-target-1', owner_subject: USR, origin: 'user', type: 'paste', title: 't', content: 'secret words', language: 'text', visibility: 'public' });
+    pastes.insertPaste(db, { slug: 'own-paste-1', owner_subject: USR, origin: 'user', type: 'paste', title: 't', content: 'x', language: 'text', visibility: 'public' });
+    const before = queued().length;
+    svc.remove({ kind: 'user', subject: STAFF, staff: true }, 'mod-target-1');
+    svc.remove({ kind: 'user', subject: USR }, 'own-paste-1');
+    const evs = queued().slice(before);
+    const mod = evs.filter((e) => e.event_type === 'community.moderation.action');
+    assert.strictEqual(mod.length, 1, 'only the staff delete is audited');
+    ok(mod[0]);
+    assert.deepStrictEqual(mod[0].payload.target, { type: 'paste', id: 'mod-target-1', owner_subject: USR });
+    assert.strictEqual(mod[0].payload.actor_subject, STAFF);
+    assert.deepStrictEqual(mod[0].actor, { type: 'user', id: STAFF });
+    assert.ok(!JSON.stringify(mod).includes('secret words'), 'never the content');
+    pastes.insertPaste(db, { slug: 'bulk-target-1', owner_subject: USR, origin: 'user', type: 'paste', title: 't', content: 'x', language: 'text', visibility: 'public' });
+    const bulk = svc.bulk({ slugs: ['bulk-target-1', 'nope'], action: 'private' }, { kind: 'user', subject: STAFF, staff: true });
+    assert.deepStrictEqual([bulk.done, bulk.skipped], [1, 1]);
+    const last = queued().slice(-1)[0];
+    assert.strictEqual(last.event_type, 'community.moderation.action');
+    assert.deepStrictEqual(last.payload.details, { bulk_action: 'private', done: bulk.done, skipped: bulk.skipped });
+    ok(last);
+});
+
 events._reset();
 console.log(`community events: ${n} checks passed`);
 process.exit(0);

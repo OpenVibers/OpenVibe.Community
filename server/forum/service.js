@@ -28,6 +28,7 @@
  * gates it to their own members.
  */
 const store = require('./store');
+const events = require('../events');
 const { applyVote, myVotes, parseVote } = require('../votes');
 const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
@@ -200,8 +201,12 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     }
 
     function removeThread(v, thread) {
-        if (!(person(v) && thread.author_subject === v.subject) && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator deletes a thread');
-        store.softDeleteThread(db, thread.id);
+        const mine = person(v) && thread.author_subject === v.subject;
+        if (!mine && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator deletes a thread');
+        db.transaction(() => {
+            store.softDeleteThread(db, thread.id);
+            if (!mine) events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+        })();
         if (pulse) hook(() => { pulse.threadGone(thread.id); for (const p of db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(thread.id)) pulse.postGone(p.id); });
         return { ok: true, id: thread.id, deleted: 'thread' };
     }
@@ -337,7 +342,10 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const { post, thread } = postFor(v, postId);
             if (!(person(v) && post.author_subject === v.subject) && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator deletes a post');
             if (post.is_opening) return removeThread(v, thread);
-            store.softDeletePost(db, post.id);
+            db.transaction(() => {
+                store.softDeletePost(db, post.id);
+                if (!(person(v) && post.author_subject === v.subject)) events.moderationAction(v, 'post.deleted', { type: 'post', id: String(post.id), owner_subject: post.author_subject || null }, { details: { thread: String(thread.id) } });
+            })();
             if (pulse) hook(() => pulse.postGone(post.id));
             return { ok: true, id: post.id };
         },
@@ -370,7 +378,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (body.pinned !== undefined) flags.pinned = !!body.pinned;
             if (body.locked !== undefined) flags.locked = !!body.locked;
             if (!Object.keys(flags).length) fail(400, 'thread.nothing_to_change', 'Send pinned and/or locked');
-            const next = store.setThreadFlags(db, thread.id, flags);
+            const next = db.transaction(() => {
+                const r = store.setThreadFlags(db, thread.id, flags);
+                if (flags.locked !== undefined && !!thread.locked !== flags.locked) events.moderationAction(v, flags.locked ? 'thread.locked' : 'thread.unlocked', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+                return r;
+            })();
             const projections = await authors.projectionsFor([next.author_subject]);
             return { thread: shapeThread(next, space, v, projections, null) };
         },

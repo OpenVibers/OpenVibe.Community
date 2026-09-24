@@ -106,10 +106,22 @@ function commentCreated(comment, cthread) {
     }, { isPublic: visibility !== 'hidden', actor: actorOf(comment.author_subject) });
 }
 
+/**
+ * A staff action on someone else's content: community.moderation.action, for the network's
+ * moderation audit log (ADR-022). Call inside the same transaction as the change. Never the content.
+ */
+function moderationAction(v, action, target, { reason = null, details = {} } = {}) {
+    const actorSubject = v && v.subject ? v.subject : null;
+    const t = { type: target.type, id: String(target.id).slice(0, 200), ...(target.owner_subject !== undefined ? { owner_subject: target.owner_subject || null } : {}) };
+    return record('community.moderation.action', { type: 'moderation_action', id: `${t.type}:${t.id}`.slice(0, 200) },
+        { action, target: t, actor_subject: actorSubject, reason: reason ? String(reason).slice(0, 500) : null, details: details || {} },
+        { actor: actorOf(actorSubject) || (v && v.service ? { type: 'service', id: String(v.service) } : null) });
+}
+
 function status() {
     if (!outbox) return { enabled: false };
     return { enabled: true, pending: outbox.pending(), rejected: outbox.rejected(), queued_since_boot: stats.queued, last_error: stats.lastError };
 }
 function _reset() { if (outbox) outbox.stop(); outbox = null; stats.queued = 0; stats.lastError = null; }
 
-module.exports = { init, record, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, _reset };
+module.exports = { init, record, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, _reset };
