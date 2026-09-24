@@ -9,6 +9,7 @@ const config = require('../config');
 const live = require('../live-client');
 const seo = require('../seo');
 const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
+const frame = require('openvibe-shared/frame');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 
 const NETWORK_URL = 'https://openvibe.network';
@@ -135,7 +136,8 @@ function homePage({ latest, trending, languages, user }) {
     <div class="coming-item"><i class="fa-solid fa-comments" aria-hidden="true"></i><h3><a href="/s/general">Threads</a></h3><p>Long-form discussion that outlives a chat scrollback: start one in any open space.</p></div>
     <div class="coming-item"><i class="fa-solid fa-wave-square" aria-hidden="true"></i><h3><a href="/pulse">Pulse</a></h3><p>What is happening across the OpenVibe network, in one feed.</p></div>
   </div>
-</section>`;
+</section>
+<section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
     return renderPage({
         title: null,
         description: 'The people of OpenVibe. A community-run, open source home for pastes — code, logs and screenshots with a link — spaces and threads, and soon submissions. Free speech within the rules.',
@@ -143,6 +145,16 @@ function homePage({ latest, trending, languages, user }) {
         active: 'home',
         jsonLd: [seo.websiteLd()],
         body,
+    });
+}
+
+// ── What shipped: the shared update log every OpenVibe site has ──
+function updatesPage() {
+    return renderPage({
+        title: 'What shipped on OpenVibe.Community',
+        description: 'Every change deployed to OpenVibe.Community, newest first, with the Patch notes that gather them.',
+        canonicalPath: '/updates',
+        body: frame.updatesBody({ service: 'community', siteName: 'OpenVibe.Community' }) + frame.shippedScript(),
     });
 }
 
@@ -384,4 +396,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml };
+module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml };

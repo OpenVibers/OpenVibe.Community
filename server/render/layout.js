@@ -3,7 +3,7 @@
 /**
  * Page shell — every page on the site is server-rendered through this: full <head> SEO
  * (title, description, canonical, robots, Open Graph, Twitter card, JSON-LD), the shared
- * OpenVibe chrome (theme-loader first so there is no flash, navbar.js + footer.js from the
+ * OpenVibe Frame (theme-loader first so there is no flash, navbar.js + footer.js from the
  * Network), this site's small stylesheet and its progressive script.
  */
 const crypto = require('crypto');
@@ -54,6 +54,7 @@ function navbarInit(opts) {
         silentLogin: `${config.baseUrl}/auth/login?silent=1&next={url}`,
         sessionUrl: '/auth/me',
         loginUrl: `/auth/login?next=${encodeURIComponent(opts.canonicalPath || '/')}`,
+        logoutUrl: '/auth/logout?next={path}',   // Sign out in the shared navbar ends this site's session too
     };
     return cfg;
 }
@@ -64,6 +65,7 @@ function footerInit(opts) {
         variant: opts.footerVariant || 'full',
         mount: '#ov-footer',
         brandName: SITE_NAME,
+        updates: '/updates',   // the footer's "shipped X ago" line and Updates link open this site's log
         tagline: 'Community-run and open source. Free speech within the rules — the people of OpenVibe.',
         legalBase: config.liveUrl,
         links: [{
@@ -87,7 +89,7 @@ function footerInit(opts) {
  *   ogImage, jsonLd (array), body (main HTML), active ('home'|'pastes'|'spaces'|'pulse'|'new'|'my'),
  *   feeds ([{ title, href }] RSS alternates; default: the latest-pastes feed),
  *   historyType ('page'|'paste'), historyTitle, footerVariant ('full'|'compact'), bodyClass,
- *   published/modified (ISO, for article:*), noChrome (error pages during outages)
+ *   published/modified (ISO, for article:*), noFrame (error pages during outages)
  */
 function renderPage(o) {
     const title = o.title ? `${o.title} · ${SITE_NAME}` : `${SITE_NAME} — the people of OpenVibe`;
@@ -135,11 +137,11 @@ ${jsonLdScript(o.jsonLd)}
 <main id="main" class="page">
 ${o.body || ''}
 </main>
-${require('openvibe-shared/footer').ssr({ service: 'community', variant: 'full' })}
+${require('openvibe-shared/frame').footer({ service: 'community', variant: 'full', updates: '/updates' })}
 <script>
 window.__OV_PAGE = ${JSON.stringify({ navbar: nav, footer: foot }).replace(/</g, '\\u003c')};
 document.addEventListener('DOMContentLoaded', function () {
-  try { if (window.OpenVibeNavbar) OpenVibeNavbar.init(window.__OV_PAGE.navbar); } catch (e) { /* chrome is optional */ }
+  try { if (window.OpenVibeNavbar) OpenVibeNavbar.init(window.__OV_PAGE.navbar); } catch (e) { /* the Frame is optional */ }
   try { if (window.OpenVibeFooter) OpenVibeFooter.init(window.__OV_PAGE.footer); } catch (e) { /* */ }
 });
 </script>

@@ -211,6 +211,8 @@ function createApp(opts = {}) {
         html(res, pages.homePage({ latest, trending, languages, user: req.user }));
     }));
 
+    app.get('/updates', (req, res) => html(res, pages.updatesPage()));
+
     app.get('/pastes', withUser, wrap(async (req, res) => {
         const [result, languages] = await Promise.all([catalog.browse(req.query), catalog.languages()]);
         html(res, pages.browsePage(result, languages));
