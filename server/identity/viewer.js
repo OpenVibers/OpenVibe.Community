@@ -47,7 +47,7 @@ function hasCap(viewer, capabilityId) {
     return !!(viewer && viewer.kind === 'service' && capabilities.check(viewer.claims, capabilityId).allowed);
 }
 
-function createViewerResolver({ auth, config, network }) {
+function createViewerResolver({ auth, config, network, revocations = null }) {
     async function fromServiceToken(req, token) {
         const publicKey = await auth.ensureKey();
         if (!publicKey) throw new ViewerError(503, 'identity.unavailable', 'the Network signing key is not loaded yet');
@@ -106,6 +106,8 @@ function createViewerResolver({ auth, config, network }) {
     async function fromUserToken(token) {
         const claims = await auth.verify(token);
         if (!claims || (typeof claims.sub === 'string' && PRINCIPAL_SUB.test(claims.sub))) return null;
+        // Issued before Network's cutoff for this person (signed out everywhere, password changed, banned).
+        if (revocations && revocations.isRevoked(claims)) return null;
         let subject = ids.isSubjectId('user', claims.subject_id) ? claims.subject_id : null;
         if (!subject && network && claims.sub != null) {
             try { subject = await network.subjectForNetworkUser(claims.sub); } catch (err) { console.warn('[Identity] subject lookup failed:', err.message); }

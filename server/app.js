@@ -111,7 +111,10 @@ function createApp(opts = {}) {
     // ── Community's database, identity, and what lives in it in every mode ──
     const db = opts.db || (opts.dbPath ? openDb(opts.dbPath) : getDb());
     const network = opts.network || createNetworkIdentity({ config, db });
-    const viewers = createViewerResolver({ auth, config, network });
+    // Network's per-person token cutoffs (network.user.token_valid_after): sign out everywhere, password
+    // changes and bans refuse older tokens here at once (WS-B task 4).
+    const revocations = require('openvibe-sdk/auth').createRevocationStore(db, { table: 'token_revocations' });
+    const viewers = createViewerResolver({ auth, config, network, revocations });
     const pulse = createPulse({ db, network, config });
     const relay = opts.relay || createDiscordRelay({
         db, config, enabled: config.discordRelay.enabled,
@@ -166,7 +169,7 @@ function createApp(opts = {}) {
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter }));
     app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
-    const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, vipCache: vip && vip.cache, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
+    const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, vipCache: vip && vip.cache, revocations, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
     app.locals.pulseConsumer = pulseConsumer;
     app.use('/internal/events', pulseConsumer.router);
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers }));
