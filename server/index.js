@@ -17,6 +17,11 @@ const server = app.listen(config.port, config.host, () => {
         : `[Community] pastes via ${config.liveInternalUrl}/api/pastes, identity via ${config.networkUrl}`);
 });
 server.keepAliveTimeout = 65_000;
+// Subscribe Pulse to public activity at Events (idempotent; off without EVENTS_URL / COMMUNITY_EVENTS_SECRET).
+try {
+    const secret = String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',')[0].trim();
+    require('./pulse/consumer').startSubscriptions({ config, port: config.port, secret });
+} catch (err) { console.warn('[Pulse consumer] not subscribed:', err.message); }
 
 function shutdown(signal) {
     console.log(`[Community] ${signal} — closing`);
