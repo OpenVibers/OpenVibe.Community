@@ -126,9 +126,13 @@ const INSERT_COLUMNS = ['slug', 'owner_subject', 'origin', 'type', 'title', 'con
 /** Insert a new paste (fields already validated); returns the stored row. */
 function insertPaste(db, fields) {
     const cols = INSERT_COLUMNS.filter((c) => fields[c] !== undefined);
-    const info = db.prepare(`INSERT INTO pastes (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
-        .run(...cols.map((c) => fields[c]));
-    return getById(db, info.lastInsertRowid);
+    return db.transaction(() => {
+        const info = db.prepare(`INSERT INTO pastes (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
+            .run(...cols.map((c) => fields[c]));
+        const row = getById(db, info.lastInsertRowid);
+        require('../events').pasteCreated(row);   // community.paste.created, in this transaction
+        return row;
+    })();
 }
 
 /**
@@ -164,6 +168,8 @@ function updatePaste(db, id, patch, editedBy = null) {
             db.prepare('INSERT INTO paste_versions (paste_id, revision, title, content, language, edited_by) VALUES (?, ?, ?, ?, ?, ?)')
                 .run(id, next.revision, next.title, next.content, next.language, editedBy);
         }
+        const changed = ['title', 'content', 'language', 'visibility', 'is_nsfw', 'pinned'].filter((k) => patch[k] !== undefined && patch[k] !== cur[k]);
+        if (changed.length) require('../events').pasteUpdated(next, changed);
         return next;
     })();
 }
@@ -174,8 +180,13 @@ function listVersions(db, pasteId) {
 
 /** Soft delete: the row stays (slug + legacy id reserved), its content and image link do not. */
 function softDelete(db, id) {
-    return db.prepare(`UPDATE pastes SET deleted_at = CURRENT_TIMESTAMP, content = NULL, screenshot_url = NULL, metadata = NULL,
+    return db.transaction(() => {
+        const cur = getById(db, id);
+        const n = db.prepare(`UPDATE pastes SET deleted_at = CURRENT_TIMESTAMP, content = NULL, screenshot_url = NULL, metadata = NULL,
                        ai_summary = NULL, ai_tags = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL`).run(id).changes;
+        if (n && cur) require('../events').pasteDeleted(cur.slug);   // community.paste.deleted
+        return n;
+    })();
 }
 
 /**
@@ -301,7 +312,12 @@ function setScreenshot(db, pasteId, url, mediaRef) {
 }
 
 function setVisibility(db, pasteId, visibility) {
-    return db.prepare('UPDATE pastes SET visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL').run(visibility, pasteId).changes;
+    return db.transaction(() => {
+        const cur = getById(db, pasteId);
+        const r = db.prepare('UPDATE pastes SET visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL').run(visibility, pasteId);
+        if (r.changes && cur && cur.visibility !== visibility) require('../events').pasteUpdated(getById(db, pasteId), ['visibility']);
+        return r.changes;
+    })();
 }
 
 /** Media's admin stats shape. */

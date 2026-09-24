@@ -2,14 +2,19 @@
   "name": "openvibe-community",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenVibe.Community — the people of OpenVibe. Home of pastes, the forum (spaces, threads, posts), the comment threads other OpenVibe products embed, and Pulse; submissions to follow. Part of the OpenVibe network (identity by OpenVibe.Network; pastes via OpenVibe.Live until PASTES_AUTHORITY=community makes this site their authority).",
+  "description": "OpenVibe.Community \u2014 the people of OpenVibe. Home of pastes, the forum (spaces, threads, posts), the comment threads other OpenVibe products embed, and Pulse; submissions to follow. Part of the OpenVibe network (identity by OpenVibe.Network; pastes via OpenVibe.Live until PASTES_AUTHORITY=community makes this site their authority).",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "NODE_ENV=development node server/index.js",
     "test": "node test/run.js"
   },
-  "keywords": ["openvibe", "community", "pastes", "pastebin"],
+  "keywords": [
+    "openvibe",
+    "community",
+    "pastes",
+    "pastebin"
+  ],
   "author": "OpenVibe Community",
   "license": "MIT",
   "dependencies": {
@@ -21,7 +26,8 @@
     "helmet": "^8.1.0",
     "highlight.js": "^11.11.1",
     "multer": "^2.4.0",
-    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.33.0",
+    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.35.0",
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.6.0",
     "openvibe-shared": "https://codeload.github.com/OpenVibers/OpenVibe.Shared/tar.gz/refs/tags/v1.5.1"
   },
   "engines": {

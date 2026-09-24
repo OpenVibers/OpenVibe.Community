@@ -59,7 +59,10 @@ function insertComment(db, { thread_id, parent_id = null, author_subject = null,
             .run(thread_id, parent_id, author_subject, anon_name, origin, message);
         db.prepare('UPDATE comment_threads SET comment_count = comment_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(thread_id);
         if (parent_id) db.prepare('UPDATE comments SET reply_count = reply_count + 1 WHERE id = ?').run(parent_id);
-        return getComment(db, info.lastInsertRowid);
+        const comment = getComment(db, info.lastInsertRowid);
+        const cthread = db.prepare('SELECT * FROM comment_threads WHERE id = ?').get(thread_id);
+        if (cthread) require('../events').commentCreated(comment, cthread);   // community.comment.created
+        return comment;
     })();
 }
 
