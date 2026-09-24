@@ -60,6 +60,7 @@ function pagerHref(state, page) {
     if (state.q) q.set('q', state.q);
     if (state.sort && state.sort !== 'new') q.set('sort', state.sort);
     if (state.lang) q.set('lang', state.lang);
+    if (state.type && state.type !== 'pastes') q.set('type', state.type);
     if (page > 1) q.set('page', String(page));
     const s = q.toString();
     return `/pastes${s ? `?${s}` : ''}`;
@@ -127,14 +128,13 @@ function homePage({ latest, trending, languages, user }) {
   </div>
 </section>
 
-<section class="section coming" id="coming">
-  <h2>What is coming</h2>
+<section class="section coming" id="spaces">
+  <h2>Spaces and threads</h2>
   <div class="coming-grid">
-    <div class="coming-item"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><h3><a href="/s">Spaces</a></h3><p>Open now: General, Feedback and Showcase. Places for the communities around each streamer, game and project come next — run by the people in them.</p></div>
-    <div class="coming-item"><i class="fa-solid fa-comments" aria-hidden="true"></i><h3><a href="/s/general">Threads</a></h3><p>Long-form discussion that outlives a chat scrollback, readable without JavaScript. Forums, the way they should have stayed.</p></div>
-    <div class="coming-item"><i class="fa-solid fa-inbox" aria-hidden="true"></i><h3>Submissions</h3><p>Send in clips, art, ideas and reports; the community reviews and features the best of it.</p></div>
+    <div class="coming-item"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><h3><a href="/s">Spaces</a></h3><p>General, Feedback and Showcase: places for the community to talk, share and get help.</p></div>
+    <div class="coming-item"><i class="fa-solid fa-comments" aria-hidden="true"></i><h3><a href="/s/general">Threads</a></h3><p>Long-form discussion that outlives a chat scrollback: start one in any open space.</p></div>
+    <div class="coming-item"><i class="fa-solid fa-wave-square" aria-hidden="true"></i><h3><a href="/pulse">Pulse</a></h3><p>What is happening across the OpenVibe network, in one feed.</p></div>
   </div>
-  <p class="muted">Pastes, spaces, threads and the <a href="/pulse">Pulse</a> of the network are live today. The rest is being built in the open — follow along on <a href="https://github.com/OpenVibers" rel="noopener">GitHub</a> and <a href="https://discord.gg/M6MuRUaeJj" rel="noopener">Discord</a>.</p>
 </section>`;
     return renderPage({
         title: null,
@@ -148,21 +148,21 @@ function homePage({ latest, trending, languages, user }) {
 
 // ── Browse ───────────────────────────────────────────────────
 function browsePage(result, languages) {
-    const { pastes, total, page, pages, q, sort, lang, windowed, windowSize } = result;
+    const { pastes, total, page, pages, q, sort, lang, type = 'pastes', windowed, windowSize } = result;
     const titleBits = [];
     if (q) titleBits.push(`“${q}”`);
     if (lang) titleBits.push(languageLabel(lang));
     titleBits.push(sort === 'views' ? 'most viewed' : 'newest');
     const title = `Pastes — ${titleBits.join(', ')}${page > 1 ? ` (page ${page})` : ''}`;
-    const canonical = pagerHref({ q, sort, lang }, page);
+    const canonical = pagerHref({ q, sort, lang, type }, page);
     const opt = (id, label) => `<option value="${esc(id)}"${id === (lang || '') ? ' selected' : ''}>${esc(label)}</option>`;
     const langOptions = [opt('', 'All languages')].concat((languages || []).map((l) => opt(l.language, `${languageLabel(l.language)} (${l.count})`)));
     if (lang && !(languages || []).some((l) => l.language === lang)) langOptions.push(opt(lang, languageLabel(lang)));
 
     const pager = pages > 1 ? `<nav class="pager" aria-label="Pages">
-    ${page > 1 ? `<a rel="prev" href="${esc(pagerHref({ q, sort, lang }, page - 1))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newer</a>` : '<span></span>'}
+    ${page > 1 ? `<a rel="prev" href="${esc(pagerHref({ q, sort, lang, type }, page - 1))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newer</a>` : '<span></span>'}
     <span class="pager-info">Page ${page} of ${pages}</span>
-    ${page < pages ? `<a rel="next" href="${esc(pagerHref({ q, sort, lang }, page + 1))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}
+    ${page < pages ? `<a rel="next" href="${esc(pagerHref({ q, sort, lang, type }, page + 1))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}
   </nav>` : '';
 
     const body = `
@@ -172,6 +172,7 @@ function browsePage(result, languages) {
 </header>
 <form class="filters" method="get" action="/pastes" role="search" data-browse>
   <label class="search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" name="q" value="${esc(q)}" placeholder="Search titles and content" aria-label="Search pastes"></label>
+  <label>Show <select name="type"><option value="pastes"${type === 'pastes' ? ' selected' : ''}>Pastes</option><option value="images"${type === 'images' ? ' selected' : ''}>Images</option><option value="all"${type === 'all' ? ' selected' : ''}>All</option></select></label>
   <label>Sort <select name="sort"><option value="new"${sort === 'new' ? ' selected' : ''}>Newest</option><option value="views"${sort === 'views' ? ' selected' : ''}>Most viewed</option></select></label>
   <label>Language <select name="lang">${langOptions.join('')}</select></label>
   <button class="btn" type="submit">Apply</button>

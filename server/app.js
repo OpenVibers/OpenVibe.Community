@@ -192,6 +192,7 @@ function createApp(opts = {}) {
 
     // ── Machine endpoints ────────────────────────────────────
     app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(seo.robotsTxt()));
+    app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(seo.llmsTxt()));
     app.get('/sitemap.xml', seo.sitemapHandler);
     app.get('/feed.xml', wrap(seo.feedHandler));
 

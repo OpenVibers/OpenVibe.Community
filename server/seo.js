@@ -118,6 +118,30 @@ function threadLd({ space, thread, posts, opening, description }) {
     };
 }
 
+// ── llms.txt: what this site is, for language-model crawlers (llmstxt.org) ────────────
+function llmsTxt() {
+    const u = config.baseUrl;
+    return [
+        '# OpenVibe.Community',
+        '',
+        '> The discussion side of the OpenVibe network: pastes (text and screenshots), spaces with threads, and the Pulse feed of what is happening across the network.',
+        '',
+        '## Browse',
+        `- [Pastes](${u}/pastes): public pastes, newest first (?type=pastes|images|all, ?sort=views, ?lang=<language>)`,
+        `- [Spaces](${u}/s): open discussion spaces and their threads`,
+        `- [Pulse](${u}/pulse): network activity`,
+        '',
+        '## Machine-readable',
+        `- [Sitemap](${u}/sitemap.xml)`,
+        `- [Latest pastes (RSS)](${u}/feed.xml)`,
+        `- [Latest threads (RSS)](${u}/s/feed.xml)`,
+        '',
+        '## Content labels',
+        '- Pastes made by the OpenVibe AI (moments caught from live streams) carry origin "ai" and are labelled as AI-generated; everything else was written by people.',
+        '',
+    ].join('\n');
+}
+
 // ── robots.txt ───────────────────────────────────────────────
 function robotsTxt() {
     return [
@@ -226,4 +250,4 @@ ${items.join('\n')}
 
 function resetCaches() { _sitemap = null; _sitemapAt = 0; }
 
-module.exports = { isoDate, clean, websiteLd, breadcrumbLd, pasteLd, threadLd, discussionAuthorLd, robotsTxt, buildSitemap, sitemapHandler, feedHandler, threadFeed, useForum, resetCaches };
+module.exports = { llmsTxt, isoDate, clean, websiteLd, breadcrumbLd, pasteLd, threadLd, discussionAuthorLd, robotsTxt, buildSitemap, sitemapHandler, feedHandler, threadFeed, useForum, resetCaches };

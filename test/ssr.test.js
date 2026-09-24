@@ -22,7 +22,7 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, '<h1>Share it with a link. Talk about it here.</h1>');
         has(r.text, '<h2>Latest pastes</h2>');
         has(r.text, '<h2>Most viewed</h2>');
-        has(r.text, 'id="coming"');
+        has(r.text, 'id="spaces"');
         has(r.text, 'href="/p/amber-fox-42"');
         // Most-viewed puts the 900-view nginx paste first.
         const trendingAt = r.text.indexOf('id="trending"');

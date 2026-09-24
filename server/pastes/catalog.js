@@ -66,8 +66,11 @@ function normalizeBrowseQuery(query = {}) {
     const sort = query.sort === 'views' ? 'views' : 'new';
     const lang = String(query.lang || '').trim().toLowerCase().replace(/[^a-z0-9+#.-]/g, '').slice(0, 32);
     const page = Math.max(1, Math.min(parseInt(query.page, 10) || 1, 500));
-    return { q, sort, lang, page };
+    // What to list: text pastes (default), images (screenshots) or all of them.
+    const type = ['all', 'pastes', 'images'].includes(query.type) ? query.type : (lang === 'image' ? 'images' : 'pastes');
+    return { q, sort, lang: type === 'images' && lang === 'image' ? '' : lang, page, type };
 }
+const _ofType = (type) => (p) => (type === 'all' ? true : type === 'images' ? p.type === 'screenshot' : p.type !== 'screenshot');
 
 /**
  * Browse: { q, sort: 'new'|'views', lang, page } → { pastes, total, page, pages, perPage, ... }.
@@ -75,11 +78,11 @@ function normalizeBrowseQuery(query = {}) {
  * sort and the language filter are answered from the recent window.
  */
 async function browse(query = {}, ctx = {}) {
-    const { q, sort, lang, page } = normalizeBrowseQuery(query);
+    const { q, sort, lang, page, type } = normalizeBrowseQuery(query);
     const offset = (page - 1) * PER_PAGE;
     let pastes, total, windowed = false;
 
-    if (sort === 'new' && !lang) {
+    if (sort === 'new' && !lang && type === 'pastes') {
         const out = await source.listPastes({ limit: PER_PAGE, offset, search: q || undefined, type: 'paste' }, ctx);
         pastes = _textOnlyPublic(out && out.pastes);
         total = Number(out && out.total) || pastes.length;
@@ -91,14 +94,15 @@ async function browse(query = {}, ctx = {}) {
         } else {
             rows = await recent();
         }
-        if (lang) rows = rows.filter((p) => (lang === 'image' ? p.type === 'screenshot' : (p.language || 'text') === lang));
+        rows = rows.filter(_ofType(type));
+        if (lang) rows = rows.filter((p) => (p.language || 'text') === lang);
         rows = rows.slice().sort(sort === 'views' ? byViews : byNewest);
         total = rows.length;
         pastes = rows.slice(offset, offset + PER_PAGE);
         windowed = true;
     }
     const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    return { pastes, total, page, pages, perPage: PER_PAGE, q, sort, lang, windowed, windowSize: WINDOW };
+    return { pastes, total, page, pages, perPage: PER_PAGE, q, sort, lang, type, windowed, windowSize: WINDOW };
 }
 
 /** For tests and a hot reload after a write. */
