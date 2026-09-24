@@ -26,6 +26,8 @@ const { extractToken, claimsToUser, decodeJwtPayload } = require('../auth/routes
 const { checkCapability } = require('./capabilities');
 
 const { ids, capabilities, serviceAuth, http } = contracts;
+const { staff: staffMap } = require('openvibe-contracts');
+// The roles that hold staff moderation today (kept for callers; gates ask staffMap.can instead).
 const STAFF_ROLES = new Set(['admin', 'global_mod']);
 const PRINCIPAL_SUB = /^(svc|app|mod):/;
 const AUDIENCE = 'openvibe.community';
@@ -111,7 +113,10 @@ function createViewerResolver({ auth, config, network }) {
         if (subject && network) { try { network.rememberClaims(subject, claims); } catch { /* display cache only */ } }
         const user = claimsToUser(claims);
         if (subject && !user.subject_id) user.subject_id = subject;
-        return { kind: 'user', subject, staff: STAFF_ROLES.has(claims.role), origin: 'user', user, token };
+        // Staff powers come from the contracts staff map (ADR-022): the role, or Network's issued staff_caps.
+        const staff = staffMap.can(claims, 'staff.moderation.pastes');
+        const discussionStaff = staffMap.can(claims, 'staff.moderation.discussions');
+        return { kind: 'user', subject, staff, discussionStaff, origin: 'user', user, token };
     }
 
     /**
