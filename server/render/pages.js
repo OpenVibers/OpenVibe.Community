@@ -6,6 +6,7 @@
  * comforts (copy, in-place pagination, the create form's upload path).
  */
 const config = require('../config');
+const ovServe = require('openvibe-shared/serve');
 const live = require('../live-client');
 const seo = require('../seo');
 const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
@@ -154,7 +155,7 @@ function updatesPage() {
         title: 'What shipped on OpenVibe.Community',
         description: 'Every change deployed to OpenVibe.Community, newest first, with the Patch notes that gather them.',
         canonicalPath: '/updates',
-        body: frame.updatesBody({ service: 'community', siteName: 'OpenVibe.Community' }) + frame.shippedScript(),
+        body: frame.updatesBody({ service: 'community', siteName: 'OpenVibe.Community' }) + `<script src="${ovServe.url('shipped.js')}" defer></script>`,
     });
 }
 

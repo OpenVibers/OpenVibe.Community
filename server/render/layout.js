@@ -7,6 +7,7 @@
  * Network), this site's small stylesheet and its progressive script.
  */
 const crypto = require('crypto');
+const ovServe = require('openvibe-shared/serve');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
@@ -124,12 +125,12 @@ ${o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.m
 <meta name="twitter:image" content="${escapeHtml(ogImage)}">
 ${require('openvibe-shared/app-icon').headTags({ site: 'community', iconBase: '/assets' })}
 ${(o.feeds || [{ title: `${SITE_NAME} — latest pastes`, href: '/feed.xml' }]).map((f) => `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(f.title)}" href="${escapeHtml(f.href)}">`).join('\n')}
-<script src="${NETWORK_URL}/shared/theme-loader.js" defer></script>
+<script src="${ovServe.url('theme-loader.js')}" defer></script>
 <link rel="stylesheet" href="${asset('css/community.css')}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 ${jsonLdScript(o.jsonLd)}
-<script src="${NETWORK_URL}/shared/navbar.js" defer></script>
-<script src="${NETWORK_URL}/shared/footer.js" defer></script>
+<script src="${ovServe.url('navbar.js')}" defer></script>
+<script src="${ovServe.url('footer.js')}" defer></script>
 <script src="${asset('js/community.js')}" defer></script>
 </head>
 <body class="${escapeHtml(o.bodyClass || '')}">

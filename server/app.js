@@ -183,6 +183,8 @@ function createApp(opts = {}) {
     app.get('/api/ready', readiness.handler);
 
     // ── Static assets (content-hashed ?v= → immutable) ───────
+    // This site's own pinned copy of the OpenVibe Frame's browser files (openvibe-shared/serve).
+    app.use('/shared', require('openvibe-shared/serve').handler());
     app.use(express.static(PUBLIC_DIR, {
         index: false, etag: true, redirect: false,
         setHeaders(res, filePath) {
