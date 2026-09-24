@@ -9,6 +9,9 @@
  *   wiki.page.published     "Wiki: <space> / <slug>"        → the page (public, indexable only)
  *   news.story.published    "News: <topic>"                 → the story (public, indexable only)
  *
+ * And VIP convergence: vip.membership.changed (source vip) drops the member's cached members-only
+ * answers for that creator at once (the VIP gate's cache handleEvent) instead of waiting out its TTL.
+ *
  * Exactly once: the openvibe-sdk inbox claims (consumer, event_id) in the same transaction as the Pulse
  * write. Signature v2 only (parseDelivery requireV2) under COMMUNITY_EVENTS_SECRET (comma-separated for
  * rotation, 32+ characters each); unset = 503. Loopback only: a request carrying a forwarding header
@@ -20,7 +23,7 @@ const { parseDelivery, createInbox } = require('openvibe-sdk/events');
 const store = require('./store');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed']);
 const EVENT_ID_RE = /^evt_[0-9A-HJKMNP-TV-Z]{26}$/;
 const clean = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(u) ? u.slice(0, 500) : null);
@@ -55,7 +58,7 @@ function itemFor(event) {
     return { source_service: k[0], source_type: k[1], source_id: subjectId, title, url, actor_subject: actor, origin: actor ? 'user' : 'system', occurred_at: at };
 }
 
-function createPulseConsumer({ db, secrets = [], now = () => Date.now(), log = console } = {}) {
+function createPulseConsumer({ db, secrets = [], vipCache = null, now = () => Date.now(), log = console } = {}) {
     const keys = (secrets || []).filter((s) => typeof s === 'string' && s.length >= 32);
     const inbox = createInbox(db, { table: 'community_event_inbox', now });
     inbox.ensureSchema();
@@ -73,6 +76,12 @@ function createPulseConsumer({ db, secrets = [], now = () => Date.now(), log = c
         const event = delivery.event;
         if (!event || !EVENT_ID_RE.test(String(event.event_id || '')) || typeof event.event_type !== 'string') { stats.refused++; return problem(400, 'community.bad_delivery', 'body must be { event: <envelope>, seq }'); }
         stats.received++; stats.last_at = new Date(now()).toISOString();
+        if (event.event_type === 'vip.membership.changed') {
+            if (event.source !== 'vip' || !vipCache) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: event.source !== 'vip' ? 'ignored:source' : 'ignored:no_gate' }); }
+            const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: vipCache.handleEvent(event) ? 'vip:invalidated' : 'vip:unchanged' }));
+            if (r.duplicate) stats.duplicates++; else stats.applied++;
+            return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+        }
         const item = itemFor(event);
         if (typeof item === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: item }); }
         try {

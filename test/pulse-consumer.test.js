@@ -10,7 +10,8 @@ const { createPulseConsumer } = require('../server/pulse/consumer');
 const SECRET = `whsec_${'ab'.repeat(32)}`;
 const db = openDb(':memory:');
 const app = express();
-app.use('/internal/events', createPulseConsumer({ db, secrets: [SECRET], log: { error() {}, log() {}, warn() {} } }).router);
+const vipDrops = [];
+app.use('/internal/events', createPulseConsumer({ db, secrets: [SECRET], vipCache: { handleEvent: (e) => { vipDrops.push(e.event_id); return true; } }, log: { error() {}, log() {}, warn() {} } }).router);
 const USR = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPQ';
 let seq = 0;
 const evt = (over) => ({ event_id: `evt_01JAB2C3D4E5F6G7H8J9K0M${String(++seq).padStart(3, '0')}`.slice(0, 30), event_type: 'live.stream.started', version: 1, source: 'live', visibility: 'public', timestamp: new Date().toISOString(),
@@ -47,6 +48,18 @@ const evt = (over) => ({ event_id: `evt_01JAB2C3D4E5F6G7H8J9K0M${String(++seq).p
         payload: { canonical_url: 'https://openvibe.wiki/w/help/start', publication_state: 'published', visibility: 'public', space: 'help', slug: 'start', indexability: { decision: 'noindex', reasons: ['thin'] } } }));
     assert.strictEqual(r.json.outcome, 'ignored:not_public', 'a noindex page stays out of Pulse');
     assert.strictEqual(items().length, 2);
+    // VIP convergence: a membership change from VIP drops cached members-only answers once; from anyone else, nothing.
+    const vipEv = (source) => evt({ event_type: 'vip.membership.changed', source, subject: { type: 'membership', id: 'mbr_1', revision: 2 }, actor: { type: 'service', id: 'vip' },
+        payload: { member: { type: 'user', id: USR }, creator: { type: 'user', id: USR }, status: 'canceled' } });
+    const v1 = vipEv('vip');
+    r = await post(v1);
+    assert.strictEqual(r.json.outcome, 'vip:invalidated');
+    r = await post(v1);
+    assert.strictEqual(r.json.duplicate, true, 'a redelivery drops nothing twice');
+    r = await post(vipEv('live'));
+    assert.strictEqual(r.json.outcome, 'ignored:source');
+    assert.deepStrictEqual(vipDrops, [v1.event_id]);
+    assert.strictEqual(items().length, 2, 'no Pulse item for a membership');
     srv.close();
     console.log('pulse consumer: all checks passed');
     process.exit(0);

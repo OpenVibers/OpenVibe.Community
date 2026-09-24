@@ -166,7 +166,7 @@ function createApp(opts = {}) {
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter }));
     app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
-    const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
+    const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, vipCache: vip && vip.cache, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
     app.locals.pulseConsumer = pulseConsumer;
     app.use('/internal/events', pulseConsumer.router);
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers }));
