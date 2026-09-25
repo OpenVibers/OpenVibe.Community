@@ -47,7 +47,8 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null }) {
   <p class="muted">Public activity from across OpenVibe as it happens: new pastes, threads and replies here, and what the other sites share. Only public things appear, and anything made by AI is labelled as AI.</p>
 </header>
 <nav class="tabs sort-tabs" aria-label="Filter by origin">${tabs}</nav>
-<section data-results>
+<section data-results${after ? '' : ' data-pulse-live'}>
+  <p class="pulse-new" hidden><button type="button" class="btn btn-sm" data-pulse-show></button></p>
   ${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : '<p class="empty">Nothing here yet.</p>'}
   ${after || nextCursor ? `<nav class="pager" aria-label="Pages">${after ? `<a href="${esc(href(origin))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Latest</a>` : '<span></span>'}<span></span>${nextCursor ? `<a rel="next" href="${esc(href(origin, nextCursor))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}
 </section>`;

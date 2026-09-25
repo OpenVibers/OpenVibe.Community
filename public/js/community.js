@@ -138,4 +138,23 @@
       });
     });
   }
+
+  // Pulse follows OpenVibe.Events realtime (roadmap WS-F task 1): on the first page, public activity
+  // from here and the other sites arrives over events.openvibe.network/realtime/stream, and a bar
+  // offers to show it (the page itself stays server-rendered, so a reload is the whole update).
+  var pulse = document.querySelector('[data-pulse-live]');
+  if (pulse && typeof EventSource !== 'undefined') {
+    var topics = ['community.paste.created', 'community.thread.created', 'community.post.created', 'live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published'];
+    var bar = pulse.querySelector('.pulse-new'), show = pulse.querySelector('[data-pulse-show]'), fresh = 0;
+    var es = new EventSource('https://events.openvibe.network/realtime/stream?topics=' + encodeURIComponent(topics.join(',')));
+    es.onmessage = function (m) {
+      var d; try { d = JSON.parse(m.data); } catch (e) { return; }
+      if (!d || !d.event || topics.indexOf(d.event.event_type) < 0) return;
+      fresh++;
+      show.textContent = fresh === 1 ? 'Show 1 new item' : 'Show ' + fresh + ' new items';
+      bar.hidden = false;
+    };
+    show.addEventListener('click', function () { es.close(); location.reload(); });
+    window.addEventListener('pagehide', function () { es.close(); });
+  }
 })();

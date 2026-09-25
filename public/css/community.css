@@ -326,3 +326,7 @@ button.rx:hover { border-color: var(--accent); }
 .search-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; font-size: .8rem; color: var(--text-muted); }
 .search-snippet { margin: 4px 0 0; color: var(--text-secondary); overflow-wrap: anywhere; }
 .search-snippet mark { background: rgba(var(--accent-rgb), .22); color: inherit; border-radius: 3px; padding: 0 2px; }
+
+/* Pulse: new activity from Events realtime */
+.pulse-new { position: sticky; top: 8px; z-index: 5; display: flex; justify-content: center; margin: 0 0 10px; }
+.pulse-new[hidden] { display: none; }
