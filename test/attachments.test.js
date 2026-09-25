@@ -87,7 +87,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         assert.match(first.media_id, /^med_[0-9A-HJKMNP-TV-Z]{26}$/);
         assert.strictEqual(first.url, `https://openvibe.media/o/${first.media_id}`);
         const o = objects.get(first.media_id);
-        assert.strictEqual(o.owner, alex.subject_id); assert.strictEqual(o.visibility, 'public'); assert.strictEqual(o.status, 'ready');
+        assert.strictEqual(o.owner, alex.subject_id); assert.strictEqual(o.visibility, 'unlisted', 'reachable by link, never listed on openvibe.media'); assert.strictEqual(o.status, 'ready');
         assert.ok(!o.bytes.includes(Buffer.from('secret')), 'the tEXt chunk never reached Media');
         assert.ok(PNG.includes(Buffer.from('secret')));
     });

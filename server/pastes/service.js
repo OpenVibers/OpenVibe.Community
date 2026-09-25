@@ -405,7 +405,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const bytes = stripImageMetadata(file.buffer, file.mimetype);
             let stored;
             try {
-                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime: file.mimetype });
+                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime: file.mimetype, owner: v.subject || null });
             } catch (err) {
                 console.warn('[Pastes] screenshot upload failed:', err.message);
                 fail(502, 'Media service unavailable');
@@ -635,7 +635,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!media) fail(503, 'Media service unavailable');
             let stored;
             try {
-                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, file.mimetype), filename: file.originalname || 'censored.png', mime: file.mimetype });
+                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, file.mimetype), filename: file.originalname || 'censored.png', mime: file.mimetype, owner: p.owner_subject || null });
             } catch (err) {
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');

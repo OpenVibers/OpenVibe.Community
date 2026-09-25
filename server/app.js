@@ -137,7 +137,17 @@ function createApp(opts = {}) {
     if (community) {
         const { createMediaFiles } = require('./media/files');
         const { createPasteService } = require('./pastes/service');
-        const media = opts.media || createMediaFiles({ config });
+        // Screenshot bytes: OpenVibe.Media's Object API v2 (med_ objects, unlisted, owned by the person when signed in;
+        // C-24), or the v1 community file store (legacy:community:file:<key>) without Community's service principal.
+        const files = createMediaFiles({ config });
+        const media = opts.media || {
+            tokens: files.tokens,
+            async upload({ buffer, filename, mime, owner = null }) {
+                if (!mediaObjects.configured) return files.upload({ buffer, filename, mime });
+                const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste' });
+                return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id };
+            },
+        };
         const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits, pulse });
         source.use(service);
         app.locals.pastes = service;

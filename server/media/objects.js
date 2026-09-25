@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * OpenVibe.Media Object API v2 client — attachments on forum posts (WS-J task 2). Community keeps a
+ * OpenVibe.Media Object API v2 client — images on forum posts (WS-J task 2) and screenshot pastes (C-24). Community keeps a
  * `med_` reference and the public URL; the bytes live in Media under the `community` tenant, owned by
  * the person who attached them (X-OV-Subject), with Community's service token (media.object.upload,
  * namespace community):
  *
- *   POST /api/v2/community/objects                 init { kind: 'file', visibility: 'public', size_bytes, mime_type, filename, content_hash }
+ *   POST /api/v2/community/objects                 init { kind, visibility: 'unlisted', size_bytes, mime_type, filename, content_hash }
  *   PUT  /api/v2/community/objects/:id/content     the bytes
  *   POST /api/v2/community/objects/:id/complete    Media checks size, hash and type → ready
  *
@@ -41,13 +41,18 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return data || {};
     }
 
-    /** Store one image for `owner` (usr_…). → { id (med_…), url, size_bytes, mime } */
-    async function uploadImage({ buffer, mime, filename, owner }) {
+    /**
+     * Store one image. → { id (med_…), url, size_bytes, mime }
+     * owner: the person (usr_…) the object belongs to, when there is one; kind: 'file' (post images) or
+     * 'screenshot' (screenshot pastes); visibility 'unlisted': served to anyone with the link (the object id is
+     * unguessable), never listed on openvibe.media — the post or paste decides who sees the link.
+     */
+    async function uploadImage({ buffer, mime, filename, owner = null, kind = 'file', visibility = 'unlisted', source = 'community.attachment' }) {
         if (!configured) { const e = new Error('Attachments need Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
         const init = await call('POST', '', {
-            json: { kind: 'file', visibility: 'public', size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, metadata: { source: 'community.attachment' } },
-            headers: { 'X-OV-Subject': owner },
+            json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, metadata: { source } },
+            headers: /^usr_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(owner || '')) ? { 'X-OV-Subject': owner } : {},
         });
         const id = init.id || (init.object && init.object.id);
         if (!/^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(id || ''))) throw Object.assign(new Error('Media returned no object id'), { status: 502 });
