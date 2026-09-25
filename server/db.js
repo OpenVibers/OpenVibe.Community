@@ -245,6 +245,18 @@ CREATE TABLE IF NOT EXISTS thread_votes (
 -- ── Discord relay (server/relay; DISCORD_RELAY_ENABLED) ──────
 -- webhook_url_ref is the NAME of an environment variable holding the webhook URL: secrets never
 -- live in the database.
+-- Categories inside a space (WS-J task 1): threads may carry one; the space page filters by them.
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+    slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (space_id, slug)
+);
+
 CREATE TABLE IF NOT EXISTS relay_mappings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -358,6 +370,34 @@ function migrate(db) {
         const c = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((x) => x.name));
         if (!c.has('members_only_owner')) db.exec(`ALTER TABLE ${table} ADD COLUMN members_only_owner TEXT`);
     }
+    // Categories, feature requests and the roadmap (WS-J tasks 1 and 8; forum/service.js):
+    //   spaces.thread_kind  what a new thread in the space is: discussion, request (votes and a status set
+    //                       by staff) or roadmap (staff and the roadmap sync only; forum/roadmap.js)
+    //   threads.kind/status/category_id/external_key  the thread's kind, its status for requests and roadmap
+    //                       items, its category, and the roadmap item key it was synced from
+    const spaceCols = new Set(db.prepare('PRAGMA table_info(spaces)').all().map((x) => x.name));
+    if (!spaceCols.has('thread_kind')) db.exec("ALTER TABLE spaces ADD COLUMN thread_kind TEXT NOT NULL DEFAULT 'discussion'");
+    const threadCols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((x) => x.name));
+    if (!threadCols.has('kind')) db.exec("ALTER TABLE threads ADD COLUMN kind TEXT NOT NULL DEFAULT 'discussion'");
+    if (!threadCols.has('status')) db.exec('ALTER TABLE threads ADD COLUMN status TEXT');
+    if (!threadCols.has('category_id')) db.exec('ALTER TABLE threads ADD COLUMN category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL');
+    if (!threadCols.has('external_key')) db.exec('ALTER TABLE threads ADD COLUMN external_key TEXT');
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_external_key ON threads(space_id, external_key) WHERE external_key IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_threads_category ON threads(category_id) WHERE category_id IS NOT NULL;
+             INSERT OR IGNORE INTO spaces (slug, name, description, visibility, created_by, thread_kind) VALUES
+                 ('roadmap', 'Roadmap', 'What OpenVibe is building next and where each piece stands. Every item has its own thread: ask about it or argue for it there.', 'public', 'system', 'roadmap');
+             UPDATE spaces SET thread_kind = 'request', description = 'Feature requests, bugs and ideas for every OpenVibe site. Vote for what matters to you; staff mark what is planned and done.'
+                 WHERE slug = 'feedback' AND thread_kind = 'discussion' AND created_by = 'system';`);
+    const seedCategory = db.prepare(`INSERT OR IGNORE INTO categories (space_id, slug, name, description, position)
+                                     SELECT id, ?, ?, ?, ? FROM spaces WHERE slug = ?`);
+    for (const [space, slug, name, description, position] of [
+        ['feedback', 'ideas', 'Ideas', 'Something new, or something better.', 1],
+        ['feedback', 'bugs', 'Bugs', 'Something is broken or wrong.', 2],
+        ['feedback', 'questions', 'Questions', 'How do I…? Why does…?', 3],
+        ['roadmap', 'launches', 'New sites', 'Sites that open next.', 1],
+        ['roadmap', 'features', 'Features', 'New things on sites that are already open.', 2],
+        ['roadmap', 'platform', 'Under the hood', 'Accounts, safety, reliability and the shared systems every site uses.', 3],
+    ]) seedCategory.run(slug, name, description, position, space);
 }
 
 /** cth_ + 22 base64url characters (16 random bytes). */

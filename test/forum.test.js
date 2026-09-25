@@ -33,10 +33,10 @@ const forumStore = require('../server/forum/store');
 
     let first;
 
-    await check('seeded spaces: general, feedback, showcase — all public', async () => {
+    await check('seeded spaces: general, feedback, showcase, roadmap — all public', async () => {
         const r = await call('/api/v1/spaces');
         assert.strictEqual(r.status, 200);
-        assert.deepStrictEqual(r.json().spaces.map((s) => [s.slug, s.visibility]), [['general', 'public'], ['feedback', 'public'], ['showcase', 'public']]);
+        assert.deepStrictEqual(r.json().spaces.map((s) => [s.slug, s.visibility]), [['general', 'public'], ['feedback', 'public'], ['showcase', 'public'], ['roadmap', 'public']]);
         assert.strictEqual((await call('/api/v1/spaces/nope')).status, 404);
     });
 

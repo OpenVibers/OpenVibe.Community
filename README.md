@@ -322,13 +322,23 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   thread). Moderators (admin/global_mod browsers; services with `community.comment.moderate`)
   pin, lock and delete; locked threads take no replies or votes.
 
+- **Categories, requests and the roadmap.** A space's `thread_kind` decides what a new thread is. In a
+  `discussion` space it is a plain thread. In `request` (Feedback, with Ideas, Bugs and Questions
+  categories) it is open to votes and starts `open`; staff move it through its statuses. In `roadmap`
+  only staff start items. The Roadmap space follows [`docs/roadmap/public.json`](docs/roadmap/public.json):
+  every boot syncs it (`server/forum/roadmap.js`), one thread per item, matched by key. A changed summary
+  is an edit of the item's opening post, so the history stays, and replies and votes stay with the item.
+
 API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 
 | Route | What |
 | --- | --- |
 | `GET /spaces` · `GET /spaces/:space` | Spaces the caller can open · one space |
-| `GET /spaces/:space/threads?sort=&page=&limit=` | Threads (server pagination: `page`, `pages`, `total`) |
-| `POST /spaces/:space/threads` `{ title, body, members_only? }` | New thread (`community.post.create` for services); `members_only: true` gates it to the author's VIP members |
+| `GET /spaces/:space/threads?sort=&page=&limit=&category=&status=` | Threads (server pagination: `page`, `pages`, `total`), the space's `categories`, optionally one category or status |
+| `POST /spaces/:space/threads` `{ title, body, category?, members_only? }` | New thread (`community.post.create` for services); `members_only: true` gates it to the author's VIP members |
+| `GET /spaces/:space/categories` · `PUT`/`DELETE /spaces/:space/categories/:category` `{ name, description?, position? }` | Categories · moderators manage them (a deleted category's threads stay, uncategorised) |
+| `PUT /spaces/:space/threads/:slug/category` `{ category: slug \| null }` | The author or moderators |
+| `PUT /spaces/:space/threads/:slug/status` `{ status }` | Moderators: requests `open`/`planned`/`in_progress`/`done`/`declined`, roadmap items `planned`/`in_progress`/`done`/`paused` |
 | `GET /spaces/:space/threads/:slug?page=` | Thread + posts (`body_markdown` and rendered `body_html`) |
 | `DELETE /spaces/:space/threads/:slug` | Author or moderator |
 | `POST /spaces/:space/threads/:slug/posts` `{ body }` | Reply |

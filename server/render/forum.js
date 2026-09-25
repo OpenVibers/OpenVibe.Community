@@ -13,16 +13,23 @@ const { markdownToText } = require('./markdown');
 const { timeTag, fmtDate, num, authorHtml } = require('./pages');
 
 const SORT_LABELS = { hot: 'Hot', new: 'New', top: 'Top' };
+const STATUS_LABELS = { open: 'Open', planned: 'Planned', in_progress: 'In progress', done: 'Done', declined: 'Declined', paused: 'Paused' };
+/** A request's or roadmap item's status, and a thread's category. */
+const statusBadge = (t) => (t && t.status ? ` <span class="badge badge-status status-${esc(t.status)}">${esc(STATUS_LABELS[t.status] || t.status)}</span>` : '');
+const categoryBadge = (t, space) => (t && t.category ? ` <a class="badge badge-category" href="${esc(spaceHref(space.slug, { category: t.category.slug }))}">${esc(t.category.name)}</a>` : '');
 const VIS_LABELS = { members: 'Members only', staff: 'Staff only' };
 
 function who(a) {
     if (!a) return '<span class="author"><span class="avatar avatar-letter" aria-hidden="true">?</span><span>Anonymous</span></span>';
     if (a.is_ai) return `<span class="author">${authorHtml({ display_name: a.display_name }, { link: false })}</span> <span class="badge badge-ai" title="Written by AI, not by a person">AI</span>`;
+    if (a.is_system) return `<span class="author">${authorHtml({ display_name: a.display_name }, { link: false })}</span>`;
     return authorHtml(a);
 }
 
-function spaceHref(slug, { sort = 'hot', page = 1 } = {}) {
+function spaceHref(slug, { sort = 'hot', page = 1, category = null, status = null } = {}) {
     const q = new URLSearchParams();
+    if (category) q.set('category', category);
+    if (status) q.set('status', status);
     if (sort && sort !== 'hot') q.set('sort', sort);
     if (page > 1) q.set('page', String(page));
     const s = q.toString();
@@ -76,32 +83,42 @@ function threadRow(t, space) {
     return `<li class="thread-row">
     <span class="thread-score" title="Score">${num(t.score)}</span>
     <div class="thread-main">
-      <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>${vipBadge(t)}
+      <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>${statusBadge(t)}${categoryBadge(t, space)}${vipBadge(t)}
       <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
     </div>
   </li>`;
 }
 
-function spacePage({ space, threads, sort, page, pages, total, user }) {
-    const tabs = Object.keys(SORT_LABELS).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
-    const indexable = space.visibility === 'public' && !space.members_only;
+function spacePage({ space, threads, sort, page, pages, total, user, categories = [], category = null, status = null, viewer = {} }) {
+    const tabs = Object.keys(SORT_LABELS).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s, category, status }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
+    const filtered = !!(category || status);
+    const indexable = space.visibility === 'public' && !space.members_only && !filtered;
+    const chip = (label, href, on) => `<a class="chip${on ? ' active' : ''}" href="${esc(href)}"${on ? ' aria-current="true"' : ''}>${label}</a>`;
+    const categoryNav = categories.length ? `<nav class="chips" aria-label="Categories">${chip('All', spaceHref(space.slug, { sort, status }), !category)}${categories.map((c) => chip(`${esc(c.name)} <span class="muted">${num(c.thread_count || 0)}</span>`, spaceHref(space.slug, { sort, status, category: c.slug }), c.slug === category)).join('')}</nav>` : '';
+    const statusNav = (space.statuses || []).length ? `<nav class="chips" aria-label="Status">${chip('Any status', spaceHref(space.slug, { sort, category }), !status)}${space.statuses.map((st) => chip(esc(STATUS_LABELS[st] || st), spaceHref(space.slug, { sort, category, status: st }), st === status)).join('')}</nav>` : '';
+    const canStart = viewer.can_start !== false;
+    const startLabel = space.thread_kind === 'request' ? 'New request' : space.thread_kind === 'roadmap' ? 'New roadmap item' : 'New thread';
+    const start = canStart ? `<p><a class="btn btn-primary" href="/s/${esc(space.slug)}/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> ${startLabel}</a>${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</p>`
+        : `<p class="muted small">Staff add roadmap items. Open one to ask about it or argue for it, or suggest something new in <a href="/s/feedback">Feedback</a>.</p>`;
+    const categoryName = category ? (categories.find((c) => c.slug === category) || {}).name : null;
     const body = `
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › <span aria-current="page">${esc(space.name)}</span></nav>
   <h1>${esc(space.name)}${visBadge(space)}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
-  <p><a class="btn btn-primary" href="/s/${esc(space.slug)}/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> New thread</a>${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</p>
+  ${start}
 </header>
+${categoryNav}${statusNav}
 <nav class="tabs sort-tabs" aria-label="Sort threads">${tabs}</nav>
 <section data-results>
-  ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : `<p class="empty">No threads yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.</p>`}
-  ${pager((n) => spaceHref(space.slug, { sort, page: n }), page, pages)}
+  ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? `<p class="empty">Nothing here yet. <a href="${esc(spaceHref(space.slug))}">See everything in ${esc(space.name)}</a>.</p>` : canStart ? `<p class="empty">No threads yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.</p>` : '<p class="empty">Nothing here yet.</p>'}
+  ${pager((n) => spaceHref(space.slug, { sort, page: n, category, status }), page, pages)}
 </section>`;
     return renderPage({
-        title: `${space.name} — ${SORT_LABELS[sort].toLowerCase()} threads${page > 1 ? ` (page ${page})` : ''}`,
+        title: `${space.name}${categoryName ? ` · ${categoryName}` : ''}${status ? ` · ${STATUS_LABELS[status] || status}` : ''} — ${SORT_LABELS[sort].toLowerCase()} threads${page > 1 ? ` (page ${page})` : ''}`,
         description: `${space.description || `Threads in ${space.name}`} ${num(total)} ${total === 1 ? 'thread' : 'threads'} on OpenVibe.Community.`,
-        canonicalPath: spaceHref(space.slug, { sort, page }),
-        robots: indexable ? 'index,follow' : 'noindex,nofollow',
+        canonicalPath: spaceHref(space.slug, { sort, page, category, status }),
+        robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
@@ -127,7 +144,7 @@ function voteForm(base, thread, viewer) {
     return `<form class="vote" method="post" action="${esc(base)}/vote">${btn(1, 'fa-arrow-up', 'Upvote')}<span class="vote-score" title="Score">${num(thread.score)}</span>${btn(-1, 'fa-arrow-down', 'Downvote')}</form>`;
 }
 
-function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '' }) {
+function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [] }) {
     const base = `/s/${space.slug}/t/${thread.slug}`;
     const opening = posts.find((p) => p.is_opening) || null;
     const gated = !!(space.members_only || thread.members_only);
@@ -146,6 +163,8 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     <form method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
     ${viewer.can_delete ? `<form method="post" action="${esc(base)}/delete"><button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
     ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
+    ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="inline-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
+    ${categories.length && (viewer.can_moderate || viewer.can_delete) ? `<form class="inline-form" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : ''}
   </div>` : '';
 
     const body = `
@@ -155,6 +174,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     ${voteForm(base, thread, viewer)}
     <div>
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
+      ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
     </div>
   </header>
@@ -186,10 +206,13 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
 }
 
 // ── /s/:space/new ────────────────────────────────────────────
-function newThreadPage({ space, user, values = {}, error = null }) {
+function newThreadPage({ space, user, values = {}, error = null, categories = [] }) {
+    const categoryField = categories.length ? `<label class="field"><span>Category</span><select name="category"><option value="">None</option>${categories.map((c) => `<option value="${esc(c.slug)}"${values.category === c.slug ? ' selected' : ''}>${esc(c.name)}${c.description ? ` — ${esc(c.description)}` : ''}</option>`).join('')}</select></label>` : '';
     const form = user ? `<form class="paste-form" method="post" action="/s/${esc(space.slug)}/new">
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
+  ${space.thread_kind === 'request' ? '<p class="muted small">A request is open to votes. Search first: if it is already here, vote for it instead.</p>' : ''}
   <label class="field"><span>Title</span><input type="text" name="title" minlength="3" maxlength="200" required value="${esc(values.title || '')}" placeholder="What is it about?"></label>
+  ${categoryField}
   <label class="field"><span>Post (Markdown)</span><textarea name="body" rows="14" maxlength="40000" required placeholder="Say it, own it.">${esc(values.body || '')}</textarea></label>
   <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">

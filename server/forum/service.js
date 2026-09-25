@@ -38,6 +38,18 @@ const { renderMarkdown } = require('../render/markdown');
 const { isUserSubject } = require('../vip');
 
 const THREADS_PER_PAGE = 25;
+/**
+ * What a thread is (spaces.thread_kind decides it for new threads) and the statuses it can have:
+ *   discussion  no status
+ *   request     a feature request, bug or question (Feedback): open → planned → in_progress → done, or declined; staff set it
+ *   roadmap     a roadmap item (the Roadmap space; staff and the roadmap sync start them): planned, in_progress, done, paused
+ */
+const STATUSES = Object.freeze({
+    request: ['open', 'planned', 'in_progress', 'done', 'declined'],
+    roadmap: ['planned', 'in_progress', 'done', 'paused'],
+});
+const FIRST_STATUS = { request: 'open', roadmap: 'planned' };
+const CATEGORY_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const POSTS_PER_PAGE = 50;
 const TITLE_MIN = 3, TITLE_MAX = 200;
 const BODY_MAX = 40_000;
@@ -148,11 +160,15 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     // ── shapes ───────────────────────────────────────────────
     const threadUrl = (space, t) => `/s/${space.slug}/t/${t.slug}`;
 
+    const shapeCategory = (c) => (c ? { slug: c.slug, name: c.name, description: c.description || null, position: c.position, thread_count: c.thread_count != null ? c.thread_count : undefined } : null);
+
     function shapeThread(t, space, v, projections, votes) {
         const mo = t.members_only_owner || null;
         const p = mo && projections ? projections.get(mo) : null;
         return {
             id: t.id, space: space.slug, slug: t.slug, title: t.title, url: threadUrl(space, t),
+            kind: t.kind || 'discussion', status: t.status || null,
+            category: t.category_id ? shapeCategory(store.getCategoryById(db, t.category_id)) : null,
             members_only: mo ? { owner: mo, owner_username: p && p.username ? p.username : null, join_url: vip ? vip.joinUrl(mo, p && p.username) : null } : null,
             author: authors.author(t.author_subject, t.origin, projections), origin: t.origin,
             pinned: !!t.pinned, locked: !!t.locked, score: t.score, reply_count: t.reply_count,
@@ -184,6 +200,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     function shapeSpace(s, mo = null) {
         return {
             slug: s.slug, name: s.name, description: s.description, visibility: s.visibility, url: `/s/${s.slug}`,
+            thread_kind: s.thread_kind || 'discussion', statuses: STATUSES[s.thread_kind] || [],
             members_only: s.members_only_owner ? (mo || { owner: s.members_only_owner, owner_username: null, join_url: vip ? vip.joinUrl(s.members_only_owner) : null }) : null,
             thread_count: s.thread_count != null ? s.thread_count : undefined,
             last_activity_at: s.last_activity_at !== undefined ? isoTime(s.last_activity_at) : undefined,
@@ -234,18 +251,73 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             return { space: shapeSpace(s, await membersOnly(s.members_only_owner)) };
         },
 
-        /** A page of threads. ?sort=hot|new|top&page= */
+        /** A page of threads. ?sort=hot|new|top&page=&category=<slug>&status=<status> */
         async listThreads(v, spaceSlug, q = {}) {
             const space = spaceFor(v, spaceSlug);
             await requireMembership(v, space);
             const sort = store.SORTS.includes(q.sort) ? q.sort : 'hot';
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
             const perPage = Math.min(Math.max(parseInt(q.limit, 10) || THREADS_PER_PAGE, 1), 100);
-            const { rows, total } = store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date() });
+            const category = q.category ? store.getCategory(db, space.id, q.category) : null;
+            if (q.category && !category) fail(404, 'category.not_found', 'No such category in this space');
+            const statuses = STATUSES[space.thread_kind] || [];
+            if (q.status && !statuses.includes(q.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'Threads in this space have no status');
+            const { rows, total } = store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
             return {
                 space: shapeSpace(space, await membersOnly(space.members_only_owner)), sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
+                categories: store.listCategories(db, space.id).map(shapeCategory), category: category ? category.slug : null, status: q.status || null,
+                viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v) },
                 threads: await shapeThreads(rows, () => space, v),
             };
+        },
+
+        /** The categories of a space. */
+        categories(v, spaceSlug) {
+            const space = spaceFor(v, spaceSlug);
+            return { space: space.slug, categories: store.listCategories(db, space.id).map(shapeCategory) };
+        },
+
+        /** Create or change a category { slug, name, description?, position? } — moderators. */
+        putCategory(v, spaceSlug, slug, body = {}) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage categories');
+            const space = spaceFor(v, spaceSlug);
+            if (!CATEGORY_SLUG.test(String(slug || ''))) fail(400, 'category.invalid_slug', 'A category slug is 1 to 40 lowercase letters, digits and dashes');
+            const name = cleanTitle(body.name);
+            if (name.length < 2 || name.length > 40) fail(400, 'category.invalid_name', 'Category names are 2 to 40 characters');
+            const description = body.description == null ? null : cleanTitle(body.description).slice(0, 200) || null;
+            const position = Number.isInteger(Number(body.position)) ? Number(body.position) : 0;
+            return { category: shapeCategory(store.upsertCategory(db, space.id, { slug, name, description, position })) };
+        },
+
+        /** Delete a category — moderators. Its threads stay, without a category. */
+        deleteCategory(v, spaceSlug, slug) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage categories');
+            const space = spaceFor(v, spaceSlug);
+            if (!store.deleteCategory(db, space.id, slug)) fail(404, 'category.not_found', 'No such category in this space');
+            return { ok: true };
+        },
+
+        /** Move a thread to a category { category: slug | null } — its author or a moderator. */
+        async setThreadCategory(v, spaceSlug, threadSlug, body = {}) {
+            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            if (!(person(v) && thread.author_subject === v.subject) && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator changes the category');
+            await requireMembership(v, space, thread);
+            const category = body.category ? store.getCategory(db, space.id, body.category) : null;
+            if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
+            const next = store.setThreadCategory(db, thread.id, category ? category.id : null);
+            const projections = await authors.projectionsFor([next.author_subject]);
+            return { thread: shapeThread(next, space, v, projections, null) };
+        },
+
+        /** A request's or roadmap item's status { status } — moderators. */
+        async setThreadStatus(v, spaceSlug, threadSlug, body = {}) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators change a status');
+            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const statuses = STATUSES[thread.kind] || [];
+            if (!statuses.includes(body.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'This thread has no status');
+            const next = store.setThreadStatus(db, thread.id, body.status);
+            const projections = await authors.projectionsFor([next.author_subject]);
+            return { thread: shapeThread(next, space, v, projections, null) };
         },
 
         /** A thread with a page of its posts. ?page= */
@@ -260,6 +332,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 space: shapeSpace(space, await membersOnly(space.members_only_owner, projections)),
                 thread: shapeThread(thread, space, v, projections, votes),
                 posts: rows.map((p) => shapePost(p, v, projections)),
+                categories: store.listCategories(db, space.id).map(shapeCategory),
                 page, per_page: POSTS_PER_PAGE, pages: Math.max(Math.ceil(total / POSTS_PER_PAGE), 1), total,
                 viewer: {
                     signed_in: person(v),
@@ -282,6 +355,10 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             mayPostIn(v, space);
             await requireMembership(v, space);
             const gate = gateOwner(v, body.members_only, w.author);
+            const kind = space.thread_kind || 'discussion';
+            if (kind === 'roadmap' && !moderator(v)) fail(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
+            const category = body.category ? store.getCategory(db, space.id, body.category) : null;
+            if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
             const title = cleanTitle(body.title);
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
@@ -289,7 +366,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 threadLimiter.check(w.key, title);
                 if (threadsPerDay > 0 && store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
             }
-            const { thread, post } = store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate });
+            const { thread, post } = store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate,
+                kind, status: FIRST_STATUS[kind] || null, category_id: category ? category.id : null });
             threadLimiter.record(w.key, title);
             if (pulse) hook(() => pulse.threadCreated(thread, space));
             if (relay) hook(() => relay.enqueueThread(thread, space));
@@ -429,4 +507,4 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     };
 }
 
-module.exports = { createForumService, THREADS_PER_PAGE, POSTS_PER_PAGE };
+module.exports = { createForumService, THREADS_PER_PAGE, POSTS_PER_PAGE, STATUSES };

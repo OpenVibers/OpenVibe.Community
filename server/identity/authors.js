@@ -24,6 +24,7 @@ function createAuthors({ db, network = null }) {
      */
     function author(subject, origin, projections) {
         if (origin === 'ai') return { subject: null, username: null, display_name: AI_DISPLAY_NAME, avatar_url: null, profile_color: null, is_ai: true };
+        if (origin === 'system' && !subject) return { subject: null, username: null, display_name: 'OpenVibe', avatar_url: null, profile_color: null, is_system: true };
         if (!subject) return null;
         const p = projections.get(subject);
         return {

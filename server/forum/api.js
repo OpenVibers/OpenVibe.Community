@@ -16,6 +16,12 @@
  *   PUT    /spaces/:space/members-only { owner: 'usr_…' | null }        moderators (OpenVibe.VIP gate)
  *   PUT    /spaces/:space/threads/:slug/members-only { owner | true | null }   the author (own members) or moderators
  *   POST   /spaces/:space/threads { …, members_only: true | { owner } }        start a members-only thread
+ *   GET    /spaces/:space/categories                      the space's categories (?category=<slug> filters threads)
+ *   PUT    /spaces/:space/categories/:category { name, description?, position? }   moderators
+ *   DELETE /spaces/:space/categories/:category            moderators (threads keep their place, uncategorised)
+ *   PUT    /spaces/:space/threads/:slug/category { category: slug | null }   the author or moderators
+ *   PUT    /spaces/:space/threads/:slug/status { status }  moderators: requests open|planned|in_progress|done|declined,
+ *                                                         roadmap items planned|in_progress|done|paused (?status= filters)
  *   PUT    /posts/:id { body }   DELETE /posts/:id   GET /posts/:id/versions
  *
  * Services write with community.post.create (as X-OV-Subject, or as AI with X-OV-Origin: ai) and
@@ -41,6 +47,11 @@ function createSpacesApi({ forum, viewers }) {
     router.get('/', run((req) => forum.listSpaces(req.viewer)));
     router.get('/:space', run((req) => forum.space(req.viewer, p(req).space)));
     router.get('/:space/threads', run((req) => forum.listThreads(req.viewer, p(req).space, req.query)));
+    router.get('/:space/categories', run((req) => forum.categories(req.viewer, p(req).space)));
+    router.put('/:space/categories/:category', serviceCap(MOD), jsonBody, run((req) => forum.putCategory(req.viewer, p(req).space, p(req).category, req.body || {})));
+    router.delete('/:space/categories/:category', serviceCap(MOD), run((req) => forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
+    router.put('/:space/threads/:slug/category', writeOrMod, jsonBody, run((req) => forum.setThreadCategory(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/status', serviceCap(MOD), jsonBody, run((req) => forum.setThreadStatus(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.post('/:space/threads', write, jsonBody, run((req) => forum.createThread(req.viewer, p(req).space, req.body || {}), 201));
     router.get('/:space/threads/:slug', run((req) => forum.getThread(req.viewer, p(req).space, p(req).slug, req.query)));
     router.delete('/:space/threads/:slug', writeOrMod, run((req) => forum.deleteThread(req.viewer, p(req).space, p(req).slug)));

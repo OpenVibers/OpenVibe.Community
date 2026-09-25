@@ -57,11 +57,11 @@ function getThreadBySlug(db, spaceId, slug) {
 }
 
 /** New thread + its opening post, in one transaction. → { thread, post } */
-function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null }) {
+function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null, kind = 'discussion', status = null, category_id = null, external_key = null }) {
     return db.transaction(() => {
         const slug = uniqueSlug(db, space_id, slugify(title));
-        const info = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner) VALUES (?, ?, ?, ?, ?, ?)')
-            .run(space_id, slug, title, author_subject, origin, members_only_owner);
+        const info = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key);
         const threadId = info.lastInsertRowid;
         const p = db.prepare('INSERT INTO posts (thread_id, author_subject, origin, is_opening, body_markdown) VALUES (?, ?, ?, 1, ?)')
             .run(threadId, author_subject, origin, body_markdown);
@@ -79,17 +79,66 @@ function createThread(db, { space_id, title, author_subject = null, origin = 'us
  *   top  highest score first
  * → { rows, total }
  */
-function listThreads(db, spaceId, { sort = 'hot', limit = 25, offset = 0, now = new Date() } = {}) {
+function listThreads(db, spaceId, { sort = 'hot', limit = 25, offset = 0, now = new Date(), categoryId = null, status = null } = {}) {
     const nowSql = new Date(now).toISOString().replace('T', ' ').slice(0, 19);
     const order = {
         hot: 'pinned DESC, ov_hot(score, (julianday(@now) - julianday(created_at)) * 24) DESC, last_activity_at DESC, id DESC',
         new: 'pinned DESC, created_at DESC, id DESC',
         top: 'pinned DESC, score DESC, created_at DESC, id DESC',
     }[SORTS.includes(sort) ? sort : 'hot'];
-    const rows = db.prepare(`SELECT * FROM threads WHERE space_id = @space AND deleted_at IS NULL ORDER BY ${order} LIMIT @limit OFFSET @offset`)
-        .all({ space: spaceId, now: nowSql, limit, offset });
-    const { total } = db.prepare('SELECT COUNT(*) AS total FROM threads WHERE space_id = ? AND deleted_at IS NULL').get(spaceId);
+    const where = 'space_id = @space AND deleted_at IS NULL AND (@category IS NULL OR category_id = @category) AND (@status IS NULL OR status = @status)';
+    const params = { space: spaceId, category: categoryId, status };
+    const rows = db.prepare(`SELECT * FROM threads WHERE ${where} ORDER BY ${order} LIMIT @limit OFFSET @offset`)
+        .all({ ...params, now: nowSql, limit, offset });
+    const { total } = db.prepare(`SELECT COUNT(*) AS total FROM threads WHERE ${where}`).get(params);
     return { rows, total };
+}
+
+// ── Categories (WS-J task 1) ─────────────────────────────────
+
+function listCategories(db, spaceId) {
+    return db.prepare(`SELECT c.*, (SELECT COUNT(*) FROM threads t WHERE t.category_id = c.id AND t.deleted_at IS NULL) AS thread_count
+                       FROM categories c WHERE c.space_id = ? ORDER BY c.position, c.name COLLATE NOCASE`).all(spaceId);
+}
+
+function getCategory(db, spaceId, slug) {
+    return db.prepare('SELECT * FROM categories WHERE space_id = ? AND slug = ?').get(spaceId, String(slug)) || null;
+}
+
+function getCategoryById(db, id) {
+    return id ? db.prepare('SELECT * FROM categories WHERE id = ?').get(id) || null : null;
+}
+
+function upsertCategory(db, spaceId, { slug, name, description = null, position = 0 }) {
+    db.prepare(`INSERT INTO categories (space_id, slug, name, description, position) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (space_id, slug) DO UPDATE SET name = excluded.name, description = excluded.description, position = excluded.position`)
+        .run(spaceId, slug, name, description, position);
+    return getCategory(db, spaceId, slug);
+}
+
+/** Threads keep their place; they just lose the category. */
+function deleteCategory(db, spaceId, slug) {
+    return db.transaction(() => {
+        const c = getCategory(db, spaceId, slug);
+        if (!c) return false;
+        db.prepare('UPDATE threads SET category_id = NULL WHERE category_id = ?').run(c.id);
+        db.prepare('DELETE FROM categories WHERE id = ?').run(c.id);
+        return true;
+    })();
+}
+
+function setThreadCategory(db, id, categoryId) {
+    db.prepare('UPDATE threads SET category_id = ? WHERE id = ?').run(categoryId, id);
+    return getThread(db, id);
+}
+
+function setThreadStatus(db, id, status) {
+    db.prepare('UPDATE threads SET status = ? WHERE id = ?').run(status, id);
+    return getThread(db, id);
+}
+
+function getThreadByKey(db, spaceId, key) {
+    return db.prepare('SELECT * FROM threads WHERE space_id = ? AND external_key = ?').get(spaceId, String(key)) || null;
 }
 
 /** Latest threads across spaces of the given visibilities (sitemap, feeds); members-only ones never. */
@@ -196,5 +245,6 @@ module.exports = {
     SORTS, slugify,
     listSpaces, getSpace, getSpaceById,
     getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
+    listCategories, getCategory, getCategoryById, upsertCategory, deleteCategory, setThreadCategory, setThreadStatus, getThreadByKey,
     getPost, addPost, listPosts, editPost, listPostVersions, softDeletePost, countPostsSince,
 };

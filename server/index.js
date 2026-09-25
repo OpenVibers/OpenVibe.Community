@@ -10,6 +10,11 @@ const { createApp } = require('./app');
 const app = createApp();
 // Community → OpenVibe.Events (server/events.js): off unless EVENTS_URL and the client secret are set.
 try { require('./events').init(require('./db').getDb()); } catch (err) { console.warn('[Events] not started:', err.message); }
+// The Roadmap space follows docs/roadmap/public.json (server/forum/roadmap.js).
+try {
+    const r = require('./forum/roadmap').syncFromFile(require('./db').getDb());
+    if (r && (r.created || r.updated)) console.log(`[Roadmap] ${r.created} item(s) added, ${r.updated} updated`);
+} catch (err) { console.warn('[Roadmap] not synced:', err.message); }
 const server = app.listen(config.port, config.host, () => {
     console.log(`[Community] ${config.nodeEnv} on http://${config.host}:${config.port} → ${config.baseUrl}`);
     console.log(config.pastesAuthority === 'community'

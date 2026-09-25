@@ -64,7 +64,7 @@ function createForumRoutes({ forum, viewers, config }) {
 
     router.get('/s/:space', withViewer, wrap(async (req, res, next) => {
         try {
-            const out = await forum.listThreads(req.viewer, req.params.space, { sort: req.query.sort, page: req.query.page });
+            const out = await forum.listThreads(req.viewer, req.params.space, { sort: req.query.sort, page: req.query.page, category: req.query.category, status: req.query.status });
             if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
             html(res, forumPages.spacePage({ ...out, user: req.user }));
         } catch (err) { failPage(req, res, err, next); }
@@ -73,15 +73,17 @@ function createForumRoutes({ forum, viewers, config }) {
     router.get('/s/:space/new', withViewer, wrap(async (req, res, next) => {
         try {
             // A members-only space: the teaser, not the form, for someone who may not post there.
-            await forum.listThreads(req.viewer, req.params.space, { limit: 1 });
+            const probe = await forum.listThreads(req.viewer, req.params.space, { limit: 1 });
+            if (!probe.viewer.can_start) throw new ApiError(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
             const { space } = await forum.space(req.viewer, req.params.space);
-            html(res, forumPages.newThreadPage({ space, user: req.user }));
+            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
     router.post('/s/:space/new', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         const values = { title: String((req.body || {}).title || '').slice(0, 200), body: String((req.body || {}).body || '').slice(0, 40_000) };
         if ((req.body || {}).members_only === '1') values.members_only = true;
+        if ((req.body || {}).category) values.category = String(req.body.category).slice(0, 40);
         try {
             const out = await forum.createThread(req.viewer, req.params.space, values);
             seo.resetCaches();
@@ -90,7 +92,8 @@ function createForumRoutes({ forum, viewers, config }) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);
             try {
                 const { space } = await forum.space(req.viewer, req.params.space);
-                html(res, forumPages.newThreadPage({ space, user: req.user, values, error: err.message }), err.status);
+                const { categories } = forum.categories(req.viewer, req.params.space);
+                html(res, forumPages.newThreadPage({ space, user: req.user, values, error: err.message, categories }), err.status);
             } catch (e) { failPage(req, res, e, next); }
         }
     }));
@@ -146,6 +149,21 @@ function createForumRoutes({ forum, viewers, config }) {
         if (b.locked !== undefined) flags.locked = b.locked === '1';
         try {
             await forum.moderateThread(req.viewer, req.params.space, req.params.slug, flags);
+            res.redirect(303, back(req));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // Status (moderators) and category (the author or moderators), no JS.
+    router.post('/s/:space/t/:slug/status', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.setThreadStatus(req.viewer, req.params.space, req.params.slug, { status: String((req.body || {}).status || '') });
+            res.redirect(303, back(req));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    router.post('/s/:space/t/:slug/category', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.setThreadCategory(req.viewer, req.params.space, req.params.slug, { category: String((req.body || {}).category || '') || null });
             res.redirect(303, back(req));
         } catch (err) { failPage(req, res, err, next); }
     }));
