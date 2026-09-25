@@ -18,6 +18,7 @@
  * visitor); an Origin header from somewhere else is refused as well.
  */
 const express = require('express');
+const multer = require('multer');
 const seo = require('../seo');
 const pages = require('../render/pages');
 const forumPages = require('../render/forum');
@@ -27,6 +28,23 @@ function createForumRoutes({ forum, viewers, config }) {
     const router = express.Router();
     const withViewer = viewers.middleware({ services: false });
     const form = express.urlencoded({ extended: false, limit: '256kb' });
+    // New threads and replies may carry up to 4 images (multipart `attachments`); a urlencoded form passes through.
+    const imageParser = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 4, fields: 20, fieldSize: 64 * 1024 } }).array('attachments', 4);
+    const withImages = (req, res, next) => imageParser(req, res, (err) => {
+        if (err) req.uploadError = err.code === 'LIMIT_FILE_SIZE' ? 'Images are limited to 8 MB' : (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') ? 'At most 4 images per post' : 'The images could not be read';
+        next();
+    });
+    /** Store the form's images in Media first. → their media ids (the post then names them) */
+    async function uploadImages(req) {
+        if (req.uploadError) throw new ApiError(400, 'attachments.invalid', req.uploadError);
+        const ids = [];
+        for (const f of req.files || []) {
+            if (!f || !f.size) continue;
+            ids.push((await forum.uploadAttachment(req.viewer, req.params.space, f)).attachment.media_id);
+        }
+        return ids;
+    }
+    const worthUploading = (title, body) => (title == null || String(title).trim().length >= 3) && String(body || '').trim().length > 0;
     const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', 'no-cache').send(body);
     const login = (res, next) => res.redirect(303, `/auth/login?next=${encodeURIComponent(next)}`);
     const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -76,15 +94,17 @@ function createForumRoutes({ forum, viewers, config }) {
             const probe = await forum.listThreads(req.viewer, req.params.space, { limit: 1 });
             if (!probe.viewer.can_start) throw new ApiError(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
             const { space } = await forum.space(req.viewer, req.params.space);
-            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories }));
+            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled() }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.post('/s/:space/new', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+    router.post('/s/:space/new', withViewer, sameOrigin, withImages, form, wrap(async (req, res, next) => {
         const values = { title: String((req.body || {}).title || '').slice(0, 200), body: String((req.body || {}).body || '').slice(0, 40_000) };
         if ((req.body || {}).members_only === '1') values.members_only = true;
         if ((req.body || {}).category) values.category = String(req.body.category).slice(0, 40);
         try {
+            // Images go to Media only when the rest can be saved (no strays from an empty form).
+            if (worthUploading(values.title, values.body)) { const ids = await uploadImages(req); if (ids.length) values.attachments = ids; }
             const out = await forum.createThread(req.viewer, req.params.space, values);
             seo.resetCaches();
             res.redirect(303, out.thread.url);
@@ -93,7 +113,7 @@ function createForumRoutes({ forum, viewers, config }) {
             try {
                 const { space } = await forum.space(req.viewer, req.params.space);
                 const { categories } = forum.categories(req.viewer, req.params.space);
-                html(res, forumPages.newThreadPage({ space, user: req.user, values, error: err.message, categories }), err.status);
+                html(res, forumPages.newThreadPage({ space, user: req.user, values, error: err.message, categories, attachments: forum.attachmentsEnabled() }), err.status);
             } catch (e) { failPage(req, res, e, next); }
         }
     }));
@@ -101,17 +121,18 @@ function createForumRoutes({ forum, viewers, config }) {
     async function renderThread(req, res, { status = 200, error = null, draft = '' } = {}) {
         const out = await forum.getThread(req.viewer, req.params.space, req.params.slug, { page: req.query.page });
         if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
-        html(res, forumPages.threadPage({ ...out, perPage: out.per_page, user: req.user, error, draft }), status);
+        html(res, forumPages.threadPage({ ...out, perPage: out.per_page, user: req.user, error, draft, attachmentsEnabled: forum.attachmentsEnabled() }), status);
     }
 
     router.get('/s/:space/t/:slug', withViewer, wrap(async (req, res, next) => {
         try { await renderThread(req, res); } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.post('/s/:space/t/:slug/reply', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+    router.post('/s/:space/t/:slug/reply', withViewer, sameOrigin, withImages, form, wrap(async (req, res, next) => {
         const draft = String((req.body || {}).body || '').slice(0, 40_000);
         try {
-            const out = await forum.reply(req.viewer, req.params.space, req.params.slug, { body: draft });
+            const attachments = worthUploading(null, draft) ? await uploadImages(req) : [];
+            const out = await forum.reply(req.viewer, req.params.space, req.params.slug, { body: draft, attachments: attachments.length ? attachments : undefined });
             res.redirect(303, out.url);
         } catch (err) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);

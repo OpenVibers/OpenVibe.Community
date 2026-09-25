@@ -36,6 +36,7 @@ const { createPersonLimiter } = require('../limits');
 const { discussionModerator } = require('../identity/capabilities');
 const { renderMarkdown } = require('../render/markdown');
 const { isUserSubject } = require('../vip');
+const { stripImageMetadata } = require('../media/strip-metadata');
 
 const THREADS_PER_PAGE = 25;
 /**
@@ -50,16 +51,30 @@ const STATUSES = Object.freeze({
 });
 const FIRST_STATUS = { request: 'open', roadmap: 'planned' };
 const CATEGORY_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// Attachments (WS-J task 2): images only, stored in OpenVibe.Media as med_ objects (media/objects.js).
+const ATTACH_MAX = 4;
+const ATTACH_BYTES = 8 * 1024 * 1024;
+const MED_ID = /^med_[0-9A-HJKMNP-TV-Z]{26}$/;
+/** The image type from its first bytes (never the name or the declared type), or null. */
+function sniffImage(b) {
+    if (!Buffer.isBuffer(b) || b.length < 12) return null;
+    if (b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG') return 'image/png';
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+    if (b.toString('latin1', 0, 4) === 'GIF8') return 'image/gif';
+    if (b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+    return null;
+}
 const POSTS_PER_PAGE = 50;
 const TITLE_MIN = 3, TITLE_MAX = 200;
 const BODY_MAX = 40_000;
 const THREADS_PER_DAY = 20;
 
-function createForumService({ db, network = null, pulse = null, relay = null, vip = null, limits = {} } = {}) {
+function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, limits = {} } = {}) {
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
     const voteLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'votes', ...(limits.votes || {}) });
+    const uploadLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 12, duplicate: false, noun: 'uploads', ...(limits.uploads || {}) });
     const threadsPerDay = limits.threadsPerDay != null ? limits.threadsPerDay : THREADS_PER_DAY;
     const hook = (fn) => { try { fn(); } catch (err) { console.warn('[Forum] side effect failed:', err.message); } };
 
@@ -177,10 +192,36 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         };
     }
 
-    function shapePost(p, v, projections) {
+    const shapeAttachment = (a) => ({ media_id: a.media_id, url: a.url, filename: a.filename || null, mime: a.mime, size_bytes: a.size_bytes });
+    /** post id → [attachment], in order. */
+    function attachmentsOf(postIds) {
+        const out = new Map();
+        if (!postIds.length) return out;
+        const rows = db.prepare(`SELECT * FROM attachments WHERE post_id IN (${postIds.map(() => '?').join(', ')}) ORDER BY post_id, position`).all(...postIds);
+        for (const r of rows) { if (!out.has(r.post_id)) out.set(r.post_id, []); out.get(r.post_id).push(shapeAttachment(r)); }
+        return out;
+    }
+
+    /** The attachments a write names: the writer's own uploads, not yet on a post, at most ATTACH_MAX. → rows */
+    function claimable(w, ids) {
+        if (ids === undefined || ids === null) return [];
+        const list = Array.isArray(ids) ? ids.map(String) : [String(ids)];
+        if (list.length > ATTACH_MAX) fail(400, 'attachments.too_many', `At most ${ATTACH_MAX} images per post`);
+        if (!w.author && list.length) fail(403, 'attachments.person_only', 'Only people attach images');
+        const rows = list.map((id) => (MED_ID.test(id) ? db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(id) : null));
+        if (rows.some((r) => !r || r.owner_subject !== w.author || r.post_id != null)) fail(400, 'attachments.invalid', 'Attach images you uploaded for this post');
+        return rows;
+    }
+    function attach(rows, postId) {
+        const set = db.prepare('UPDATE attachments SET post_id = ?, position = ? WHERE media_id = ? AND post_id IS NULL');
+        rows.forEach((r, i) => set.run(postId, i, r.media_id));
+    }
+
+    function shapePost(p, v, projections, attachments = null) {
         const deleted = !!p.deleted_at;
         const mine = person(v) && p.author_subject === v.subject;
         return {
+            attachments: deleted ? [] : ((attachments && attachments.get(p.id)) || []),
             id: p.id, thread_id: p.thread_id, is_opening: !!p.is_opening, origin: p.origin,
             author: deleted ? null : authors.author(p.author_subject, p.origin, projections),
             body_markdown: deleted ? null : p.body_markdown,
@@ -235,6 +276,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         POSTS_PER_PAGE,
 
         isModerator: moderator,
+        /** Whether images can be attached (Media and the service principal are configured). */
+        attachmentsEnabled: () => !!(media && media.configured),
 
         /** Spaces this viewer can open, with thread counts (members-only ones carry members_only). */
         async listSpaces(v) {
@@ -269,6 +312,35 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v) },
                 threads: await shapeThreads(rows, () => space, v),
             };
+        },
+
+        /**
+         * Upload an image to attach to a new thread or reply in this space { buffer, originalname } → { attachment }.
+         * People only; PNG, JPEG, GIF or WebP by content, at most 8 MB; metadata (EXIF, GPS) stripped; stored in
+         * OpenVibe.Media as a public med_ object the person owns. Name it in `attachments` when posting.
+         */
+        async uploadAttachment(v, spaceSlug, file) {
+            if (!media || !media.configured) fail(503, 'attachments.unavailable', 'Images cannot be attached right now');
+            const space = spaceFor(v, spaceSlug);
+            if (!person(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account to attach images');
+            mayPostIn(v, space);
+            await requireMembership(v, space);
+            if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail(400, 'attachments.missing', 'Choose an image');
+            if (file.buffer.length > ATTACH_BYTES) fail(413, 'attachments.too_large', 'Images are limited to 8 MB');
+            const mime = sniffImage(file.buffer);
+            if (!mime) fail(415, 'attachments.unsupported', 'Attach a PNG, JPEG, GIF or WebP image');
+            uploadLimiter.check(`s:${v.subject}`);
+            const buffer = stripImageMetadata(file.buffer, mime);
+            const filename = String(file.originalname || 'image').replace(/[^\w.\- ]+/g, '_').slice(0, 120) || 'image';
+            let stored;
+            try { stored = await media.uploadImage({ buffer, mime, filename, owner: v.subject }); } catch (err) {
+                console.warn('[Forum] attachment upload failed:', err.message);
+                fail(err.status === 413 || err.status === 415 ? err.status : 502, 'attachments.upload_failed', 'The image could not be stored. Try again.');
+            }
+            uploadLimiter.record(`s:${v.subject}`);
+            db.prepare('INSERT INTO attachments (media_id, owner_subject, filename, mime, size_bytes, url) VALUES (?, ?, ?, ?, ?, ?)')
+                .run(stored.id, v.subject, filename, mime, buffer.length, stored.url);
+            return { attachment: shapeAttachment({ media_id: stored.id, url: stored.url, filename, mime, size_bytes: buffer.length }) };
         },
 
         /** The categories of a space. */
@@ -331,8 +403,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             return {
                 space: shapeSpace(space, await membersOnly(space.members_only_owner, projections)),
                 thread: shapeThread(thread, space, v, projections, votes),
-                posts: rows.map((p) => shapePost(p, v, projections)),
+                posts: (() => { const att = attachmentsOf(rows.map((p) => p.id)); return rows.map((p) => shapePost(p, v, projections, att)); })(),
                 categories: store.listCategories(db, space.id).map(shapeCategory),
+                attachments: { enabled: !!(media && media.configured), max: ATTACH_MAX, max_bytes: ATTACH_BYTES },
                 page, per_page: POSTS_PER_PAGE, pages: Math.max(Math.ceil(total / POSTS_PER_PAGE), 1), total,
                 viewer: {
                     signed_in: person(v),
@@ -362,6 +435,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const title = cleanTitle(body.title);
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
+            const images = claimable(w, body.attachments);
             if (w.key) {
                 threadLimiter.check(w.key, title);
                 if (threadsPerDay > 0 && store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
@@ -369,10 +443,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const { thread, post } = store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate,
                 kind, status: FIRST_STATUS[kind] || null, category_id: category ? category.id : null });
             threadLimiter.record(w.key, title);
+            attach(images, post.id);
             if (pulse) hook(() => pulse.threadCreated(thread, space));
             if (relay) hook(() => relay.enqueueThread(thread, space));
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner]);
-            return { thread: shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections) };
+            return { thread: shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, attachmentsOf([post.id])) };
         },
 
         /** Reply { body } → { post } */
@@ -383,15 +458,17 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             await requireMembership(v, space, thread);
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
+            const images = claimable(w, body.attachments);
             postLimiter.check(w.key, text);
             const post = store.addPost(db, { thread_id: thread.id, author_subject: w.author, origin: w.origin, body_markdown: text });
             postLimiter.record(w.key, text);
+            attach(images, post.id);
             if (pulse) hook(() => pulse.postCreated(post, thread, space));
             const projections = await authors.projectionsFor([post.author_subject]);
             // Where the new post lands: its page in the thread (posts are numbered in id order).
             const position = db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id).c;
             const page = Math.max(Math.ceil(position / POSTS_PER_PAGE), 1);
-            return { post: shapePost(post, v, projections), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
+            return { post: shapePost(post, v, projections, attachmentsOf([post.id])), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
         },
 
         /** Edit { body } — the author (not on a locked thread) or a moderator. */
@@ -507,4 +584,4 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     };
 }
 
-module.exports = { createForumService, THREADS_PER_PAGE, POSTS_PER_PAGE, STATUSES };
+module.exports = { createForumService, THREADS_PER_PAGE, POSTS_PER_PAGE, STATUSES, ATTACH_MAX, sniffImage };

@@ -124,7 +124,9 @@ function createApp(opts = {}) {
     });
     // OpenVibe.VIP: members-only spaces and threads (fails closed without a client secret or VIP).
     const vip = opts.vip || createVipGate({ config, ...(opts.vipOptions || {}) });
-    const forum = createForumService({ db, network, pulse, relay, vip, limits: opts.forumLimits });
+    // Images on posts go to OpenVibe.Media's Object API as med_ objects (media/objects.js).
+    const mediaObjects = opts.mediaObjects || require('./media/objects').createMediaObjects({ config });
+    const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, limits: opts.forumLimits });
     const community = config.pastesAuthority === 'community';
     const comments = createCommentService({ db, network, pastesLocal: community, limits: opts.commentLimits });
     seo.useForum(forum);

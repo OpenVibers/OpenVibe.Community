@@ -132,8 +132,10 @@ function postHtml(p, n) {
     return `<article class="post${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
     <header class="post-head">${who(p.author)} <span class="sep">·</span> <a class="muted small" href="#post-${p.id}">${timeTag(p.created_at)}</a>${p.revision > 1 ? ` <span class="sep">·</span> <span class="muted small" title="Edited ${esc(fmtDate(p.updated_at))}">edited</span>` : ''}<span class="post-num muted small">#${n}</span></header>
     <div class="md">${p.body_html}</div>
+    ${(p.attachments || []).length ? `<div class="post-images">${p.attachments.map((a) => `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.filename || 'Image')}" loading="lazy" decoding="async"></a>`).join('')}</div>` : ''}
   </article>`;
 }
+const imageField = (on) => (on ? '<label class="field"><span>Images (optional, up to 4; PNG, JPEG, GIF or WebP, 8 MB each)</span><input type="file" name="attachments" accept="image/png,image/jpeg,image/gif,image/webp" multiple></label>' : '');
 
 function voteForm(base, thread, viewer) {
     if (!viewer.can_vote) return `<div class="vote"><span class="vote-score" title="Score">${num(thread.score)}</span></div>`;
@@ -144,16 +146,17 @@ function voteForm(base, thread, viewer) {
     return `<form class="vote" method="post" action="${esc(base)}/vote">${btn(1, 'fa-arrow-up', 'Upvote')}<span class="vote-score" title="Score">${num(thread.score)}</span>${btn(-1, 'fa-arrow-down', 'Downvote')}</form>`;
 }
 
-function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [] }) {
+function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [], attachmentsEnabled = false }) {
     const base = `/s/${space.slug}/t/${thread.slug}`;
     const opening = posts.find((p) => p.is_opening) || null;
     const gated = !!(space.members_only || thread.members_only);
     const indexable = space.visibility === 'public' && !gated;
     const first = (page - 1) * perPage;
     const replyBlock = viewer.can_reply
-        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply">
+        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply"${attachmentsEnabled ? ' enctype="multipart/form-data"' : ''}>
     ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     <label class="field"><span>Reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
+    ${imageField(attachmentsEnabled)}
     <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-reply" aria-hidden="true"></i> Reply</button><span class="muted small">**bold**, *italic*, \`code\`, \`\`\` blocks, [links](https://…), &gt; quotes and lists.</span></div>
   </form>`
         : thread.locked ? '<p class="alert">This thread is locked.</p>'
@@ -206,14 +209,15 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
 }
 
 // ── /s/:space/new ────────────────────────────────────────────
-function newThreadPage({ space, user, values = {}, error = null, categories = [] }) {
+function newThreadPage({ space, user, values = {}, error = null, categories = [], attachments = false }) {
     const categoryField = categories.length ? `<label class="field"><span>Category</span><select name="category"><option value="">None</option>${categories.map((c) => `<option value="${esc(c.slug)}"${values.category === c.slug ? ' selected' : ''}>${esc(c.name)}${c.description ? ` — ${esc(c.description)}` : ''}</option>`).join('')}</select></label>` : '';
-    const form = user ? `<form class="paste-form" method="post" action="/s/${esc(space.slug)}/new">
+    const form = user ? `<form class="paste-form" method="post" action="/s/${esc(space.slug)}/new"${attachments ? ' enctype="multipart/form-data"' : ''}>
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   ${space.thread_kind === 'request' ? '<p class="muted small">A request is open to votes. Search first: if it is already here, vote for it instead.</p>' : ''}
   <label class="field"><span>Title</span><input type="text" name="title" minlength="3" maxlength="200" required value="${esc(values.title || '')}" placeholder="What is it about?"></label>
   ${categoryField}
   <label class="field"><span>Post (Markdown)</span><textarea name="body" rows="14" maxlength="40000" required placeholder="Say it, own it.">${esc(values.body || '')}</textarea></label>
+  ${imageField(attachments)}
   <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">
     <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>

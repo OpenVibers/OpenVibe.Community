@@ -329,6 +329,11 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   every boot syncs it (`server/forum/roadmap.js`), one thread per item, matched by key. A changed summary
   is an edit of the item's opening post, so the history stays, and replies and votes stay with the item.
 
+- **Images on posts.** Up to 4 per thread or reply: PNG, JPEG, GIF or WebP by content, 8 MB each, with
+  metadata stripped. Each is stored in OpenVibe.Media's Object API as a public `med_` object owned by the
+  person (tenant `community`, Community's service token; `server/media/objects.js`). `attachments` holds
+  the reference until the post naming it is saved. The no-JS forms upload and attach in one step.
+
 API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 
 | Route | What |
@@ -336,6 +341,7 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `GET /spaces` · `GET /spaces/:space` | Spaces the caller can open · one space |
 | `GET /spaces/:space/threads?sort=&page=&limit=&category=&status=` | Threads (server pagination: `page`, `pages`, `total`), the space's `categories`, optionally one category or status |
 | `POST /spaces/:space/threads` `{ title, body, category?, members_only? }` | New thread (`community.post.create` for services); `members_only: true` gates it to the author's VIP members |
+| `POST /spaces/:space/attachments` (multipart `file`) | An image for a new thread or reply → `{ attachment: { media_id, url, … } }`; name it in `attachments: [media_id]` when posting |
 | `GET /spaces/:space/categories` · `PUT`/`DELETE /spaces/:space/categories/:category` `{ name, description?, position? }` | Categories · moderators manage them (a deleted category's threads stay, uncategorised) |
 | `PUT /spaces/:space/threads/:slug/category` `{ category: slug \| null }` | The author or moderators |
 | `PUT /spaces/:space/threads/:slug/status` `{ status }` | Moderators: requests `open`/`planned`/`in_progress`/`done`/`declined`, roadmap items `planned`/`in_progress`/`done`/`paused` |

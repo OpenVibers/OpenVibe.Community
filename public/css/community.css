@@ -176,6 +176,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .status-done { border-color: var(--success); color: var(--success); }
 .status-declined, .status-paused { color: var(--text-muted, var(--text-secondary)); }
 .thread-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.post-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-top: 10px; }
+.post-images img { display: block; width: 100%; max-height: 320px; object-fit: contain; border-radius: 10px; border: 1px solid var(--border-light); background: var(--bg-secondary, transparent); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-light); color: var(--text-secondary); font-size: .85rem; font-weight: 600; }
 .chip:hover { border-color: var(--accent); text-decoration: none; }

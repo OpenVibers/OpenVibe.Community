@@ -16,6 +16,8 @@
  *   PUT    /spaces/:space/members-only { owner: 'usr_…' | null }        moderators (OpenVibe.VIP gate)
  *   PUT    /spaces/:space/threads/:slug/members-only { owner | true | null }   the author (own members) or moderators
  *   POST   /spaces/:space/threads { …, members_only: true | { owner } }        start a members-only thread
+ *   POST   /spaces/:space/attachments (multipart `file`)  an image for a new thread or reply → { attachment: { media_id, url, … } };
+ *                                                         then POST …/threads or …/posts with { attachments: [media_id] } (at most 4)
  *   GET    /spaces/:space/categories                      the space's categories (?category=<slug> filters threads)
  *   PUT    /spaces/:space/categories/:category { name, description?, position? }   moderators
  *   DELETE /spaces/:space/categories/:category            moderators (threads keep their place, uncategorised)
@@ -30,6 +32,7 @@
  * ({ reason, gate, members_only: { owner, owner_username, join_url } }).
  */
 const express = require('express');
+const multer = require('multer');
 const contracts = require('openvibe-contracts');
 const { run, serviceCap, serviceAnyCap, jsonBody } = require('../http/v1');
 
@@ -48,6 +51,12 @@ function createSpacesApi({ forum, viewers }) {
     router.get('/:space', run((req) => forum.space(req.viewer, p(req).space)));
     router.get('/:space/threads', run((req) => forum.listThreads(req.viewer, p(req).space, req.query)));
     router.get('/:space/categories', run((req) => forum.categories(req.viewer, p(req).space)));
+    // An image to attach: multipart `file`; then name its media_id in `attachments` when posting.
+    const one = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 5 } }).single('file');
+    const withFile = (req, res, next) => one(req, res, (err) => (err
+        ? contracts.http.sendProblem(res, err.code === 'LIMIT_FILE_SIZE' ? 413 : 400, err.code === 'LIMIT_FILE_SIZE' ? 'attachments.too_large' : 'attachments.invalid', { detail: err.code === 'LIMIT_FILE_SIZE' ? 'Images are limited to 8 MB' : 'Send one image as multipart field `file`', ctx: req.ov })
+        : next()));
+    router.post('/:space/attachments', write, withFile, run((req) => forum.uploadAttachment(req.viewer, p(req).space, req.file), 201));
     router.put('/:space/categories/:category', serviceCap(MOD), jsonBody, run((req) => forum.putCategory(req.viewer, p(req).space, p(req).category, req.body || {})));
     router.delete('/:space/categories/:category', serviceCap(MOD), run((req) => forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
     router.put('/:space/threads/:slug/category', writeOrMod, jsonBody, run((req) => forum.setThreadCategory(req.viewer, p(req).space, p(req).slug, req.body || {})));

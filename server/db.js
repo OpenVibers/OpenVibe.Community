@@ -245,6 +245,21 @@ CREATE TABLE IF NOT EXISTS thread_votes (
 -- ── Discord relay (server/relay; DISCORD_RELAY_ENABLED) ──────
 -- webhook_url_ref is the NAME of an environment variable holding the webhook URL: secrets never
 -- live in the database.
+-- Images attached to forum posts (WS-J task 2): the bytes are a Media object (med_…, tenant community,
+-- owned by the person); an upload waits here with no post until the thread or reply naming it is saved.
+CREATE TABLE IF NOT EXISTS attachments (
+    media_id TEXT PRIMARY KEY,
+    owner_subject TEXT NOT NULL,
+    post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    filename TEXT,
+    mime TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_post ON attachments(post_id, position) WHERE post_id IS NOT NULL;
+
 -- Categories inside a space (WS-J task 1): threads may carry one; the space page filters by them.
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
