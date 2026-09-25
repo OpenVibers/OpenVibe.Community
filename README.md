@@ -455,6 +455,20 @@ per source service/type/id).
   keyset cursor), and the `/pulse` page. AI items carry `label: 'AI'` and never an actor —
   they are never attributed to a person (roadmap §33); system items name no one either.
 
+## Platform blocks
+
+People block each other once, on OpenVibe.Network (roadmap WS-E task 5, Contracts 0.49.0), and Community
+honours it (`server/identity/blocks.js`): nobody replies in a forum thread whose author blocked them, replies
+to a comment whose author blocked them (or to a reply that joins that comment), or comments on a paste (paste
+API or comment thread) or forum post whose owner blocked them. The API answers 403 `community.blocked` (a
+problem under `/api/v1`, `{ error, code }` under `/api/pastes`); the no-JS forms show the message with the
+draft kept. Anonymous comments carry no subject and so are not affected; moderation never is.
+
+The blocks come from `network.block.changed` (POST `/internal/events`, `server/pulse/consumer.js`) into the
+`network_blocks` projection, newest revision per pair. Boot creates the missing subscription
+(`startSubscriptions`, `COMMUNITY_EVENTS_SECRET`, `EVENTS_URL`); a new subscription gets no history, so
+blocks made before it existed need a replay from OpenVibe.Events.
+
 ## Capabilities
 
 Community checks service tokens against these capabilities (manifests in
@@ -468,7 +482,7 @@ Community checks service tokens against these capabilities (manifests in
 | `community.pulse.write` | active in contracts (v0.7.0) | publishing to Pulse |
 | `community.post.create` | active in contracts (v0.7.0) | forum writes |
 
-This repository pins `openvibe-contracts` v0.33.0, which knows every id above, so they all go
+This repository pins `openvibe-contracts` v0.49.0, which knows every id above, so they all go
 through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
 the installed contracts do not know locally, with the library's own matching rule (the exact id
 or a `prefix.*` grant).

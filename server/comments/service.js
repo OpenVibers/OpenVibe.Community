@@ -16,6 +16,8 @@
  *   - comment: people (browser or service X-OV-Subject), anonymous with an anon_name, or AI output
  *     from a service (origin ai, never attributed). Not on locked threads (moderators still may).
  *     Threads of the types in SIGNED_IN_ONLY take no anonymous comments (the owner product's rule).
+ *     Platform blocks (identity/blocks.js): no reply to a comment whose author blocked you, no comment
+ *     on a Community paste or post whose owner blocked you (403 community.blocked).
  *   - edit: the comment's author only (edited_at records it).
  *   - delete: the comment's author, or a moderator.
  *   - one comment with its thread (getComment): services only — comment ids are sequential, so a
@@ -37,6 +39,7 @@ const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
 const { discussionModerator: moderator } = require('../identity/capabilities');
+const blocks = require('../identity/blocks');
 
 /**
  * The entity types a browser may open a thread for (services with community.comment.write: any).
@@ -153,6 +156,14 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
 
     const signedInOnly = (t) => (SIGNED_IN_ONLY[t.ref_service] || []).includes(t.ref_type);
 
+    /** Who owns a thread's Community entity (a paste's owner, a forum post's author), or null. */
+    function entityOwner(t) {
+        if (t.ref_service !== 'community') return null;
+        if (t.ref_type === 'paste' && pastesLocal) { const p = pasteStore.getBySlug(db, t.ref_id); return p ? p.owner_subject || null : null; }
+        if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) { const r = db.prepare('SELECT author_subject FROM posts WHERE id = ?').get(Number(t.ref_id)); return r ? r.author_subject || null : null; }
+        return null;
+    }
+
     function cleanMessage(raw) {
         const message = String(raw == null ? '' : raw).replace(/\u0000/g, '').trim();
         if (!message) fail(400, 'comment.empty', 'Comment cannot be empty');
@@ -224,9 +235,10 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             if (t.visibility === 'locked' && !moderator(v)) fail(403, 'thread.locked', 'This comment thread is locked');
             const message = cleanMessage(body.message);
 
+            let parent = null;
             let parentId = null;
             if (body.parent_id != null && body.parent_id !== '') {
-                const parent = /^\d{1,15}$/.test(String(body.parent_id)) ? store.getComment(db, Number(body.parent_id)) : null;
+                parent = /^\d{1,15}$/.test(String(body.parent_id)) ? store.getComment(db, Number(body.parent_id)) : null;
                 if (!parent || parent.thread_id !== t.id || parent.deleted_at) fail(400, 'comment.invalid_parent', 'Invalid parent comment');
                 // One level of nesting: a reply to a reply joins the top-level comment's replies.
                 parentId = parent.parent_id || parent.id;
@@ -234,6 +246,13 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
 
             const origin = v.origin === 'ai' ? 'ai' : 'user';
             const author = origin === 'ai' ? null : (v.subject || null);
+            // Platform blocks: no reply to a comment whose author blocked you (the one answered, and the
+            // top-level comment it joins), no comment on a paste or post whose owner blocked you.
+            if (parent) {
+                const top = parent.parent_id ? store.getComment(db, parent.parent_id) : null;
+                blocks.refuseIfBlocked(db, [parent.author_subject, top && top.author_subject], author, 'reply to this comment');
+            }
+            blocks.refuseIfBlocked(db, [entityOwner(t)], author, `comment on this ${t.ref_type}`, 'its owner');
             if (!author && origin !== 'ai' && !moderator(v) && signedInOnly(t)) fail(401, 'auth.required', 'Sign in to comment here');
             let anonName = null;
             if (!author && origin !== 'ai') {

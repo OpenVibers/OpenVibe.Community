@@ -21,6 +21,7 @@ const events = require('../events');
 const store = require('./store');
 const { stripImageMetadata } = require('../media/strip-metadata');
 const { capabilities } = require('openvibe-contracts');
+const blocks = require('../identity/blocks');
 
 const DEFAULT_LIMITS = {
     maxSizeKb: 512,
@@ -551,11 +552,15 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const rateKey = author ? `s:${author}` : `ip:${ctx.ip || 'unknown'}`;
             if (limited(v)) commentRateCheck(rateKey, message);
             const parentId = body.parent_id ? parseInt(body.parent_id, 10) : null;
+            let parent = null;
             if (parentId) {
-                const parent = store.getComment(db, parentId);
+                parent = store.getComment(db, parentId);
                 if (!parent || parent.paste_id !== p.id) fail(400, 'Invalid parent comment');
                 if (parent.parent_id) fail(400, 'Cannot reply to a reply — reply to the original comment instead');
             }
+            // Platform blocks: no comment on a paste whose owner blocked you, no reply to a comment whose author did.
+            if (author && blocks.hasBlocked(db, p.owner_subject, author)) fail(403, 'You cannot comment on this paste: its owner blocked you', { code: 'community.blocked' });
+            if (author && parent && blocks.hasBlocked(db, parent.author_subject, author)) fail(403, 'You cannot reply to this comment: its author blocked you', { code: 'community.blocked' });
             const c = store.createComment(db, { paste_id: p.id, author_subject: author, anon_name: anonName, parent_id: parentId, message });
             if (limited(v)) commentRecorded(rateKey, message);
             return { comment: shapeComment(c, await projectionsFor([author])) };

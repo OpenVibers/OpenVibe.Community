@@ -15,6 +15,9 @@
  * And VIP convergence: vip.membership.changed (source vip) drops the member's cached members-only
  * answers for that creator at once (the VIP gate's cache handleEvent) instead of waiting out its TTL.
  *
+ * And platform blocks (WS-E task 5): network.block.changed (source network) updates the network_blocks
+ * projection (../identity/blocks.js; the newest revision per pair wins) that replies and comments honour.
+ *
  * Exactly once: the openvibe-sdk inbox claims (consumer, event_id) in the same transaction as the Pulse
  * write. Signature v2 only (parseDelivery requireV2) under COMMUNITY_EVENTS_SECRET (comma-separated for
  * rotation, 32+ characters each); unset = 503. Loopback only: a request carrying a forwarding header
@@ -24,9 +27,10 @@ const express = require('express');
 const { http, serviceAuth } = require('openvibe-contracts');
 const { parseDelivery, createInbox } = require('openvibe-sdk/events');
 const store = require('./store');
+const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed']);
 const EVENT_ID_RE = /^evt_[0-9A-HJKMNP-TV-Z]{26}$/;
 const clean = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(u) ? u.slice(0, 500) : null);
@@ -84,6 +88,19 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
             const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: revocations.apply(event) }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;
             return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+        }
+        if (event.event_type === 'network.block.changed') {
+            const p = blocks.payloadOf(event);
+            if (typeof p === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: p }); }
+            try {
+                const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: blocks.apply(db, p, now()) }));
+                if (r.duplicate) stats.duplicates++; else stats.applied++;
+                return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+            } catch (err) {
+                stats.failed++;
+                log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
+                return problem(500, 'community.event_failed', 'processing failed; it will be retried');
+            }
         }
         if (event.event_type === 'vip.membership.changed') {
             if (event.source !== 'vip' || !vipCache) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: event.source !== 'vip' ? 'ignored:source' : 'ignored:no_gate' }); }

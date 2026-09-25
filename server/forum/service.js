@@ -10,7 +10,8 @@
  * Writers: a person (browser JWT subject, or a service with community.post.create naming them in
  *          X-OV-Subject), or AI output from a service (X-OV-Origin: ai — stored with origin 'ai'
  *          and no author, labelled as AI). Anonymous visitors read; they do not post.
- * Locked threads take no replies or votes except from moderators. Authors edit and delete their
+ * Locked threads take no replies or votes except from moderators. Nobody replies in a thread whose
+ * author blocked them on the network (identity/blocks.js). Authors edit and delete their
  * own posts; moderators (identity/capabilities.js discussionModerator) any, and pin/lock.
  * Edits keep every revision in post_versions.
  *
@@ -38,6 +39,7 @@ const { renderMarkdown, markdownToText } = require('../render/markdown');
 const { isUserSubject } = require('../vip');
 const { stripImageMetadata } = require('../media/strip-metadata');
 const reactions = require('./reactions');
+const blocks = require('../identity/blocks');
 const STYLES = ['feed', 'forum'];
 const SPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
@@ -736,6 +738,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             mayPostIn(v, space);
             await requireMembership(v, space, thread);
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
+            // Platform blocks: nobody replies in a thread whose author blocked them.
+            blocks.refuseIfBlocked(db, [thread.author_subject], w.author, 'reply in this thread');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
             const images = claimable(w, body.attachments);
             const pasteRows = claimPastes(body.pastes);
