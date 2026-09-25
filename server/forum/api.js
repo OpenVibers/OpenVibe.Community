@@ -24,6 +24,10 @@
  *   PUT    /spaces/:space/threads/:slug/category { category: slug | null }   the author or moderators
  *   PUT    /spaces/:space/threads/:slug/status { status }  moderators: requests open|planned|in_progress|done|declined,
  *                                                         roadmap items planned|in_progress|done|paused (?status= filters)
+ *   POST   /spaces { slug, name, description?, style?: feed|forum, votes?, reactions?, group?, parent?, visibility?, kind? }   moderators
+ *   PUT    /spaces/:space/settings { name?, description?, style?, votes?, reactions?, group?, parent?, position?, kind? }  moderators
+ *   POST   /spaces/:space/threads/:slug/crosspost { to: slug }  another space gets a thread linking back (people)
+ *   POST   /posts/:id/reactions { reaction: agree|winner|funny|informative|friendly|sympathy|dumb|disgusting|bad_reading|late|null }
  *   PUT    /posts/:id { body }   DELETE /posts/:id   GET /posts/:id/versions
  *
  * Services write with community.post.create (as X-OV-Subject, or as AI with X-OV-Origin: ai) and
@@ -48,6 +52,8 @@ function createSpacesApi({ forum, viewers }) {
     const p = (req) => req.params;
 
     router.get('/', run((req) => forum.listSpaces(req.viewer)));
+    router.post('/', serviceCap(MOD), jsonBody, run((req) => forum.createSpace(req.viewer, req.body || {}), 201));
+    router.put('/:space/settings', serviceCap(MOD), jsonBody, run((req) => forum.updateSpaceSettings(req.viewer, p(req).space, req.body || {})));
     router.get('/:space', run((req) => forum.space(req.viewer, p(req).space)));
     router.get('/:space/threads', run((req) => forum.listThreads(req.viewer, p(req).space, req.query)));
     router.get('/:space/categories', run((req) => forum.categories(req.viewer, p(req).space)));
@@ -61,6 +67,7 @@ function createSpacesApi({ forum, viewers }) {
     router.delete('/:space/categories/:category', serviceCap(MOD), run((req) => forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
     router.put('/:space/threads/:slug/category', writeOrMod, jsonBody, run((req) => forum.setThreadCategory(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/threads/:slug/status', serviceCap(MOD), jsonBody, run((req) => forum.setThreadStatus(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.post('/:space/threads/:slug/crosspost', write, jsonBody, run((req) => forum.crosspost(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
     router.post('/:space/threads', write, jsonBody, run((req) => forum.createThread(req.viewer, p(req).space, req.body || {}), 201));
     router.get('/:space/threads/:slug', run((req) => forum.getThread(req.viewer, p(req).space, p(req).slug, req.query)));
     router.delete('/:space/threads/:slug', writeOrMod, run((req) => forum.deleteThread(req.viewer, p(req).space, p(req).slug)));
@@ -81,6 +88,7 @@ function createPostsApi({ forum, viewers }) {
     const writeOrMod = serviceAnyCap([POST, MOD]);
 
     router.put('/:id', writeOrMod, jsonBody, run((req) => forum.editPost(req.viewer, req.params.id, req.body || {})));
+    router.post('/:id/reactions', serviceCap(POST), jsonBody, run((req) => forum.react(req.viewer, req.params.id, req.body || {})));
     router.delete('/:id', writeOrMod, run((req) => forum.deletePost(req.viewer, req.params.id)));
     router.get('/:id/versions', writeOrMod, run((req) => forum.postVersions(req.viewer, req.params.id)));
 
@@ -88,4 +96,15 @@ function createPostsApi({ forum, viewers }) {
     return router;
 }
 
-module.exports = { createSpacesApi, createPostsApi };
+/** /api/v1/space-groups — the board index's groups: GET (everyone), PUT /:group { name, description?, position? } (moderators). */
+function createGroupsApi({ forum, viewers }) {
+    const router = express.Router();
+    router.use(contracts.http.middleware());
+    router.use(viewers.middleware());
+    router.get('/', run(async (req) => ({ groups: (await forum.listSpaces(req.viewer)).groups.map(({ spaces, ...g }) => ({ ...g, spaces: spaces.map((sp) => sp.slug) })) })));
+    router.put('/:group', serviceCap(MOD), jsonBody, run((req) => forum.putGroup(req.viewer, req.params.group, req.body || {})));
+    router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
+    return router;
+}
+
+module.exports = { createSpacesApi, createPostsApi, createGroupsApi };

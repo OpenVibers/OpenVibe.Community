@@ -34,9 +34,12 @@ const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
 const { discussionModerator } = require('../identity/capabilities');
-const { renderMarkdown } = require('../render/markdown');
+const { renderMarkdown, markdownToText } = require('../render/markdown');
 const { isUserSubject } = require('../vip');
 const { stripImageMetadata } = require('../media/strip-metadata');
+const reactions = require('./reactions');
+const STYLES = ['feed', 'forum'];
+const SPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 const THREADS_PER_PAGE = 25;
 /**
@@ -55,6 +58,22 @@ const CATEGORY_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const ATTACH_MAX = 4;
 const ATTACH_BYTES = 8 * 1024 * 1024;
 const MED_ID = /^med_[0-9A-HJKMNP-TV-Z]{26}$/;
+// Pastes on posts: a card with the paste's first lines (or its screenshot). Public and unlisted pastes only.
+const PASTE_MAX = 4;
+const PASTE_SLUG = /^[A-Za-z0-9_-]{3,80}$/;
+/** Paste codes from links (…/p/<code>) or bare codes, in a list or one string. → unique codes */
+function parsePasteRefs(input) {
+    if (input === undefined || input === null || input === '') return [];
+    const parts = (Array.isArray(input) ? input : String(input).split(/[\s,]+/)).map((x) => String(x).trim()).filter(Boolean);
+    const out = [];
+    for (const x of parts) {
+        const m = x.match(/\/p\/([A-Za-z0-9_-]{3,80})(?:[/?#]|$)/);
+        const slug = m ? m[1] : x;
+        if (!PASTE_SLUG.test(slug)) fail(400, 'pastes.invalid', `"${x.slice(0, 60)}" is not a paste link`);
+        if (!out.includes(slug)) out.push(slug);
+    }
+    return out;
+}
 /** The image type from its first bytes (never the name or the declared type), or null. */
 function sniffImage(b) {
     if (!Buffer.isBuffer(b) || b.length < 12) return null;
@@ -75,6 +94,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
     const voteLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'votes', ...(limits.votes || {}) });
     const uploadLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 12, duplicate: false, noun: 'uploads', ...(limits.uploads || {}) });
+    const reactLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'ratings', ...(limits.reactions || {}) });
+    // Views: one per viewer (person, or address) per thread per 30 minutes; memory only.
+    const viewSeen = new Map();
     const threadsPerDay = limits.threadsPerDay != null ? limits.threadsPerDay : THREADS_PER_DAY;
     const hook = (fn) => { try { fn(); } catch (err) { console.warn('[Forum] side effect failed:', err.message); } };
 
@@ -186,7 +208,10 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             category: t.category_id ? shapeCategory(store.getCategoryById(db, t.category_id)) : null,
             members_only: mo ? { owner: mo, owner_username: p && p.username ? p.username : null, join_url: vip ? vip.joinUrl(mo, p && p.username) : null } : null,
             author: authors.author(t.author_subject, t.origin, projections), origin: t.origin,
-            pinned: !!t.pinned, locked: !!t.locked, score: t.score, reply_count: t.reply_count,
+            pinned: !!t.pinned, locked: !!t.locked, score: t.score, reply_count: t.reply_count, views: t.views || 0,
+            pages: Math.max(Math.ceil(((t.reply_count || 0) + 1) / POSTS_PER_PAGE), 1),
+            last_post: t.last_post_id ? { id: t.last_post_id, author: authors.author(t.last_author_subject, t.last_origin, projections || new Map()) } : null,
+            crosspost_of: t.crosspost_of || null,
             last_activity_at: isoTime(t.last_activity_at), created_at: isoTime(t.created_at),
             my_vote: (votes && votes.get(t.id)) || 0,
         };
@@ -212,16 +237,48 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         if (rows.some((r) => !r || r.owner_subject !== w.author || r.post_id != null)) fail(400, 'attachments.invalid', 'Attach images you uploaded for this post');
         return rows;
     }
+    function claimPastes(refs) {
+        const slugs = parsePasteRefs(refs);
+        if (slugs.length > PASTE_MAX) fail(400, 'pastes.too_many', `At most ${PASTE_MAX} pastes per post`);
+        return slugs.map((slug) => {
+            const r = db.prepare('SELECT id, slug, visibility, burn_after_read, deleted_at FROM pastes WHERE slug = ?').get(slug);
+            if (!r || r.deleted_at) fail(404, 'pastes.not_found', `No paste ${slug}`);
+            if (r.visibility === 'private' || r.burn_after_read) fail(400, 'pastes.not_shareable', `Paste ${slug} is private or burns after reading: it cannot be attached`);
+            return r;
+        });
+    }
+    function attachPastes(rows, postId) {
+        const ins = db.prepare('INSERT OR IGNORE INTO post_pastes (post_id, paste_id, position) VALUES (?, ?, ?)');
+        rows.forEach((r, i) => ins.run(postId, r.id, i));
+    }
+    /** post id → [paste card], live shareable pastes only (a paste made private or deleted drops out). */
+    function pastesOf(postIds) {
+        const out = new Map();
+        if (!postIds.length) return out;
+        const rows = db.prepare(`SELECT pp.post_id, p.slug, p.title, p.language, p.type, p.screenshot_url, p.visibility, p.content
+                                 FROM post_pastes pp JOIN pastes p ON p.id = pp.paste_id
+                                 WHERE pp.post_id IN (${postIds.map(() => '?').join(', ')}) AND p.deleted_at IS NULL AND p.visibility != 'private' AND p.burn_after_read = 0
+                                 ORDER BY pp.post_id, pp.position`).all(...postIds);
+        for (const r of rows) {
+            const lines = String(r.content || '').split('\n');
+            if (!out.has(r.post_id)) out.set(r.post_id, []);
+            out.get(r.post_id).push({ slug: r.slug, title: r.title, language: r.language || 'text', type: r.type, url: `/p/${r.slug}`, screenshot_url: r.type === 'screenshot' ? r.screenshot_url : null,
+                lines: r.content ? lines.length : 0, excerpt: r.type === 'screenshot' ? null : lines.slice(0, 12).join('\n').slice(0, 1500) });
+        }
+        return out;
+    }
+
     function attach(rows, postId) {
         const set = db.prepare('UPDATE attachments SET post_id = ?, position = ? WHERE media_id = ? AND post_id IS NULL');
         rows.forEach((r, i) => set.run(postId, i, r.media_id));
     }
 
-    function shapePost(p, v, projections, attachments = null) {
+    function shapePost(p, v, projections, attachments = null, pastes = null) {
         const deleted = !!p.deleted_at;
         const mine = person(v) && p.author_subject === v.subject;
         return {
             attachments: deleted ? [] : ((attachments && attachments.get(p.id)) || []),
+            pastes: deleted ? [] : ((pastes && pastes.get(p.id)) || []),
             id: p.id, thread_id: p.thread_id, is_opening: !!p.is_opening, origin: p.origin,
             author: deleted ? null : authors.author(p.author_subject, p.origin, projections),
             body_markdown: deleted ? null : p.body_markdown,
@@ -233,7 +290,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     }
 
     async function shapeThreads(rows, spaceOf, v) {
-        const projections = await authors.projectionsFor([...rows.map((r) => r.author_subject), ...rows.map((r) => r.members_only_owner)]);
+        const projections = await authors.projectionsFor([...rows.map((r) => r.author_subject), ...rows.map((r) => r.members_only_owner), ...rows.map((r) => r.last_author_subject)]);
         const votes = myVotes(db, 'thread', rows.map((r) => r.id), v && v.subject);
         return rows.map((r) => shapeThread(r, spaceOf(r), v, projections, votes));
     }
@@ -242,6 +299,10 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         return {
             slug: s.slug, name: s.name, description: s.description, visibility: s.visibility, url: `/s/${s.slug}`,
             thread_kind: s.thread_kind || 'discussion', statuses: STATUSES[s.thread_kind] || [],
+            style: STYLES.includes(s.style) ? s.style : 'feed', votes: s.votes !== 0, reactions: s.reactions !== 0,
+            group: s.group_slug ? { slug: s.group_slug, name: s.group_name } : null,
+            parent: s.parent_slug ? { slug: s.parent_slug, name: s.parent_name } : null,
+            post_count: s.post_count != null ? s.post_count : undefined,
             members_only: s.members_only_owner ? (mo || { owner: s.members_only_owner, owner_username: null, join_url: vip ? vip.joinUrl(s.members_only_owner) : null }) : null,
             thread_count: s.thread_count != null ? s.thread_count : undefined,
             last_activity_at: s.last_activity_at !== undefined ? isoTime(s.last_activity_at) : undefined,
@@ -269,6 +330,59 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         return { ok: true, id: thread.id, deleted: 'thread' };
     }
 
+    /**
+     * Where a thread came from and where else it was crossposted, as far as the viewer may see.
+     * → { from: { space, title, url } | null, to: [{ space, title, url }], targets: [{ slug, name }] (spaces the viewer may crosspost to) }
+     */
+    function crosspostInfo(v, thread) {
+        const visible = (sp) => sp && !sp.members_only_owner && canRead(v, sp) && (sp.visibility !== 'staff' || moderator(v));
+        let from = null;
+        if (thread.crosspost_of) {
+            const t = store.getThread(db, thread.crosspost_of);
+            const sp = t ? store.getSpaceById(db, t.space_id) : null;
+            if (t && visible(sp) && !t.members_only_owner) from = { space: sp.name, title: t.title, url: `/s/${sp.slug}/t/${t.slug}` };
+        }
+        const to = db.prepare('SELECT t.slug, t.title, s.slug AS space_slug FROM threads t JOIN spaces s ON s.id = t.space_id WHERE t.crosspost_of = ? AND t.deleted_at IS NULL ORDER BY t.id').all(thread.id)
+            .map((r) => ({ r, sp: store.getSpace(db, r.space_slug) })).filter(({ sp }) => visible(sp))
+            .map(({ r, sp }) => ({ space: sp.name, title: r.title, url: `/s/${sp.slug}/t/${r.slug}` }));
+        const targets = person(v) && !thread.members_only_owner
+            ? store.listSpaces(db, moderator(v) ? ['public', 'members', 'staff'] : ['public', 'members']).filter((sp) => sp.id !== thread.space_id && !sp.members_only_owner && (sp.thread_kind !== 'roadmap' || moderator(v)))
+                .map((sp) => ({ slug: sp.slug, name: sp.name }))
+            : [];
+        return { from, to, targets };
+    }
+
+    /** Where a space sits on the board index (breadcrumbs). → { group, parent } */
+    function placeOf(space) {
+        const g = space.group_id ? db.prepare('SELECT slug, name FROM space_groups WHERE id = ?').get(space.group_id) : null;
+        const p = space.parent_id ? db.prepare('SELECT slug, name FROM spaces WHERE id = ?').get(space.parent_id) : null;
+        return { group: g || null, parent: p || null };
+    }
+
+    /** Validated space fields from a settings body (only what was sent). */
+    function spaceFields(body, space) {
+        const f = {};
+        if (body.name !== undefined) { const n = cleanTitle(body.name); if (n.length < 2 || n.length > 60) fail(400, 'space.invalid_name', 'Space names are 2 to 60 characters'); f.name = n; }
+        if (body.description !== undefined) f.description = body.description == null ? null : cleanTitle(body.description).slice(0, 300) || null;
+        if (body.style !== undefined) { if (!STYLES.includes(body.style)) fail(400, 'space.invalid_style', 'style is feed or forum'); f.style = body.style; }
+        for (const k of ['votes', 'reactions']) if (body[k] !== undefined) f[k] = (body[k] === true || body[k] === 1 || body[k] === '1' || body[k] === 'true') ? 1 : 0;
+        if (body.position !== undefined) f.position = Number.isInteger(Number(body.position)) ? Number(body.position) : 0;
+        if (body.kind !== undefined) { if (!['discussion', 'request', 'roadmap'].includes(body.kind)) fail(400, 'space.invalid_kind', 'kind is discussion, request or roadmap'); f.thread_kind = body.kind; }
+        if (body.group !== undefined) {
+            const g = body.group ? db.prepare('SELECT id FROM space_groups WHERE slug = ?').get(String(body.group)) : null;
+            if (body.group && !g) fail(404, 'group.not_found', 'No such group on the board index');
+            f.group_id = g ? g.id : null;
+        }
+        if (body.parent !== undefined) {
+            const p = body.parent ? store.getSpace(db, String(body.parent)) : null;
+            if (body.parent && !p) fail(404, 'space.not_found', 'No such parent space');
+            if (p && space && (p.id === space.id || p.parent_id === space.id)) fail(400, 'space.invalid_parent', 'A space cannot sit under itself or its own child');
+            if (p && p.parent_id) fail(400, 'space.invalid_parent', 'Child boards go one level deep');
+            f.parent_id = p ? p.id : null;
+        }
+        return f;
+    }
+
     // ═════════════════════════════════════════════════════════
     return {
         SORTS: store.SORTS,
@@ -276,6 +390,15 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         POSTS_PER_PAGE,
 
         isModerator: moderator,
+        /** The board index's groups (for the settings and new-space forms). */
+        groups: () => store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name })),
+
+        /** A shareable paste's title (the new-topic form's "Discuss in a space"), or null. */
+        pasteTitle(slug) {
+            const r = db.prepare("SELECT title FROM pastes WHERE slug = ? AND deleted_at IS NULL AND visibility != 'private' AND burn_after_read = 0").get(String(slug));
+            return r ? r.title : null;
+        },
+
         /** Whether images can be attached (Media and the service principal are configured). */
         attachmentsEnabled: () => !!(media && media.configured),
 
@@ -285,8 +408,65 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (person(v) || moderator(v)) vis.push('members');
             if (moderator(v)) vis.push('staff');
             const rows = store.listSpaces(db, vis);
-            const projections = await authors.projectionsFor(rows.map((r) => r.members_only_owner));
-            return { spaces: await Promise.all(rows.map(async (r) => shapeSpace(r, await membersOnly(r.members_only_owner, projections)))) };
+            const last = store.lastPosts(db, rows.filter((r) => !r.members_only_owner).map((r) => r.id));
+            const projections = await authors.projectionsFor([...rows.map((r) => r.members_only_owner), ...[...last.values()].map((l) => l.author_subject)]);
+            const shaped = await Promise.all(rows.map(async (r) => {
+                const sp = shapeSpace(r, await membersOnly(r.members_only_owner, projections));
+                const l = last.get(r.id);
+                sp.last_post = l ? { id: l.post_id, thread: { slug: l.thread_slug, title: l.thread_title, url: `/s/${r.slug}/t/${l.thread_slug}` }, author: authors.author(l.author_subject, l.origin, projections), created_at: isoTime(l.created_at) } : null;
+                return sp;
+            }));
+            // The board index: groups in order, each with its top-level spaces; child boards under their parent.
+            const bySlug = new Map(shaped.map((sp) => [sp.slug, { ...sp, children: [] }]));
+            for (const sp of bySlug.values()) if (sp.parent && bySlug.has(sp.parent.slug)) bySlug.get(sp.parent.slug).children.push(sp);
+            const top = [...bySlug.values()].filter((sp) => !(sp.parent && bySlug.has(sp.parent.slug)));
+            const groups = store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name, description: g.description || null, spaces: top.filter((sp) => sp.group && sp.group.slug === g.slug) }))
+                .filter((g) => g.spaces.length);
+            const other = top.filter((sp) => !sp.group);
+            if (other.length) groups.push({ slug: null, name: 'More spaces', description: null, spaces: other });
+            return { spaces: shaped, groups };
+        },
+
+        /** The board index's groups — moderators create or change one { name, description?, position? }. */
+        putGroup(v, slug, body = {}) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage the board index');
+            if (!CATEGORY_SLUG.test(String(slug || ''))) fail(400, 'group.invalid_slug', 'A group slug is 1 to 40 lowercase letters, digits and dashes');
+            const name = cleanTitle(body.name);
+            if (name.length < 2 || name.length > 60) fail(400, 'group.invalid_name', 'Group names are 2 to 60 characters');
+            db.prepare(`INSERT INTO space_groups (slug, name, description, position) VALUES (?, ?, ?, ?)
+                        ON CONFLICT (slug) DO UPDATE SET name = excluded.name, description = excluded.description, position = excluded.position`)
+                .run(slug, name, body.description == null ? null : cleanTitle(body.description).slice(0, 200) || null, Number.isInteger(Number(body.position)) ? Number(body.position) : 0);
+            return { group: db.prepare('SELECT slug, name, description, position FROM space_groups WHERE slug = ?').get(slug) };
+        },
+
+        /**
+         * A space's settings — moderators. { name?, description?, style?: feed|forum, votes?, reactions?, group?: slug|null,
+         * parent?: slug|null, position?, kind?: discussion|request|roadmap }
+         */
+        async updateSpaceSettings(v, spaceSlug, body = {}) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators change a space');
+            const space = spaceFor(v, spaceSlug);
+            const fields = spaceFields(body, space);
+            const next = store.updateSpace(db, space.id, fields);
+            const row = store.listSpaces(db, ['public', 'members', 'staff']).find((r) => r.id === next.id) || next;
+            return { space: shapeSpace(row, await membersOnly(row.members_only_owner)) };
+        },
+
+        /** A new space — moderators. { slug, name, description?, style?, votes?, reactions?, group?, parent?, visibility?, kind? } */
+        async createSpace(v, body = {}) {
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators create spaces');
+            const slug = String(body.slug || '').trim().toLowerCase();
+            if (!SPACE_SLUG.test(slug) || ['new-space', 'discuss', 'feed', 'new'].includes(slug)) fail(400, 'space.invalid_slug', 'A space slug is 2 to 40 lowercase letters, digits and dashes (not new-space, discuss, feed or new)');
+            if (store.getSpace(db, slug)) fail(409, 'space.slug_taken', 'That address is taken');
+            const visibility = ['public', 'members', 'staff'].includes(body.visibility) ? body.visibility : 'public';
+            const fields = spaceFields({ ...body, name: body.name }, null);
+            if (!fields.name) fail(400, 'space.invalid_name', 'Name the space');
+            const style = fields.style || 'feed';
+            store.createSpace(db, { slug, visibility, created_by: v.subject || v.service || 'staff', style, votes: fields.votes != null ? fields.votes : (style === 'forum' ? 0 : 1),
+                reactions: fields.reactions != null ? fields.reactions : 1, name: fields.name, description: fields.description || null, group_id: fields.group_id || null,
+                parent_id: fields.parent_id || null, position: fields.position || 0, thread_kind: fields.thread_kind || 'discussion' });
+            const row = store.listSpaces(db, ['public', 'members', 'staff']).find((r) => r.slug === slug);
+            return { space: shapeSpace(row) };
         },
 
         async space(v, slug) {
@@ -298,7 +478,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         async listThreads(v, spaceSlug, q = {}) {
             const space = spaceFor(v, spaceSlug);
             await requireMembership(v, space);
-            const sort = store.SORTS.includes(q.sort) ? q.sort : 'hot';
+            const forumStyle = space.style === 'forum';
+            let sort = store.SORTS.includes(q.sort) ? q.sort : (forumStyle ? 'active' : 'hot');
+            if (sort === 'top' && space.votes === 0) sort = forumStyle ? 'active' : 'hot';
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
             const perPage = Math.min(Math.max(parseInt(q.limit, 10) || THREADS_PER_PAGE, 1), 100);
             const category = q.category ? store.getCategory(db, space.id, q.category) : null;
@@ -306,10 +488,15 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const statuses = STATUSES[space.thread_kind] || [];
             if (q.status && !statuses.includes(q.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'Threads in this space have no status');
             const { rows, total } = store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
+            const index = await this.listSpaces(v);
+            const self = index.spaces.find((x) => x.slug === space.slug) || {};
             return {
-                space: shapeSpace(space, await membersOnly(space.members_only_owner)), sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
+                space: { ...shapeSpace(space, await membersOnly(space.members_only_owner)), group: self.group || null, parent: self.parent || null },
+                sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
                 categories: store.listCategories(db, space.id).map(shapeCategory), category: category ? category.slug : null, status: q.status || null,
-                viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v) },
+                viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v), signed_in: person(v) },
+                children: index.spaces.filter((c) => c.parent && c.parent.slug === space.slug),
+                groups: moderator(v) ? store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name })) : undefined,
                 threads: await shapeThreads(rows, () => space, v),
             };
         },
@@ -341,6 +528,78 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             db.prepare('INSERT INTO attachments (media_id, owner_subject, filename, mime, size_bytes, url) VALUES (?, ?, ?, ?, ?, ?)')
                 .run(stored.id, v.subject, filename, mime, buffer.length, stored.url);
             return { attachment: shapeAttachment({ media_id: stored.id, url: stored.url, filename, mime, size_bytes: buffer.length }) };
+        },
+
+        /**
+         * Rate a post { reaction: agree|winner|funny|informative|friendly|sympathy|dumb|disgusting|bad_reading|late | null }.
+         * One rating per person per post: the same one again takes it back, another replaces it. Not your own post,
+         * not in a space with ratings off, not on a locked thread. → { post_id, mine, reactions }
+         */
+        async react(v, postId, body = {}) {
+            if (!person(v)) fail(401, 'auth.required', 'Sign in to rate posts');
+            const { post, thread, space } = postFor(v, postId);
+            if (space.reactions === 0) fail(403, 'space.reactions_off', 'Ratings are off in this space');
+            await requireMembership(v, space, thread);
+            if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
+            if (post.author_subject === v.subject) fail(403, 'reaction.own_post', 'You cannot rate your own post');
+            const reaction = body.reaction == null || body.reaction === '' ? null : String(body.reaction);
+            if (reaction && !reactions.BY_KEY.has(reaction)) fail(400, 'reaction.invalid', `reaction is one of ${reactions.REACTIONS.map((r) => r.key).join(', ')}`);
+            reactLimiter.check(`s:${v.subject}`);
+            const mine = reactions.setReaction(db, post.id, v.subject, reaction);
+            reactLimiter.record(`s:${v.subject}`);
+            const list = reactions.reactionsFor(db, [post.id], v.subject).get(post.id) || [];
+            return { post_id: post.id, mine, reactions: list.map((e) => ({ key: e.key, emoji: e.emoji, label: e.label, count: e.count, mine: e.mine })) };
+        },
+
+        /**
+         * Crosspost a thread to another space { to: slug } — people. The new thread links back to the original and
+         * quotes its opening; both show the link. Not members-only threads; not into roadmap spaces (staff excepted).
+         */
+        async crosspost(v, spaceSlug, threadSlug, body = {}) {
+            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const w = writer(v);
+            if (!w.author) fail(403, 'crosspost.person_only', 'Only people crosspost');
+            await requireMembership(v, space, thread);
+            if (thread.members_only_owner || space.members_only_owner) fail(403, 'crosspost.members_only', 'Members-only threads stay where they are');
+            const target = spaceFor(v, String(body.to || ''));
+            if (target.id === space.id) fail(400, 'crosspost.same_space', 'Pick another space');
+            mayPostIn(v, target);
+            await requireMembership(v, target);
+            const kind = target.thread_kind || 'discussion';
+            if (kind === 'roadmap' && !moderator(v)) fail(403, 'space.staff_threads', 'Roadmap items are added by staff');
+            if (store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay && threadsPerDay > 0) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
+            const opening = db.prepare('SELECT body_markdown FROM posts WHERE thread_id = ? AND is_opening = 1').get(thread.id);
+            const excerpt = markdownToText(opening ? opening.body_markdown : '', 400).split('\n').map((l) => `> ${l}`).join('\n');
+            const text = `Crossposted from **${space.name}**: [${thread.title.replace(/[[\]]/g, '')}](/s/${space.slug}/t/${thread.slug})${excerpt.trim() !== '>' ? `\n\n${excerpt}` : ''}`;
+            const { thread: created } = store.createThread(db, { space_id: target.id, title: thread.title, author_subject: w.author, origin: 'user', body_markdown: text,
+                kind, status: FIRST_STATUS[kind] || null, crosspost_of: thread.id });
+            if (pulse) hook(() => pulse.threadCreated(created, target));
+            if (relay) hook(() => relay.enqueueThread(created, target));
+            const projections = await authors.projectionsFor([created.author_subject]);
+            return { thread: shapeThread(created, target, v, projections, null) };
+        },
+
+        /** Quote a post into a reply: "**name** wrote:" and the post as a Markdown quote. → { markdown } */
+        async quote(v, postId) {
+            const { post, thread, space } = postFor(v, postId);
+            await requireMembership(v, space, thread);
+            const projections = await authors.projectionsFor([post.author_subject]);
+            const a = authors.author(post.author_subject, post.origin, projections);
+            const name = a ? (a.username ? `@${a.username}` : a.display_name || 'Someone') : 'Someone';
+            const quoted = String(post.body_markdown || '').split('\n').slice(0, 40).map((l) => `> ${l}`).join('\n');
+            return { markdown: `**${name}** wrote:\n${quoted}\n\n` };
+        },
+
+        /** A page view of a thread (the forum's Views): once per viewer per 30 minutes. */
+        recordView(threadId, viewerKey) {
+            const key = `${threadId}|${viewerKey || '?'}`;
+            const now = Date.now();
+            const seen = viewSeen.get(key);
+            if (seen && now - seen < 30 * 60 * 1000) return false;
+            if (viewSeen.size > 50000) viewSeen.clear();
+            viewSeen.set(key, now);
+            store.bumpViews(db, threadId);
+            return true;
         },
 
         /** The categories of a space. */
@@ -400,17 +659,35 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const { rows, total } = store.listPosts(db, thread.id, { limit: POSTS_PER_PAGE, offset: (page - 1) * POSTS_PER_PAGE });
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner, space.members_only_owner, ...rows.map((p) => p.author_subject)]);
             const votes = myVotes(db, 'thread', [thread.id], v && v.subject);
+            const ids = rows.map((p) => p.id);
+            const att = attachmentsOf(ids);
+            const pasted = pastesOf(ids);
+            const rated = space.reactions !== 0 ? reactions.reactionsFor(db, ids, person(v) ? v.subject : null) : new Map();
+            const authorSubjects = rows.map((p) => p.author_subject);
+            const stats = store.authorStats(db, authorSubjects);
+            const received = space.reactions !== 0 ? reactions.receivedBy(db, authorSubjects) : new Map();
+            const raterProjections = await authors.projectionsFor([...rated.values()].flatMap((l) => l.flatMap((e) => e.raters)));
             return {
-                space: shapeSpace(space, await membersOnly(space.members_only_owner, projections)),
+                space: { ...shapeSpace(space, await membersOnly(space.members_only_owner, projections)), ...placeOf(space) },
                 thread: shapeThread(thread, space, v, projections, votes),
-                posts: (() => { const att = attachmentsOf(rows.map((p) => p.id)); return rows.map((p) => shapePost(p, v, projections, att)); })(),
+                posts: rows.map((p) => {
+                    const sp = shapePost(p, v, projections, att, pasted);
+                    const st = p.author_subject ? stats.get(p.author_subject) : null;
+                    sp.author_stats = st ? { posts: st.posts, first_post_at: isoTime(st.first_post_at), ratings: received.get(p.author_subject) || [] } : null;
+                    sp.reactions = p.deleted_at ? [] : (rated.get(p.id) || []).map((e) => ({ key: e.key, emoji: e.emoji, label: e.label, group: e.group, count: e.count, mine: e.mine,
+                        raters: e.raters.map((sub) => { const pr = raterProjections.get(sub); return pr ? (pr.display_name || pr.username) : null; }).filter(Boolean) }));
+                    sp.can_react = space.reactions !== 0 && !p.deleted_at && person(v) && p.author_subject !== v.subject && (!thread.locked || moderator(v));
+                    return sp;
+                }),
+                reactions: space.reactions !== 0 ? reactions.REACTIONS : [],
+                crosspost: crosspostInfo(v, thread),
                 categories: store.listCategories(db, space.id).map(shapeCategory),
                 attachments: { enabled: !!(media && media.configured), max: ATTACH_MAX, max_bytes: ATTACH_BYTES },
                 page, per_page: POSTS_PER_PAGE, pages: Math.max(Math.ceil(total / POSTS_PER_PAGE), 1), total,
                 viewer: {
                     signed_in: person(v),
                     can_reply: (person(v) || (v && v.origin === 'ai' && v.kind === 'service')) && (!thread.locked || moderator(v)) && (space.visibility !== 'staff' || moderator(v)),
-                    can_vote: person(v) && !thread.locked,
+                    can_vote: person(v) && !thread.locked && space.votes !== 0,
                     can_moderate: moderator(v),
                     can_delete: moderator(v) || (person(v) && thread.author_subject === v.subject),
                     can_gate: moderator(v) || (person(v) && thread.author_subject === v.subject),
@@ -436,6 +713,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
             const images = claimable(w, body.attachments);
+            const pasteRows = claimPastes(body.pastes);
             if (w.key) {
                 threadLimiter.check(w.key, title);
                 if (threadsPerDay > 0 && store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
@@ -444,10 +722,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 kind, status: FIRST_STATUS[kind] || null, category_id: category ? category.id : null });
             threadLimiter.record(w.key, title);
             attach(images, post.id);
+            attachPastes(pasteRows, post.id);
             if (pulse) hook(() => pulse.threadCreated(thread, space));
             if (relay) hook(() => relay.enqueueThread(thread, space));
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner]);
-            return { thread: shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, attachmentsOf([post.id])) };
+            return { thread: shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, attachmentsOf([post.id]), pastesOf([post.id])) };
         },
 
         /** Reply { body } → { post } */
@@ -459,16 +738,18 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
             const images = claimable(w, body.attachments);
+            const pasteRows = claimPastes(body.pastes);
             postLimiter.check(w.key, text);
             const post = store.addPost(db, { thread_id: thread.id, author_subject: w.author, origin: w.origin, body_markdown: text });
             postLimiter.record(w.key, text);
             attach(images, post.id);
+            attachPastes(pasteRows, post.id);
             if (pulse) hook(() => pulse.postCreated(post, thread, space));
             const projections = await authors.projectionsFor([post.author_subject]);
             // Where the new post lands: its page in the thread (posts are numbered in id order).
             const position = db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id).c;
             const page = Math.max(Math.ceil(position / POSTS_PER_PAGE), 1);
-            return { post: shapePost(post, v, projections, attachmentsOf([post.id])), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
+            return { post: shapePost(post, v, projections, attachmentsOf([post.id]), pastesOf([post.id])), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
         },
 
         /** Edit { body } — the author (not on a locked thread) or a moderator. */
@@ -517,6 +798,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (value === null) fail(400, 'vote.invalid', 'value must be 1, -1 or 0');
             if (!person(v)) fail(401, 'auth.required', 'Sign in to vote');
             const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            if (space.votes === 0) fail(403, 'space.votes_off', 'Votes are off in this space');
             await requireMembership(v, space, thread);
             if (thread.locked) fail(403, 'thread.locked', 'This thread is locked');
             voteLimiter.check(`s:${v.subject}`);
@@ -584,4 +866,4 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     };
 }
 
-module.exports = { createForumService, THREADS_PER_PAGE, POSTS_PER_PAGE, STATUSES, ATTACH_MAX, sniffImage };
+module.exports = { createForumService, THREADS_PER_PAGE, POSTS_PER_PAGE, STATUSES, ATTACH_MAX, sniffImage, STYLES, REACTIONS: reactions.REACTIONS };

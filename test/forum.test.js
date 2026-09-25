@@ -33,10 +33,11 @@ const forumStore = require('../server/forum/store');
 
     let first;
 
-    await check('seeded spaces: general, feedback, showcase, roadmap — all public', async () => {
+    await check('seeded spaces: on the board index in their groups, all public', async () => {
         const r = await call('/api/v1/spaces');
         assert.strictEqual(r.status, 200);
-        assert.deepStrictEqual(r.json().spaces.map((s) => [s.slug, s.visibility]), [['general', 'public'], ['feedback', 'public'], ['showcase', 'public'], ['roadmap', 'public']]);
+        assert.deepStrictEqual(r.json().spaces.map((s) => [s.slug, s.visibility, s.style]), [['general', 'public', 'forum'], ['help', 'public', 'forum'], ['feedback', 'public', 'feed'], ['roadmap', 'public', 'feed'], ['showcase', 'public', 'feed'], ['off-topic', 'public', 'forum']]);
+        assert.deepStrictEqual(r.json().groups.map((g) => [g.slug, g.spaces.map((s) => s.slug)]), [['openvibe', ['general', 'help', 'feedback', 'roadmap']], ['community', ['showcase', 'off-topic']]]);
         assert.strictEqual((await call('/api/v1/spaces/nope')).status, 404);
     });
 
@@ -117,8 +118,11 @@ const forumStore = require('../server/forum/store');
         assert.strictEqual((await call(`/api/v1/posts/${reply.id}/versions`, { cookie: alexJwt })).status, 403);
     });
 
-    await check('votes on threads: add/change/remove, score recomputed, my_vote shown', async () => {
+    await check('votes on threads: off in a space without them; add/change/remove, score recomputed, my_vote shown', async () => {
         const vote = (value, cookie) => call('/api/v1/spaces/general/threads/hello-world/votes', { method: 'POST', cookie, json: { value } });
+        const off = await vote(1, samJwt);
+        assert.strictEqual(off.status, 403, 'General is a forum-style board: votes are off'); assert.strictEqual(off.json().code, 'space.votes_off');
+        t.db.prepare("UPDATE spaces SET votes = 1 WHERE slug = 'general'").run();
         assert.strictEqual((await vote(1, samJwt)).json().score, 1);
         assert.strictEqual((await vote(1, alexJwt)).json().score, 2);
         assert.strictEqual((await vote(-1, samJwt)).json().score, 0);

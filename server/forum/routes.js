@@ -22,6 +22,7 @@ const multer = require('multer');
 const seo = require('../seo');
 const pages = require('../render/pages');
 const forumPages = require('../render/forum');
+const boardPages = require('../render/board');
 const { ApiError } = require('../http/v1');
 
 function createForumRoutes({ forum, viewers, config }) {
@@ -52,7 +53,7 @@ function createForumRoutes({ forum, viewers, config }) {
     /** Render an ApiError as a page: sign-in for 401, the error page for the rest. */
     function failPage(req, res, err, next) {
         if (!(err instanceof ApiError)) return next(err);
-        if (err.status === 401) return login(res, req.originalUrl.replace(/\/(reply|vote|state|delete|members-only)$/, ''));
+        if (err.status === 401) return login(res, req.originalUrl.replace(/\/(reply|vote|state|delete|members-only|react|crosspost|settings|status|category)$/, ''));
         if (err.code === 'vip.members_only' && err.extra) {
             return html(res, forumPages.membersOnlyPage({ ...err.extra, user: req.user, next: req.originalUrl.replace(/\/(reply|vote|state|delete|members-only|new)$/, '') }), 403);
         }
@@ -66,8 +67,39 @@ function createForumRoutes({ forum, viewers, config }) {
         next();
     }
 
+    // The board index (vBulletin/SMF style): every space, grouped, with topics, posts and the last post.
     router.get('/s', withViewer, wrap(async (req, res, next) => {
-        try { html(res, forumPages.spacesPage({ ...(await forum.listSpaces(req.viewer)), user: req.user })); } catch (err) { failPage(req, res, err, next); }
+        try { html(res, boardPages.boardIndexPage({ ...(await forum.listSpaces(req.viewer)), user: req.user, canModerate: forum.isModerator(req.viewer) })); } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // Moderators: a new space, either style.
+    router.get('/s/new-space', withViewer, wrap(async (req, res, next) => {
+        try {
+            if (!req.user) return login(res, '/s/new-space');
+            if (!forum.isModerator(req.viewer)) throw new ApiError(403, 'capability.denied', 'Only moderators create spaces');
+            html(res, boardPages.newSpacePage({ groups: forum.groups() }));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+    router.post('/s/new-space', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        const b = req.body || {};
+        const values = { name: b.name, slug: b.slug, description: b.description, style: b.style === 'feed' ? 'feed' : 'forum', votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null };
+        try {
+            const out = await forum.createSpace(req.viewer, values);
+            seo.resetCaches();
+            res.redirect(303, `/s/${out.space.slug}`);
+        } catch (err) {
+            if (!(err instanceof ApiError) || err.status === 401 || err.status === 403) return failPage(req, res, err, next);
+            html(res, boardPages.newSpacePage({ groups: forum.groups(), error: err.message, values }), err.status);
+        }
+    }));
+
+    // "Discuss in a space" from a paste: pick the space, then its new-topic form with the paste attached.
+    router.get('/s/discuss', withViewer, wrap(async (req, res, next) => {
+        try {
+            const paste = String(req.query.paste || '').slice(0, 80);
+            const { groups } = await forum.listSpaces(req.viewer);
+            html(res, boardPages.discussPage({ groups, paste, user: req.user }));
+        } catch (err) { failPage(req, res, err, next); }
     }));
 
     router.get('/s/feed.xml', (_req, res) => {
@@ -84,7 +116,8 @@ function createForumRoutes({ forum, viewers, config }) {
         try {
             const out = await forum.listThreads(req.viewer, req.params.space, { sort: req.query.sort, page: req.query.page, category: req.query.category, status: req.query.status });
             if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
-            html(res, forumPages.spacePage({ ...out, user: req.user }));
+            if (out.space.style === 'forum') return html(res, boardPages.forumSpacePage({ ...out, user: req.user }));
+            html(res, forumPages.spacePage({ ...out, user: req.user, footer: out.viewer.can_moderate ? boardPages.settingsForm(out.space, out.groups) : '' }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
@@ -94,7 +127,8 @@ function createForumRoutes({ forum, viewers, config }) {
             const probe = await forum.listThreads(req.viewer, req.params.space, { limit: 1 });
             if (!probe.viewer.can_start) throw new ApiError(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
             const { space } = await forum.space(req.viewer, req.params.space);
-            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled() }));
+            const paste = /^[A-Za-z0-9_-]{3,80}$/.test(String(req.query.paste || '')) ? String(req.query.paste) : '';
+            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled(), values: paste ? { pastes: paste, title: forum.pasteTitle(paste) || '' } : {} }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
@@ -102,6 +136,7 @@ function createForumRoutes({ forum, viewers, config }) {
         const values = { title: String((req.body || {}).title || '').slice(0, 200), body: String((req.body || {}).body || '').slice(0, 40_000) };
         if ((req.body || {}).members_only === '1') values.members_only = true;
         if ((req.body || {}).category) values.category = String(req.body.category).slice(0, 40);
+        if ((req.body || {}).pastes) values.pastes = String(req.body.pastes).slice(0, 400);
         try {
             // Images go to Media only when the rest can be saved (no strays from an empty form).
             if (worthUploading(values.title, values.body)) { const ids = await uploadImages(req); if (ids.length) values.attachments = ids; }
@@ -121,7 +156,13 @@ function createForumRoutes({ forum, viewers, config }) {
     async function renderThread(req, res, { status = 200, error = null, draft = '' } = {}) {
         const out = await forum.getThread(req.viewer, req.params.space, req.params.slug, { page: req.query.page });
         if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
-        html(res, forumPages.threadPage({ ...out, perPage: out.per_page, user: req.user, error, draft, attachmentsEnabled: forum.attachmentsEnabled() }), status);
+        if (status === 200 && forum.recordView(out.thread.id, req.user && req.user.subject_id ? `s:${req.user.subject_id}` : `ip:${req.ip}`)) out.thread.views += 1;
+        // Quote (no JS): ?quote=<post id> fills the reply box with the quoted post.
+        if (!draft && /^\d{1,15}$/.test(String(req.query.quote || '')) && out.viewer.can_reply) {
+            try { draft = (await forum.quote(req.viewer, req.query.quote)).markdown; } catch { /* a post that is gone: an empty box */ }
+        }
+        const view = { ...out, perPage: out.per_page, user: req.user, error, draft, attachmentsEnabled: forum.attachmentsEnabled() };
+        html(res, out.space.style === 'forum' ? boardPages.forumTopicPage(view) : forumPages.threadPage(view), status);
     }
 
     router.get('/s/:space/t/:slug', withViewer, wrap(async (req, res, next) => {
@@ -132,7 +173,8 @@ function createForumRoutes({ forum, viewers, config }) {
         const draft = String((req.body || {}).body || '').slice(0, 40_000);
         try {
             const attachments = worthUploading(null, draft) ? await uploadImages(req) : [];
-            const out = await forum.reply(req.viewer, req.params.space, req.params.slug, { body: draft, attachments: attachments.length ? attachments : undefined });
+            const pastes = String((req.body || {}).pastes || '').slice(0, 400) || undefined;
+            const out = await forum.reply(req.viewer, req.params.space, req.params.slug, { body: draft, attachments: attachments.length ? attachments : undefined, pastes });
             res.redirect(303, out.url);
         } catch (err) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);
@@ -171,6 +213,35 @@ function createForumRoutes({ forum, viewers, config }) {
         try {
             await forum.moderateThread(req.viewer, req.params.space, req.params.slug, flags);
             res.redirect(303, back(req));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // Rate a post (no JS): the rating's button in the post's form; back to the post.
+    router.post('/s/:space/t/:slug/react', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        const b = req.body || {};
+        try {
+            await forum.react(req.viewer, String(b.post || ''), { reaction: String(b.reaction || '') || null });
+            const page = Math.max(parseInt(b.page, 10) || 1, 1);
+            res.redirect(303, `${back(req)}${page > 1 ? `?page=${page}` : ''}#post-${encodeURIComponent(String(b.post || ''))}`);
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // Crosspost to another space (no JS).
+    router.post('/s/:space/t/:slug/crosspost', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            const out = await forum.crosspost(req.viewer, req.params.space, req.params.slug, { to: String((req.body || {}).to || '') });
+            seo.resetCaches();
+            res.redirect(303, out.thread.url);
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // Moderators: a space's settings (no JS).
+    router.post('/s/:space/settings', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        const b = req.body || {};
+        try {
+            await forum.updateSpaceSettings(req.viewer, req.params.space, { name: b.name, description: b.description, style: b.style, votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null });
+            seo.resetCaches();
+            res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
         } catch (err) { failPage(req, res, err, next); }
     }));
 

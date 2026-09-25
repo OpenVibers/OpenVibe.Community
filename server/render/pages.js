@@ -38,6 +38,12 @@ function timeTag(v) {
 }
 function num(n) { return Number(n || 0).toLocaleString('en-US'); }
 function authorName(p) { return p.display_name || p.username || 'Anonymous'; }
+/** A person's picture at `size` px: their own, else the network's avatar address (a generated initial when none). */
+function avatarUrl(p, size = 96) {
+    if (!p) return null;
+    if (p.avatar_url) return /^https?:\/\//i.test(p.avatar_url) ? p.avatar_url : `${config.liveUrl}${p.avatar_url.startsWith('/') ? '' : '/'}${p.avatar_url}`;
+    return p.username ? `${config.networkUrl}/avatar/${encodeURIComponent(p.username)}?s=${size}` : null;
+}
 function authorHtml(p, { link = true } = {}) {
     const name = authorName(p);
     const initial = esc(name.trim()[0] || '?').toUpperCase();
@@ -258,6 +264,7 @@ function pastePage({ paste: p, related, user }) {
     ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(p.slug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(p.slug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
     <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
+    ${p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in a space</a>` : ''}
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
 
@@ -397,4 +404,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml };
+module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl };

@@ -50,7 +50,7 @@ const { createCommentsApi } = require('./comments/api');
 const { createCommentPages } = require('./comments/routes');
 const { createForumService } = require('./forum/service');
 const { createVipGate } = require('./vip');
-const { createSpacesApi, createPostsApi } = require('./forum/api');
+const { createSpacesApi, createPostsApi, createGroupsApi } = require('./forum/api');
 const { createForumRoutes } = require('./forum/routes');
 const { createPulse } = require('./pulse/service');
 const { createPulseApi } = require('./pulse/api');
@@ -176,6 +176,7 @@ function createApp(opts = {}) {
     app.use('/internal/events', pulseConsumer.router);
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers }));
     app.use('/api/v1/posts', createPostsApi({ forum, viewers }));
+    app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers }));
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));

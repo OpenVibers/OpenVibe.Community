@@ -21,6 +21,8 @@
       "summary": "Attach up to four images to a thread or a reply, with or without JavaScript. They are stored in OpenVibe.Media like every other upload, with location and camera details removed first." },
     { "key": "feedback-and-roadmap", "category": "features", "status": "done", "title": "Categories, feature requests and this roadmap",
       "summary": "Feedback has categories (ideas, bugs, questions), requests you can vote on, and a status staff keep up to date. This Roadmap space shows what is being built, with a thread for every item." },
+    { "key": "forum-boards", "category": "features", "status": "done", "title": "Forum boards, ratings and pastes in posts",
+      "summary": "Spaces can be classic forum boards, like vBulletin or SMF: a board index, topic tables with replies, views and the last post, and author panels beside every post with quotes. Or they can be feeds ranked by votes. Rate any post the Facepunch way (Agree, Winner, Funny, Informative, Friendly, Sympathy, Dumb, Disgusting, Bad reading, Late), attach pastes and images, and crosspost a thread from a forum to a feed." },
     { "key": "your-data", "category": "features", "status": "in_progress", "title": "See, download and delete your data",
       "summary": "The AI & Data tab on your account lists what OpenVibe sites keep with your account, and lets you download it or delete any of it. Next: one export with everything from every site, and account deletion with a grace period." },
     { "key": "ai-preferences", "category": "features", "status": "done", "title": "AI that writes the way you ask",

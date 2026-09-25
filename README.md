@@ -322,6 +322,22 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   thread). Moderators (admin/global_mod browsers; services with `community.comment.moderate`)
   pin, lock and delete; locked threads take no replies or votes.
 
+- **Two styles, one system.** Each space is a **forum** or a **feed**. A forum reads like vBulletin or SMF:
+  - the board index at `/s` lists every space under its group, with topics, posts and the last post;
+  - a board is a topic table (Replies, Views, Last post) with sticky topics first and replies bumping a topic;
+  - a topic shows each post beside its author's panel: picture, posts, since when, the ratings they get most.
+  Quote fills the reply box. A feed is subreddit-like: votes and hot/new/top. Moderators switch per space:
+  the style, up/down votes and ratings. They also set the group, a parent (one level of child boards),
+  the name and description, and create spaces (`/s/new-space`).
+  Both styles share threads, ratings, images, pastes and crossposts: a thread can be crossposted to another
+  space, and both link to each other.
+- **Ratings** (after Facepunch), one per person per post, never your own:
+  - positive: Agree ✅, Winner 🏆, Funny 😂, Informative 💡, Friendly 😊, Sympathy ❤️;
+  - negative: Dumb 📦, Disgusting 🤢;
+  - utility: Bad reading 📖, Late 🕒.
+  The same rating again takes it back, and another replaces it. Hovering shows who gave it.
+- **Pastes on posts.** Up to 4 public or unlisted pastes per post, shown as cards with their first lines or
+  the screenshot. A paste made private or deleted drops out. Every paste page has "Discuss in a space".
 - **Categories, requests and the roadmap.** A space's `thread_kind` decides what a new thread is. In a
   `discussion` space it is a plain thread. In `request` (Feedback, with Ideas, Bugs and Questions
   categories) it is open to votes and starts `open`; staff move it through its statuses. In `roadmap`
@@ -343,6 +359,9 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `POST /spaces/:space/threads` `{ title, body, category?, members_only? }` | New thread (`community.post.create` for services); `members_only: true` gates it to the author's VIP members |
 | `POST /spaces/:space/attachments` (multipart `file`) | An image for a new thread or reply → `{ attachment: { media_id, url, … } }`; name it in `attachments: [media_id]` when posting |
 | `GET /spaces/:space/categories` · `PUT`/`DELETE /spaces/:space/categories/:category` `{ name, description?, position? }` | Categories · moderators manage them (a deleted category's threads stay, uncategorised) |
+| `POST /spaces` · `PUT /spaces/:space/settings` `{ style, votes, reactions, group, parent, name, description, kind }` | Moderators: new space · settings. `GET/PUT /api/v1/space-groups[/:group]` manages the board index's groups |
+| `POST /spaces/:space/threads/:slug/crosspost` `{ to }` | Crosspost to another space |
+| `POST /posts/:id/reactions` `{ reaction \| null }` | Rate a post |
 | `PUT /spaces/:space/threads/:slug/category` `{ category: slug \| null }` | The author or moderators |
 | `PUT /spaces/:space/threads/:slug/status` `{ status }` | Moderators: requests `open`/`planned`/`in_progress`/`done`/`declined`, roadmap items `planned`/`in_progress`/`done`/`paused` |
 | `GET /spaces/:space/threads/:slug?page=` | Thread + posts (`body_markdown` and rendered `body_html`) |

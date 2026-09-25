@@ -15,6 +15,8 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
 
 (async () => {
     const t = await boot({ authority: 'community', appOpts: { forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 } } });
+    // These pages are the feed style (render/forum.js): General is a forum board by default, so it becomes a feed with votes here.
+    t.db.prepare("UPDATE spaces SET style = 'feed', votes = 1 WHERE slug = 'general'").run();
     const net = t.network;
     const alex = net.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex' });
     const sam = net.addUser({ network_user_id: 9, username: 'sam', display_name: 'Sam' });

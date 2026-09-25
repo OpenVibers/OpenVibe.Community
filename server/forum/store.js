@@ -9,16 +9,67 @@
  * after it keep their numbering; a deleted thread disappears from every listing.
  */
 
-const SORTS = ['hot', 'new', 'top'];
+const SORTS = ['hot', 'new', 'top', 'active'];
 
 // ── Spaces ───────────────────────────────────────────────────
 
 function listSpaces(db, visibilities) {
-    return db.prepare(`SELECT s.*,
+    return db.prepare(`SELECT s.*, g.slug AS group_slug, g.name AS group_name, g.description AS group_description, g.position AS group_position,
+                              ps.slug AS parent_slug, ps.name AS parent_name,
                               (SELECT COUNT(*) FROM threads t WHERE t.space_id = s.id AND t.deleted_at IS NULL) AS thread_count,
+                              (SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id WHERE t.space_id = s.id AND t.deleted_at IS NULL AND p.deleted_at IS NULL) AS post_count,
                               (SELECT MAX(t.last_activity_at) FROM threads t WHERE t.space_id = s.id AND t.deleted_at IS NULL) AS last_activity_at
-                       FROM spaces s WHERE s.visibility IN (${visibilities.map(() => '?').join(', ')})
-                       ORDER BY s.id ASC`).all(...visibilities);
+                       FROM spaces s LEFT JOIN space_groups g ON g.id = s.group_id LEFT JOIN spaces ps ON ps.id = s.parent_id
+                       WHERE s.visibility IN (${visibilities.map(() => '?').join(', ')})
+                       ORDER BY g.position IS NULL, g.position, s.position, s.id ASC`).all(...visibilities);
+}
+
+/**
+ * The newest live post in each space (the board index's "Last post"), members-only threads never.
+ * → Map spaceId → { thread_slug, thread_title, author_subject, origin, created_at }
+ */
+function lastPosts(db, spaceIds) {
+    const out = new Map();
+    const q = db.prepare(`SELECT t.slug AS thread_slug, t.title AS thread_title, p.author_subject, p.origin, p.created_at, p.id AS post_id
+                          FROM posts p JOIN threads t ON t.id = p.thread_id
+                          WHERE t.space_id = ? AND t.deleted_at IS NULL AND p.deleted_at IS NULL AND t.members_only_owner IS NULL
+                          ORDER BY p.id DESC LIMIT 1`);
+    for (const id of spaceIds) { const r = q.get(id); if (r) out.set(id, r); }
+    return out;
+}
+
+function listGroups(db) {
+    return db.prepare('SELECT * FROM space_groups ORDER BY position, name COLLATE NOCASE').all();
+}
+
+/** Space settings (moderators): style, votes, reactions, group, parent, position, name, description. */
+function updateSpace(db, id, fields) {
+    const allowed = ['style', 'votes', 'reactions', 'group_id', 'parent_id', 'position', 'name', 'description', 'thread_kind'];
+    const keys = Object.keys(fields).filter((k) => allowed.includes(k));
+    if (keys.length) db.prepare(`UPDATE spaces SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run({ ...Object.fromEntries(keys.map((k) => [k, fields[k]])), id });
+    return getSpaceById(db, id);
+}
+
+function createSpace(db, { slug, name, description = null, visibility = 'public', created_by, style = 'feed', votes = 1, reactions = 1, group_id = null, parent_id = null, position = 0, thread_kind = 'discussion' }) {
+    db.prepare(`INSERT INTO spaces (slug, name, description, visibility, created_by, style, votes, reactions, group_id, parent_id, position, thread_kind)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(slug, name, description, visibility, created_by, style, votes, reactions, group_id, parent_id, position, thread_kind);
+    return getSpace(db, slug);
+}
+
+/** A person's forum statistics for the author panel. → Map subject → { posts, first_post_at } */
+function authorStats(db, subjects) {
+    const out = new Map();
+    const list = [...new Set(subjects.filter(Boolean))];
+    if (!list.length) return out;
+    const rows = db.prepare(`SELECT author_subject AS s, COUNT(*) AS posts, MIN(created_at) AS first_post_at FROM posts
+                             WHERE author_subject IN (${list.map(() => '?').join(', ')}) AND deleted_at IS NULL GROUP BY author_subject`).all(...list);
+    for (const r of rows) out.set(r.s, { posts: r.posts, first_post_at: r.first_post_at });
+    return out;
+}
+
+/** One more view of a thread (the forum's Views column). */
+function bumpViews(db, threadId) {
+    db.prepare('UPDATE threads SET views = views + 1 WHERE id = ?').run(threadId);
 }
 
 function getSpace(db, slug) {
@@ -57,11 +108,11 @@ function getThreadBySlug(db, spaceId, slug) {
 }
 
 /** New thread + its opening post, in one transaction. → { thread, post } */
-function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null, kind = 'discussion', status = null, category_id = null, external_key = null }) {
+function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null, kind = 'discussion', status = null, category_id = null, external_key = null, crosspost_of = null }) {
     return db.transaction(() => {
         const slug = uniqueSlug(db, space_id, slugify(title));
-        const info = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key);
+        const info = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key, crosspost_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key, crosspost_of);
         const threadId = info.lastInsertRowid;
         const p = db.prepare('INSERT INTO posts (thread_id, author_subject, origin, is_opening, body_markdown) VALUES (?, ?, ?, 1, ?)')
             .run(threadId, author_subject, origin, body_markdown);
@@ -85,10 +136,16 @@ function listThreads(db, spaceId, { sort = 'hot', limit = 25, offset = 0, now = 
         hot: 'pinned DESC, ov_hot(score, (julianday(@now) - julianday(created_at)) * 24) DESC, last_activity_at DESC, id DESC',
         new: 'pinned DESC, created_at DESC, id DESC',
         top: 'pinned DESC, score DESC, created_at DESC, id DESC',
+        active: 'pinned DESC, last_activity_at DESC, id DESC',
     }[SORTS.includes(sort) ? sort : 'hot'];
     const where = 'space_id = @space AND deleted_at IS NULL AND (@category IS NULL OR category_id = @category) AND (@status IS NULL OR status = @status)';
     const params = { space: spaceId, category: categoryId, status };
-    const rows = db.prepare(`SELECT * FROM threads WHERE ${where} ORDER BY ${order} LIMIT @limit OFFSET @offset`)
+    // last_* : the newest live post, for the forum's "Last post" column.
+    const rows = db.prepare(`SELECT threads.*,
+                                    (SELECT p.author_subject FROM posts p WHERE p.thread_id = threads.id AND p.deleted_at IS NULL ORDER BY p.id DESC LIMIT 1) AS last_author_subject,
+                                    (SELECT p.origin FROM posts p WHERE p.thread_id = threads.id AND p.deleted_at IS NULL ORDER BY p.id DESC LIMIT 1) AS last_origin,
+                                    (SELECT p.id FROM posts p WHERE p.thread_id = threads.id AND p.deleted_at IS NULL ORDER BY p.id DESC LIMIT 1) AS last_post_id
+                             FROM threads WHERE ${where} ORDER BY ${order} LIMIT @limit OFFSET @offset`)
         .all({ ...params, now: nowSql, limit, offset });
     const { total } = db.prepare(`SELECT COUNT(*) AS total FROM threads WHERE ${where}`).get(params);
     return { rows, total };
@@ -246,5 +303,6 @@ module.exports = {
     listSpaces, getSpace, getSpaceById,
     getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
     listCategories, getCategory, getCategoryById, upsertCategory, deleteCategory, setThreadCategory, setThreadStatus, getThreadByKey,
+    lastPosts, listGroups, updateSpace, createSpace, authorStats, bumpViews,
     getPost, addPost, listPosts, editPost, listPostVersions, softDeletePost, countPostsSince,
 };

@@ -260,6 +260,33 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_post ON attachments(post_id, position) WHERE post_id IS NOT NULL;
 
+-- The board index (forum style): spaces are listed under groups, like a vBulletin/SMF board index.
+CREATE TABLE IF NOT EXISTS space_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    position INTEGER NOT NULL DEFAULT 0
+);
+
+-- Facepunch-style ratings on posts: one per person per post (forum/reactions.js lists them).
+CREATE TABLE IF NOT EXISTS post_reactions (
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    subject_id TEXT NOT NULL,
+    reaction TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (post_id, subject_id)
+);
+CREATE INDEX IF NOT EXISTS idx_post_reactions_post ON post_reactions(post_id, reaction);
+
+-- Pastes attached to posts (a card with the paste's first lines, or its screenshot).
+CREATE TABLE IF NOT EXISTS post_pastes (
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    paste_id INTEGER NOT NULL REFERENCES pastes(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (post_id, paste_id)
+);
+
 -- Categories inside a space (WS-J task 1): threads may carry one; the space page filters by them.
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -403,6 +430,29 @@ function migrate(db) {
                  ('roadmap', 'Roadmap', 'What OpenVibe is building next and where each piece stands. Every item has its own thread: ask about it or argue for it there.', 'public', 'system', 'roadmap');
              UPDATE spaces SET thread_kind = 'request', description = 'Feature requests, bugs and ideas for every OpenVibe site. Vote for what matters to you; staff mark what is planned and done.'
                  WHERE slug = 'feedback' AND thread_kind = 'discussion' AND created_by = 'system';`);
+    // Space styles (forum/service.js): 'feed' (subreddit-like: votes, hot/new/top) or 'forum' (vBulletin/SMF-like:
+    // board index, topics by last post, author panels, quotes). Votes and ratings are per-space switches;
+    // group_id and position place a space on the board index, parent_id makes it a child board.
+    for (const [col, ddl] of [['style', "TEXT NOT NULL DEFAULT 'feed'"], ['votes', 'INTEGER NOT NULL DEFAULT 1'], ['reactions', 'INTEGER NOT NULL DEFAULT 1'],
+        ['group_id', 'INTEGER REFERENCES space_groups(id) ON DELETE SET NULL'], ['parent_id', 'INTEGER REFERENCES spaces(id) ON DELETE SET NULL'], ['position', 'INTEGER NOT NULL DEFAULT 0']]) {
+        if (!spaceCols.has(col)) db.exec(`ALTER TABLE spaces ADD COLUMN ${col} ${ddl}`);
+    }
+    if (!threadCols.has('views')) db.exec('ALTER TABLE threads ADD COLUMN views INTEGER NOT NULL DEFAULT 0');
+    if (!threadCols.has('crosspost_of')) db.exec('ALTER TABLE threads ADD COLUMN crosspost_of INTEGER REFERENCES threads(id) ON DELETE SET NULL');
+    // The first board index: two groups, the four original spaces placed once (a space staff moved is left alone),
+    // and two new forum boards.
+    db.exec(`INSERT OR IGNORE INTO space_groups (slug, name, description, position) VALUES
+                 ('openvibe', 'OpenVibe', 'The network itself: talk, help, requests and what is coming next.', 1),
+                 ('community', 'Community', 'What the people of OpenVibe make, and everything else.', 2);
+             INSERT OR IGNORE INTO spaces (slug, name, description, visibility, created_by, style, votes) VALUES
+                 ('help', 'Help', 'Stuck on something? Ask here: streaming, tools, your account, anything on OpenVibe.', 'public', 'system', 'forum', 0),
+                 ('off-topic', 'Off-topic', 'Anything that is not about OpenVibe.', 'public', 'system', 'forum', 0);`);
+    const place = db.prepare(`UPDATE spaces SET group_id = (SELECT id FROM space_groups WHERE slug = ?), position = ?, style = ?, votes = ?
+                              WHERE slug = ? AND created_by = 'system' AND group_id IS NULL`);
+    for (const [group, position, style, votes, slug] of [
+        ['openvibe', 1, 'forum', 0, 'general'], ['openvibe', 2, 'forum', 0, 'help'], ['openvibe', 3, 'feed', 1, 'feedback'], ['openvibe', 4, 'feed', 1, 'roadmap'],
+        ['community', 1, 'feed', 1, 'showcase'], ['community', 2, 'forum', 0, 'off-topic'],
+    ]) place.run(group, position, style, votes, slug);
     const seedCategory = db.prepare(`INSERT OR IGNORE INTO categories (space_id, slug, name, description, position)
                                      SELECT id, ?, ?, ?, ? FROM spaces WHERE slug = ?`);
     for (const [space, slug, name, description, position] of [

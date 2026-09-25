@@ -28,7 +28,7 @@ const { syncRoadmap, syncFromFile } = require('../server/forum/roadmap');
 
     await check('seeded: Feedback takes requests with ideas/bugs/questions; Roadmap is public and staff-started', async () => {
         const spaces = (await call('/api/v1/spaces')).json().spaces;
-        assert.deepStrictEqual(spaces.map((s) => [s.slug, s.thread_kind]), [['general', 'discussion'], ['feedback', 'request'], ['showcase', 'discussion'], ['roadmap', 'roadmap']]);
+        assert.deepStrictEqual(spaces.map((s) => [s.slug, s.thread_kind]), [['general', 'discussion'], ['help', 'discussion'], ['feedback', 'request'], ['roadmap', 'roadmap'], ['showcase', 'discussion'], ['off-topic', 'discussion']]);
         assert.deepStrictEqual(spaces.find((s) => s.slug === 'feedback').statuses, ['open', 'planned', 'in_progress', 'done', 'declined']);
         const cats = (await call('/api/v1/spaces/feedback/categories')).json().categories;
         assert.deepStrictEqual(cats.map((c) => c.slug), ['ideas', 'bugs', 'questions']);

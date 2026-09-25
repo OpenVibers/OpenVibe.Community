@@ -80,8 +80,8 @@ ${list}`;
 // ── /s/:space ────────────────────────────────────────────────
 function threadRow(t, space) {
     const flags = `${t.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${t.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}`;
-    return `<li class="thread-row">
-    <span class="thread-score" title="Score">${num(t.score)}</span>
+    return `<li class="thread-row${space.votes === false ? ' no-votes' : ''}">
+    ${space.votes === false ? '' : `<span class="thread-score" title="Score">${num(t.score)}</span>`}
     <div class="thread-main">
       <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>${statusBadge(t)}${categoryBadge(t, space)}${vipBadge(t)}
       <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
@@ -89,8 +89,8 @@ function threadRow(t, space) {
   </li>`;
 }
 
-function spacePage({ space, threads, sort, page, pages, total, user, categories = [], category = null, status = null, viewer = {} }) {
-    const tabs = Object.keys(SORT_LABELS).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s, category, status }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
+function spacePage({ space, threads, sort, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, footer = '' }) {
+    const tabs = Object.keys(SORT_LABELS).filter((s) => s !== 'top' || space.votes !== false).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s, category, status }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
     const filtered = !!(category || status);
     const indexable = space.visibility === 'public' && !space.members_only && !filtered;
     const chip = (label, href, on) => `<a class="chip${on ? ' active' : ''}" href="${esc(href)}"${on ? ' aria-current="true"' : ''}>${label}</a>`;
@@ -113,7 +113,8 @@ ${categoryNav}${statusNav}
 <section data-results>
   ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? `<p class="empty">Nothing here yet. <a href="${esc(spaceHref(space.slug))}">See everything in ${esc(space.name)}</a>.</p>` : canStart ? `<p class="empty">No threads yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.</p>` : '<p class="empty">Nothing here yet.</p>'}
   ${pager((n) => spaceHref(space.slug, { sort, page: n, category, status }), page, pages)}
-</section>`;
+</section>
+${footer}`;
     return renderPage({
         title: `${space.name}${categoryName ? ` · ${categoryName}` : ''}${status ? ` · ${STATUS_LABELS[status] || status}` : ''} — ${SORT_LABELS[sort].toLowerCase()} threads${page > 1 ? ` (page ${page})` : ''}`,
         description: `${space.description || `Threads in ${space.name}`} ${num(total)} ${total === 1 ? 'thread' : 'threads'} on OpenVibe.Community.`,
@@ -126,15 +127,79 @@ ${categoryNav}${statusNav}
     });
 }
 
+/** The pin / lock / delete / members-only / status / category buttons (no JS). */
+function modActions({ base, space, thread, viewer, categories = [] }) {
+    return viewer.can_moderate || viewer.can_delete ? `<div class="actions mod-actions">
+    ${viewer.can_moderate ? `<form method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
+    <form method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
+    ${viewer.can_delete ? `<form method="post" action="${esc(base)}/delete"><button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
+    ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
+    ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="inline-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
+    ${categories.length && (viewer.can_moderate || viewer.can_delete) ? `<form class="inline-form" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : ''}
+  </div>` : '';
+}
+
 // ── /s/:space/t/:slug ────────────────────────────────────────
-function postHtml(p, n) {
+function postHtml(p, n, { base = '', page = 1, catalogue = [] } = {}) {
     if (p.deleted) return `<article class="post post-deleted" id="post-${p.id}"><p class="muted small">#${n} · This post was deleted.</p></article>`;
     return `<article class="post${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
     <header class="post-head">${who(p.author)} <span class="sep">·</span> <a class="muted small" href="#post-${p.id}">${timeTag(p.created_at)}</a>${p.revision > 1 ? ` <span class="sep">·</span> <span class="muted small" title="Edited ${esc(fmtDate(p.updated_at))}">edited</span>` : ''}<span class="post-num muted small">#${n}</span></header>
     <div class="md">${p.body_html}</div>
-    ${(p.attachments || []).length ? `<div class="post-images">${p.attachments.map((a) => `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.filename || 'Image')}" loading="lazy" decoding="async"></a>`).join('')}</div>` : ''}
+    ${postImages(p)}
+    ${pasteCards(p)}
+    ${reactionBar(p, base, page, catalogue)}
   </article>`;
 }
+/** Pastes attached to a post: a card with the first lines (highlighted), or the screenshot. */
+function pasteCards(p) {
+    const list = p.pastes || [];
+    if (!list.length) return '';
+    const { highlight, languageLabel } = require('./highlight');
+    return `<div class="paste-embeds">${list.map((x) => `<figure class="paste-embed">
+      <figcaption><a href="${esc(x.url)}"><i class="fa-solid fa-${x.type === 'screenshot' ? 'image' : 'code'}" aria-hidden="true"></i> ${esc(x.title || 'Untitled')}</a>
+        <span class="muted small">${x.type === 'screenshot' ? 'screenshot' : `${esc(languageLabel ? languageLabel(x.language) : x.language)} · ${num(x.lines)} ${x.lines === 1 ? 'line' : 'lines'}`}${x.visibility === 'unlisted' ? ' · unlisted' : ''}</span></figcaption>
+      ${x.type === 'screenshot' && x.screenshot_url ? `<a href="${esc(x.url)}"><img src="${esc(x.screenshot_url)}" alt="${esc(x.title || 'Screenshot')}" loading="lazy"></a>` : `<pre class="paste-embed-code"><code class="hljs">${highlight(x.excerpt || '', x.language).html}</code></pre>${x.lines > 12 ? `<a class="small" href="${esc(x.url)}">See all ${num(x.lines)} lines</a>` : ''}`}
+    </figure>`).join('')}</div>`;
+}
+
+/**
+ * Where a thread came from, where else it lives, and (signed in) a form to crosspost it to another space.
+ */
+function crosspostBlock(c, base) {
+    if (!c) return '';
+    const from = c.from ? `<p class="crosspost-note"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> Crossposted from <strong>${esc(c.from.space)}</strong>: <a href="${esc(c.from.url)}">${esc(c.from.title)}</a></p>` : '';
+    const to = (c.to || []).length ? `<p class="crosspost-note small muted">Also in ${c.to.map((x) => `<a href="${esc(x.url)}">${esc(x.space)}</a>`).join(', ')}</p>` : '';
+    const form = (c.targets || []).length ? `<details class="crosspost-form"><summary><i class="fa-solid fa-shuffle" aria-hidden="true"></i> Crosspost</summary>
+      <form class="inline-form" method="post" action="${esc(base)}/crosspost"><label class="sr-only" for="crosspost-to">Crosspost to</label><select id="crosspost-to" name="to">${c.targets.map((t) => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Crosspost</button></form></details>` : '';
+    return from || to || form ? `<div class="crosspost">${from}${to}${form}</div>` : '';
+}
+
+/** A post's images. */
+function postImages(p) {
+    return `${(p.attachments || []).length ? `<div class="post-images">${p.attachments.map((a) => `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.filename || 'Image')}" loading="lazy" decoding="async"></a>`).join('')}</div>` : ''}`;
+}
+/**
+ * A post's ratings (Facepunch-style): the ratings given, as buttons that take yours back or switch to them,
+ * and a picker with every rating (no JS: a <details> and a form). `base` is the thread's path.
+ */
+function reactionBar(p, base, page, catalogue = []) {
+    const given = p.reactions || [];
+    if (!given.length && !p.can_react) return '';
+    const title = (r) => `${r.label}${r.raters && r.raters.length ? `: ${r.raters.join(', ')}${r.count > r.raters.length ? ` and ${num(r.count - r.raters.length)} more` : ''}` : ''}`;
+    const chip = (r) => (p.can_react
+        ? `<button class="rx rx-${esc(r.group || 'positive')}${r.mine ? ' mine' : ''}" type="submit" name="reaction" value="${esc(r.key)}" title="${esc(title(r))}" aria-pressed="${r.mine ? 'true' : 'false'}" aria-label="${esc(`${r.label}, ${r.count}`)}"><span aria-hidden="true">${r.emoji}</span> ${num(r.count)}</button>`
+        : `<span class="rx rx-${esc(r.group || 'positive')}" title="${esc(title(r))}"><span aria-hidden="true">${r.emoji}</span> ${num(r.count)}<span class="sr-only"> ${esc(r.label)}</span></span>`);
+    const picker = p.can_react && catalogue.length ? `<details class="rx-pick"><summary><i class="fa-regular fa-face-smile" aria-hidden="true"></i> Rate</summary><div class="rx-menu">${['positive', 'negative', 'utility'].map((g) => {
+        const list = catalogue.filter((r) => r.group === g);
+        return list.length ? `<div class="rx-row">${list.map((r) => `<button class="rx-btn rx-${g}" type="submit" name="reaction" value="${esc(r.key)}" title="${esc(r.label)}"><span aria-hidden="true">${r.emoji}</span> ${esc(r.label)}</button>`).join('')}</div>` : '';
+    }).join('')}</div></details>` : '';
+    const inner = `${given.map(chip).join('')}${picker}`;
+    return p.can_react
+        ? `<form class="reactions" method="post" action="${esc(base)}/react" aria-label="Ratings"><input type="hidden" name="post" value="${Number(p.id)}"><input type="hidden" name="page" value="${Number(page) || 1}">${inner}</form>`
+        : `<div class="reactions" aria-label="Ratings">${inner}</div>`;
+}
+
+const pasteField = (value = '') => `<label class="field"><span>Pastes (optional: up to 4 paste links or codes, separated by spaces)</span><input type="text" name="pastes" maxlength="400" value="${esc(value || '')}" placeholder="https://openvibe.community/p/…"></label>`;
 const imageField = (on) => (on ? '<label class="field"><span>Images (optional, up to 4; PNG, JPEG, GIF or WebP, 8 MB each)</span><input type="file" name="attachments" accept="image/png,image/jpeg,image/gif,image/webp" multiple></label>' : '');
 
 function voteForm(base, thread, viewer) {
@@ -146,7 +211,7 @@ function voteForm(base, thread, viewer) {
     return `<form class="vote" method="post" action="${esc(base)}/vote">${btn(1, 'fa-arrow-up', 'Upvote')}<span class="vote-score" title="Score">${num(thread.score)}</span>${btn(-1, 'fa-arrow-down', 'Downvote')}</form>`;
 }
 
-function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [], attachmentsEnabled = false }) {
+function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [], attachmentsEnabled = false, reactions = [], crosspost = null }) {
     const base = `/s/${space.slug}/t/${thread.slug}`;
     const opening = posts.find((p) => p.is_opening) || null;
     const gated = !!(space.members_only || thread.members_only);
@@ -157,32 +222,27 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     <label class="field"><span>Reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
     ${imageField(attachmentsEnabled)}
+    ${pasteField()}
     <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-reply" aria-hidden="true"></i> Reply</button><span class="muted small">**bold**, *italic*, \`code\`, \`\`\` blocks, [links](https://…), &gt; quotes and lists.</span></div>
   </form>`
         : thread.locked ? '<p class="alert">This thread is locked.</p>'
             : !user ? `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(base)}">Sign in with your OpenVibe account</a> to reply.</p>` : '';
-    const modBlock = viewer.can_moderate || viewer.can_delete ? `<div class="actions mod-actions">
-    ${viewer.can_moderate ? `<form method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
-    <form method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
-    ${viewer.can_delete ? `<form method="post" action="${esc(base)}/delete"><button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
-    ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
-    ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="inline-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
-    ${categories.length && (viewer.can_moderate || viewer.can_delete) ? `<form class="inline-form" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : ''}
-  </div>` : '';
+    const modBlock = modActions({ base, space, thread, viewer, categories });
 
     const body = `
 <article class="thread">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(seo.clean(thread.title, 60))}</span></nav>
   <header class="thread-head">
-    ${voteForm(base, thread, viewer)}
+    ${space.votes === false ? '' : voteForm(base, thread, viewer)}
     <div>
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
     </div>
   </header>
+  ${crosspostBlock(crosspost, base)}
   ${modBlock}
-  <div class="posts">${posts.map((p, i) => postHtml(p, first + i + 1)).join('\n')}</div>
+  <div class="posts">${posts.map((p, i) => postHtml(p, first + i + 1, { base, page, catalogue: reactions })).join('\n')}</div>
   ${pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Earlier', 'Later'])}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
@@ -218,6 +278,7 @@ function newThreadPage({ space, user, values = {}, error = null, categories = []
   ${categoryField}
   <label class="field"><span>Post (Markdown)</span><textarea name="body" rows="14" maxlength="40000" required placeholder="Say it, own it.">${esc(values.body || '')}</textarea></label>
   ${imageField(attachments)}
+  ${pasteField(values.pastes)}
   <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">
     <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
@@ -276,4 +337,7 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
     });
 }
 
-module.exports = { spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, spaceHref, who };
+module.exports = {
+    spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, spaceHref, who,
+    pager, visBadge, vipBadge, statusBadge, categoryBadge, voteForm, modActions, reactionBar, postImages, imageField, pasteField, pasteCards, crosspostBlock, STATUS_LABELS,
+};
