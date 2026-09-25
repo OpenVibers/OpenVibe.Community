@@ -31,7 +31,8 @@ img { max-width: 100%; height: auto; }
 .btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border-radius: 9px; border: 1px solid var(--border-light); background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 600; cursor: pointer; transition: border-color .15s, background .15s, transform .1s; }
 .btn:hover { border-color: var(--accent); text-decoration: none; background: var(--bg-hover); }
 .btn:active { transform: translateY(1px); }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+/* The derived pair reads at 4.5:1 in every theme (Shared 1.13.0); white on the accent did not. */
+.btn-primary { background: var(--accent-strong, #1d4ed8); border-color: var(--accent-strong, #1d4ed8); color: var(--on-accent-strong, #fff); }
 .btn-primary:hover { background: var(--accent-dark, var(--accent)); border-color: var(--accent-dark, var(--accent)); }
 .btn-ghost { background: transparent; }
 .btn-danger { border-color: var(--danger); color: var(--danger); }
@@ -330,3 +331,6 @@ button.rx:hover { border-color: var(--accent); }
 /* Pulse: new activity from Events realtime */
 .pulse-new { position: sticky; top: 8px; z-index: 5; display: flex; justify-content: center; margin: 0 0 10px; }
 .pulse-new[hidden] { display: none; }
+
+/* A link inside running text is underlined: colour alone did not tell it apart (WCAG 1.4.1). */
+.lede a, .muted a, p a:not(.btn) { text-decoration: underline; text-underline-offset: 2px; }
