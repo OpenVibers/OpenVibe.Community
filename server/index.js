@@ -22,6 +22,8 @@ try {
     const secret = String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',')[0].trim();
     require('./pulse/consumer').startSubscriptions({ config, port: config.port, secret });
 } catch (err) { console.warn('[Pulse consumer] not subscribed:', err.message); }
+// community.profile on Network (Contracts 0.41.0): a 5-minute scan of changed authors (off without the client secret).
+try { require('./identity/profile-module').createProfileModule({ db: require('./db').getDb(), config }).start(); } catch (err) { console.warn('[Modules] community.profile not started:', err.message); }
 
 function shutdown(signal) {
     console.log(`[Community] ${signal} — closing`);
