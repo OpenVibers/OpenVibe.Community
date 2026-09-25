@@ -21,6 +21,10 @@ const events = require('../events');
 const SCAN_MS = 60 * 1000;
 const REFRESH_MS = 60 * 60 * 1000;
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
+// A Search document id starts with a letter or digit (search.index-document@1): a paste whose slug starts
+// with '-' or '_' is indexed as paste_<row id> instead.
+const DOC_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+const pasteDocId = (p) => (DOC_ID_RE.test(String(p.slug || '')) ? p.slug : `paste_${p.id}`);
 
 const iso = (v) => {
     if (!v) return null;
@@ -93,7 +97,7 @@ function createSearchDocuments({ db }) {
         if (!shot && p.language) facets.syntax = String(p.language).slice(0, 200);
         if (tags.length) facets.tags = tags;
         const doc = {
-            owner: 'community', type: 'paste', id: p.slug, deleted: false, visibility: 'public',
+            owner: 'community', type: 'paste', id: pasteDocId(p), deleted: false, visibility: 'public',
             canonical_url: `${config.baseUrl}/p/${encodeURIComponent(p.slug)}`,
             title: clean(p.title, 500) || (shot ? 'Screenshot' : 'Untitled'),
             summary: clean(p.ai_summary, 4000) || clean(shot ? '' : p.content, 300) || `A ${shot ? 'screenshot' : 'paste'} on OpenVibe.Community.`,
@@ -129,7 +133,7 @@ function createSearchDocuments({ db }) {
     const publishThread = (threadId) => send('thread', String(threadId), threadDocument(threadId));
     function publishPaste(row) {
         if (!row || !SLUG_RE.test(String(row.slug || ''))) return 'skipped';
-        return send('paste', row.slug, pasteDocument(row));
+        return send('paste', pasteDocId(row), pasteDocument(row));
     }
     const guard = (fn) => { try { fn(); } catch (err) { stats.lastError = err.message; } };
 
@@ -150,9 +154,12 @@ function createSearchDocuments({ db }) {
         if (!enabled()) return 0;
         const rows = db.prepare('SELECT * FROM pastes').all();
         const seen = new Set();
-        for (const p of rows) { seen.add(p.slug); guard(() => publishPaste(p)); }
+        for (const p of rows) { seen.add(pasteDocId(p)); guard(() => publishPaste(p)); }
         for (const r of db.prepare("SELECT id FROM search_doc_pushes WHERE type = 'paste' AND deleted = 0").all()) {
-            if (!seen.has(r.id)) guard(() => send('paste', r.id, { deleted: true }));
+            if (seen.has(r.id)) continue;
+            // An id Search could never accept (sent before paste_<id> existed): nothing to remove there.
+            if (!DOC_ID_RE.test(r.id)) db.prepare("DELETE FROM search_doc_pushes WHERE type = 'paste' AND id = ?").run(r.id);
+            else guard(() => send('paste', r.id, { deleted: true }));
         }
         return rows.length;
     }

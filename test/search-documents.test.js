@@ -96,5 +96,18 @@ check('the scan finds a paste changed since the last scan; the refresh removes o
     assert.deepStrictEqual(last.payload, { type: 'paste', id: 'green-elk-3', revision: 2 });
 });
 
+check('a slug starting with a dash is indexed as paste_<id> (a document id starts with a letter or digit)', () => {
+    const p = pastes.insertPaste(db, { slug: '-wgXuYn0', owner_subject: USR, type: 'paste', title: 'Dash', content: 'dash body', visibility: 'public' });
+    db.prepare("INSERT INTO search_doc_pushes (type, id, hash, revision) VALUES ('paste', '-wgXuYn0', 'x', 1)").run();
+    assert.strictEqual(docs.publishPaste(db.prepare('SELECT * FROM pastes WHERE id = ?').get(p.id)), 'sent');
+    const ev = index().at(-1); ok(ev);
+    assert.strictEqual(ev.payload.id, `paste_${p.id}`); assert.strictEqual(ev.payload.canonical_url, `${base}/p/-wgXuYn0`);
+    const r = contracts.validate('search.index-document@1', ev.payload); assert.ok(r.valid, JSON.stringify(r.errors));
+    const before = index().length;
+    docs.refresh();
+    assert.ok(!db.prepare("SELECT 1 FROM search_doc_pushes WHERE id = '-wgXuYn0'").get(), 'the unacceptable id is forgotten');
+    assert.ok(!index().slice(before).some((e) => e.payload.id === '-wgXuYn0'), 'and no tombstone is sent for it');
+});
+
 events._reset();
 console.log(`search documents: ${n} checks passed`);
