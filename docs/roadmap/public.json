@@ -34,7 +34,7 @@
     { "key": "channel-renames", "category": "platform", "status": "done", "title": "Rename your channel without breaking links",
       "summary": "When you change your username, links to your old channel address forward to the new one, and nobody else can take your old name for six months." },
     { "key": "media-reliability", "category": "platform", "status": "in_progress", "title": "Every VOD and clip checked and recoverable",
-      "summary": "Recordings and clips are stored in more than one place and checked regularly. Work in progress: showing a video only once its bytes are verified, holds that keep evidence from being deleted, and a regular report of stray files." },
+      "summary": "Recordings and clips are stored in more than one place and checked regularly. A video now plays only once a stored copy has been checked, holds keep evidence from being deleted or moved (clips follow their recording), and a monthly report lists stray files without touching them. Still to come: splitting very long recordings into parts, and repairing the few copies known to be damaged." },
     { "key": "discord-relay", "category": "platform", "status": "planned", "title": "Community threads on Discord, and back",
       "summary": "New threads are already announced on Discord. Next: replies both ways, edits and deletions kept in step, with no loops." }
   ]
