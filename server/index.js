@@ -29,6 +29,8 @@ try {
 } catch (err) { console.warn('[Pulse consumer] not subscribed:', err.message); }
 // community.profile on Network (Contracts 0.41.0): a 5-minute scan of changed authors (off without the client secret).
 try { require('./identity/profile-module').createProfileModule({ db: require('./db').getDb(), config }).start(); } catch (err) { console.warn('[Modules] community.profile not started:', err.message); }
+// Public threads and pastes in OpenVibe.Search (WS-O task 10): community.index_document.* through the outbox (off without EVENTS_URL).
+try { require('./search/documents').createSearchDocuments({ db: require('./db').getDb() }).start(); } catch (err) { console.warn('[Search] documents not started:', err.message); }
 
 function shutdown(signal) {
     console.log(`[Community] ${signal} — closing`);
