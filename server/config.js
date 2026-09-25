@@ -41,6 +41,8 @@ module.exports = {
     // accounts these pastes belong to, so it is the only service that can turn a signed-in
     // visitor (a Network JWT) into the user id Media files the write under.
     liveInternalUrl: (process.env.OV_LIVE_INTERNAL_URL || 'http://127.0.0.1:3000').replace(/\/$/, ''),
+    // OpenVibe.Search's query API (the /search page), asked anonymously: public documents only.
+    searchInternalUrl: (process.env.OV_SEARCH_INTERNAL_URL || 'http://127.0.0.1:4710').replace(/\/$/, ''),
     liveUrl: (process.env.OV_LIVE_URL || 'https://openvibe.live').replace(/\/$/, ''),
     // OpenVibe.Media — public host that serves raw paste text and screenshots.
     mediaUrl: (process.env.OV_MEDIA_URL || 'https://openvibe.media').replace(/\/$/, ''),

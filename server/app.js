@@ -231,6 +231,23 @@ function createApp(opts = {}) {
 
     app.get('/updates', (req, res) => html(res, pages.updatesPage()));
 
+    // Threads and pastes through OpenVibe.Search (server/search/query.js); the paste filter below works without it.
+    const searchQuery = opts.searchQuery || require('./search/query').createSearchQuery({ baseUrl: config.searchInternalUrl });
+    app.get('/search', withUser, wrap(async (req, res) => {
+        const q = String(req.query.q || '').trim().slice(0, 200);
+        const type = ['thread', 'paste'].includes(req.query.type) ? req.query.type : '';
+        const { searchPage } = require('./render/search');
+        if (!q) return html(res, searchPage({ q, type }));
+        try {
+            const out = await searchQuery.search({ q, type, cursor: String(req.query.cursor || '') });
+            html(res, searchPage({ q, type, results: out.results, nextCursor: out.next_cursor }));
+        } catch (err) {
+            if (!err || !err.unavailable) throw err;
+            console.warn('[Search] /search:', err.message);
+            html(res, searchPage({ q, type, unavailable: true }), 503);
+        }
+    }));
+
     app.get('/pastes', withUser, wrap(async (req, res) => {
         const [result, languages] = await Promise.all([catalog.browse(req.query), catalog.languages()]);
         html(res, pages.browsePage(result, languages));

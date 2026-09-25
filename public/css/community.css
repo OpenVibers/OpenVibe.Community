@@ -318,3 +318,11 @@ button.rx:hover { border-color: var(--accent); }
 .paste-embed img { display: block; max-width: 100%; max-height: 360px; margin: 0 auto; }
 .crosspost { margin: 8px 0; }
 .crosspost-note { margin: 4px 0; }
+
+/* /search */
+.search-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.search-hit { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); min-width: 0; }
+.search-title { font-weight: 600; font-size: 1.05rem; overflow-wrap: anywhere; }
+.search-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; font-size: .8rem; color: var(--text-muted); }
+.search-snippet { margin: 4px 0 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+.search-snippet mark { background: rgba(var(--accent-rgb), .22); color: inherit; border-radius: 3px; padding: 0 2px; }

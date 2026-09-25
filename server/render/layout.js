@@ -48,6 +48,7 @@ function navbarInit(opts) {
             { label: 'Pastes', href: '/pastes', active: opts.active === 'pastes' },
             { label: 'Spaces', href: '/s', active: opts.active === 'spaces' },
             { label: 'Pulse', href: '/pulse', active: opts.active === 'pulse' },
+            { label: 'Search', href: '/search', icon: 'fa-magnifying-glass', active: opts.active === 'search' },
             { label: 'New paste', href: '/new', icon: 'fa-plus', active: opts.active === 'new' },
         ],
         menu: { after: [{ label: 'My pastes', href: '/my', icon: 'fa-paste' }] },
