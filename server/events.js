@@ -99,12 +99,18 @@ function postCreated(post, thread, spaceSlug, spaceVisibility = 'public') {
         url: visibility === 'public' ? `${config.baseUrl}/s/${encodeURIComponent(spaceSlug)}/t/${encodeURIComponent(thread.slug)}#p${post.id}` : null,
     }, { isPublic: visibility === 'public', actor: actorOf(post.author_subject) });
 }
-function commentCreated(comment, cthread) {
+/**
+ * Public only when the item the thread belongs to is known to be public (itemPublic: comments/store.js
+ * refIsPublic): the thread's access id and its ref (an unlisted paste's slug, a private VOD's id) are
+ * what keep a private item's comments private, and public events reach every realtime listener and app.
+ */
+function commentCreated(comment, cthread, { itemPublic = false } = {}) {
     const visibility = ['public', 'hidden', 'locked'].includes(cthread.visibility) ? cthread.visibility : 'public';
+    const isPublic = visibility !== 'hidden' && !!itemPublic;
     return record('community.comment.created', { type: 'comment', id: String(comment.id) }, {
         comment_id: Number(comment.id), thread_access_id: String(cthread.access_id), ref: { service: cthread.ref_service, type: cthread.ref_type, id: String(cthread.ref_id) },
-        author: subjectRef(comment.author_subject), visibility, url: visibility === 'hidden' ? null : `${config.baseUrl}/c/${encodeURIComponent(cthread.access_id)}`,
-    }, { isPublic: visibility !== 'hidden', actor: actorOf(comment.author_subject) });
+        author: subjectRef(comment.author_subject), visibility, url: isPublic ? `${config.baseUrl}/c/${encodeURIComponent(cthread.access_id)}` : null,
+    }, { isPublic, actor: actorOf(comment.author_subject) });
 }
 
 /**

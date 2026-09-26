@@ -316,7 +316,11 @@ function createApp(opts = {}) {
         app.get('/p/:slug/screenshot', withUser, (req, res) => {
             if (!SLUG_RE.test(req.params.slug)) return notFound(res);
             try { res.redirect(302, app.locals.pastes.screenshotUrl(req.viewer, req.params.slug)); }
-            catch (err) { if (err.status === 404) return notFound(res); throw err; }
+            catch (err) {
+                if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
+                if (err.status === 404) return notFound(res);
+                throw err;
+            }
         });
     } else {
         // Raw text and screenshots are public on OpenVibe.Media — bounce there.

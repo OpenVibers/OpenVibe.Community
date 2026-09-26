@@ -117,8 +117,9 @@ function createThread(db, { space_id, title, author_subject = null, origin = 'us
         const p = db.prepare('INSERT INTO posts (thread_id, author_subject, origin, is_opening, body_markdown) VALUES (?, ?, ?, 1, ?)')
             .run(threadId, author_subject, origin, body_markdown);
         const thread = getThread(db, threadId);
-        const space = db.prepare('SELECT slug, visibility FROM spaces WHERE id = ?').get(space_id);
-        require('../events').threadCreated(thread, space ? space.slug : String(space_id), space ? space.visibility : 'members');   // community.thread.created
+        const space = db.prepare('SELECT slug, visibility, members_only_owner FROM spaces WHERE id = ?').get(space_id);
+        // A members-only (VIP) space's threads are not public either.
+        require('../events').threadCreated(thread, space ? space.slug : String(space_id), space && !space.members_only_owner ? space.visibility : 'members');   // community.thread.created
         return { thread, post: getPost(db, p.lastInsertRowid) };
     })();
 }
@@ -250,8 +251,8 @@ function addPost(db, { thread_id, author_subject = null, origin = 'user', body_m
         db.prepare('UPDATE threads SET reply_count = reply_count + 1, last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').run(thread_id);
         const post = getPost(db, info.lastInsertRowid);
         const thread = getThread(db, thread_id);
-        const space = thread && db.prepare('SELECT slug, visibility FROM spaces WHERE id = ?').get(thread.space_id);
-        if (thread) require('../events').postCreated(post, thread, space ? space.slug : String(thread.space_id), space ? space.visibility : 'members');   // community.post.created
+        const space = thread && db.prepare('SELECT slug, visibility, members_only_owner FROM spaces WHERE id = ?').get(thread.space_id);
+        if (thread) require('../events').postCreated(post, thread, space ? space.slug : String(thread.space_id), space && !space.members_only_owner ? space.visibility : 'members');   // community.post.created
         return post;
     })();
 }

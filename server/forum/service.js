@@ -156,7 +156,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             fail(403, 'vip.members_only', `Only members of this creator's OpenVibe.VIP can read and post in this ${g.type}`, {
                 reason: d.reason || 'denied', gate: g.type, members_only: mo,
                 space: { slug: space.slug, name: space.name, description: space.description || null },
-                thread: thread ? { slug: thread.slug, title: thread.title } : null,
+                // A thread's title is shown only for its own gate: inside a members-only space it is not listed, and
+                // post ids are sequential (GET /posts/:id/versions would name every thread in the space).
+                thread: thread && g.type === 'thread' ? { slug: thread.slug, title: thread.title } : null,
             });
         }
     }
@@ -190,7 +192,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         const thread = post ? store.getThread(db, post.thread_id) : null;
         const space = thread ? store.getSpaceById(db, thread.space_id) : null;
         if (!post || !thread || !space || post.deleted_at) fail(404, 'post.not_found', 'No such post');
-        spaceFor(v, space.slug);
+        // A post in a staff space looks exactly like a missing one (not space.not_found, which would confirm it).
+        try { spaceFor(v, space.slug); } catch (err) { if (err.status === 404) fail(404, 'post.not_found', 'No such post'); throw err; }
         return { post, thread, space };
     }
 

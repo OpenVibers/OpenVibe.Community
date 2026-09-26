@@ -360,10 +360,14 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { content: String(p.content || '') };
         },
 
-        /** GET /p/:slug/screenshot target (the stored Media URL). */
+        /** GET /p/:slug/screenshot target (the stored Media URL). For a burn-after-read screenshot it is a read (raw's rule). */
         screenshotUrl(v, slug) {
             const p = store.getBySlug(db, String(slug));
             if (!p || !p.screenshot_url || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Not found');
+            if (p.burn_after_read && !isOwner(v, p)) {
+                if (p.views > 0) burn(p);
+                store.bumpViews(db, p.id);
+            }
             return p.screenshot_url;
         },
 

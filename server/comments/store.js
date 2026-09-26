@@ -52,6 +52,24 @@ function getComment(db, id) {
     return db.prepare('SELECT * FROM comments WHERE id = ?').get(id) || null;
 }
 
+/**
+ * Is the thread's item known to be public? Only Community's own can be checked: a public paste that is
+ * not deleted and does not burn, or a live post in a public space outside members-only. Anything else (a
+ * Live VOD or clip may be private; only Live knows) is not, so its comment events stay internal.
+ */
+function refIsPublic(db, t) {
+    if (!t || t.ref_service !== 'community') return false;
+    if (t.ref_type === 'paste') {
+        return !!db.prepare("SELECT 1 FROM pastes WHERE slug = ? AND deleted_at IS NULL AND visibility = 'public' AND burn_after_read = 0").get(String(t.ref_id));
+    }
+    if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) {
+        return !!db.prepare(`SELECT 1 FROM posts p JOIN threads th ON th.id = p.thread_id JOIN spaces s ON s.id = th.space_id
+                             WHERE p.id = ? AND p.deleted_at IS NULL AND th.deleted_at IS NULL AND s.visibility = 'public'
+                               AND s.members_only_owner IS NULL AND th.members_only_owner IS NULL`).get(Number(t.ref_id));
+    }
+    return false;
+}
+
 /** Insert a comment and keep the thread's and parent's counters in step. */
 function insertComment(db, { thread_id, parent_id = null, author_subject = null, anon_name = null, origin = 'user', message }) {
     return db.transaction(() => {
@@ -61,7 +79,7 @@ function insertComment(db, { thread_id, parent_id = null, author_subject = null,
         if (parent_id) db.prepare('UPDATE comments SET reply_count = reply_count + 1 WHERE id = ?').run(parent_id);
         const comment = getComment(db, info.lastInsertRowid);
         const cthread = db.prepare('SELECT * FROM comment_threads WHERE id = ?').get(thread_id);
-        if (cthread) require('../events').commentCreated(comment, cthread);   // community.comment.created
+        if (cthread) require('../events').commentCreated(comment, cthread, { itemPublic: refIsPublic(db, cthread) });   // community.comment.created
         return comment;
     })();
 }
