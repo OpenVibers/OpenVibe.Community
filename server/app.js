@@ -55,6 +55,9 @@ const { createForumRoutes } = require('./forum/routes');
 const { createPulse } = require('./pulse/service');
 const { createPulseApi } = require('./pulse/api');
 const { createDiscordRelay } = require('./relay/discord');
+const { createRelayEventsWorker } = require('./relay/events-worker');
+const { createDiscordGateway } = require('./relay/discord-gateway');
+const { createDiscordInbound } = require('./relay/inbound');
 const { createRelayApi } = require('./relay/api');
 const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
@@ -124,6 +127,24 @@ function createApp(opts = {}) {
         webhookVars: config.discordRelay.webhookVars,
         ...(opts.relayOptions || {}),
     });
+    // Its Events worker (creates from community.thread.* / community.post.*) and the inbound gateway;
+    // both off unless configured (relay/events-worker.js, relay/discord-gateway.js, relay/inbound.js).
+    const relayInbound = relay.enabled ? createDiscordInbound({ db, perMinute: config.discordRelay.inboundPerMinute, maxChars: config.discordRelay.inboundMaxChars, ...(opts.inboundOptions || {}) }) : null;
+    if (!opts.relay) {
+        relay.attach({
+            worker: createRelayEventsWorker({
+                db, relay, enabled: config.discordRelay.events, eventsUrl: config.discordRelay.eventsUrl, clientSecret: config.oauth.clientSecret,
+                tokenUrl: `${config.networkInternalUrl}/oauth/token`, clientId: config.oauth.clientId, pollMs: config.discordRelay.eventsPollMs, fetchImpl: opts.fetchImpl,
+                ...(opts.relayWorkerOptions || {}),
+            }),
+            gateway: relayInbound && config.discordRelay.inbound ? createDiscordGateway({
+                token: config.discordRelay.botToken, url: config.discordRelay.gatewayUrl,
+                onDispatch: (type, data, ctx) => relayInbound.handle(type, data, ctx),
+                ...(opts.gatewayOptions || {}),
+            }) : null,
+            inbound: relayInbound,
+        });
+    }
     // OpenVibe.VIP: members-only spaces and threads (fails closed without a client secret or VIP).
     const vip = opts.vip || createVipGate({ config, ...(opts.vipOptions || {}) });
     // Images on posts go to OpenVibe.Media's Object API as med_ objects (media/objects.js).
@@ -132,7 +153,7 @@ function createApp(opts = {}) {
     const community = config.pastesAuthority === 'community';
     const comments = createCommentService({ db, network, pastesLocal: community, limits: opts.commentLimits });
     seo.useForum(forum);
-    Object.assign(app.locals, { db, network, pulse, relay, vip, forum, comments });
+    Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments });
     if (opts.startRelay !== false) relay.start();
 
     // ── Paste authority ──────────────────────────────────────
@@ -189,7 +210,7 @@ function createApp(opts = {}) {
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers }));
     app.use('/api/v1/posts', createPostsApi({ forum, viewers }));
     app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers }));
-    app.use('/api/v1/relay', createRelayApi({ relay, db, viewers }));
+    app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports (a same-origin

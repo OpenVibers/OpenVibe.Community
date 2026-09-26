@@ -20,10 +20,12 @@ function createAuthors({ db, network = null }) {
 
     /**
      * { subject, username, display_name, avatar_url, profile_color } for a person, a fixed AI
-     * label for AI output, null for anonymous writes.
+     * label for AI output, the Discord name (relayName; is_relay) for a reply written on Discord,
+     * null for anonymous writes.
      */
-    function author(subject, origin, projections) {
+    function author(subject, origin, projections, relayName = null) {
         if (origin === 'ai') return { subject: null, username: null, display_name: AI_DISPLAY_NAME, avatar_url: null, profile_color: null, is_ai: true };
+        if (origin === 'discord') return { subject: null, username: null, display_name: relayName || 'Discord', avatar_url: null, profile_color: null, is_relay: true, relay: 'discord' };
         if (origin === 'system' && !subject) return { subject: null, username: null, display_name: 'OpenVibe', avatar_url: null, profile_color: null, is_system: true };
         if (!subject) return null;
         const p = projections.get(subject);

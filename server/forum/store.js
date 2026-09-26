@@ -239,11 +239,14 @@ function getPost(db, id) {
     return db.prepare('SELECT * FROM posts WHERE id = ?').get(id) || null;
 }
 
-/** A reply; bumps the thread's reply_count and last activity. */
-function addPost(db, { thread_id, author_subject = null, origin = 'user', body_markdown }) {
+/**
+ * A reply; bumps the thread's reply_count and last activity. relay_author: the name a reply written
+ * on Discord carries (origin 'discord', no author subject; server/relay/inbound.js).
+ */
+function addPost(db, { thread_id, author_subject = null, origin = 'user', body_markdown, relay_author = null }) {
     return db.transaction(() => {
-        const info = db.prepare('INSERT INTO posts (thread_id, author_subject, origin, body_markdown) VALUES (?, ?, ?, ?)')
-            .run(thread_id, author_subject, origin, body_markdown);
+        const info = db.prepare('INSERT INTO posts (thread_id, author_subject, origin, body_markdown, relay_author) VALUES (?, ?, ?, ?, ?)')
+            .run(thread_id, author_subject, origin, body_markdown, relay_author);
         db.prepare('UPDATE threads SET reply_count = reply_count + 1, last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').run(thread_id);
         const post = getPost(db, info.lastInsertRowid);
         const thread = getThread(db, thread_id);

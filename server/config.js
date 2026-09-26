@@ -76,7 +76,10 @@ module.exports = {
         unavailableTtlMs: parseInt(process.env.VIP_CACHE_UNAVAILABLE_TTL_MS, 10) || 2_000,
     },
 
-    // Discord relay (outbound: new threads → a Discord webhook per mapped space). Off by default.
+    // Discord relay (server/relay; docs/discord-relay.md). Off by default, and inert without an owner's
+    // webhook variables, mappings and (for inbound) bot token.
+    //   out  threads and replies in mapped public spaces → the mapping's Discord webhook; edits and deletes follow
+    //   in   replies on Discord → posts (the gateway; DISCORD_RELAY_INBOUND=on and DISCORD_BOT_TOKEN)
     // Webhook URLs live in environment variables named by relay_mappings.webhook_url_ref.
     discordRelay: {
         enabled: /^(1|true|yes|on)$/i.test(process.env.DISCORD_RELAY_ENABLED || ''),
@@ -85,5 +88,16 @@ module.exports = {
         maxAttempts: parseInt(process.env.DISCORD_RELAY_MAX_ATTEMPTS, 10) || 6,
         // The only variables a mapping may name (comma-separated exact names); unset = DISCORD_WEBHOOK_*.
         webhookVars: (process.env.DISCORD_RELAY_WEBHOOK_VARS || '').split(',').map((s) => s.trim()).filter(Boolean),
+        // The Events worker queues creates from community.thread.* / community.post.* (needs EVENTS_URL and
+        // OV_OAUTH_CLIENT_SECRET, capability events.event.read); 'off' leaves them to the forum.
+        events: !/^(0|false|no|off)$/i.test(process.env.DISCORD_RELAY_EVENTS || ''),
+        eventsUrl: (process.env.EVENTS_URL || '').replace(/\/+$/, '') || null,
+        eventsPollMs: parseInt(process.env.DISCORD_RELAY_EVENTS_POLL_MS, 10) || 5000,
+        // Inbound through the Discord gateway (a bot in the server with the MESSAGE CONTENT intent).
+        inbound: /^(1|true|yes|on)$/i.test(process.env.DISCORD_RELAY_INBOUND || ''),
+        botToken: process.env.DISCORD_BOT_TOKEN || '',
+        gatewayUrl: process.env.DISCORD_GATEWAY_URL || 'wss://gateway.discord.gg/?v=10&encoding=json',
+        inboundPerMinute: parseInt(process.env.DISCORD_RELAY_INBOUND_PER_MINUTE, 10) || 6,
+        inboundMaxChars: parseInt(process.env.DISCORD_RELAY_INBOUND_MAX_CHARS, 10) || 4000,
     },
 };

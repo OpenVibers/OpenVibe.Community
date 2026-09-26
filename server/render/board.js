@@ -159,7 +159,7 @@ function authorPanel(p) {
     return `<aside class="postbit-author">
       ${pic ? `<img class="postbit-avatar" src="${esc(pic)}" alt="" width="64" height="64" loading="lazy">` : `<span class="postbit-avatar postbit-letter" aria-hidden="true">${initial}</span>`}
       <span class="postbit-name">${a.username ? `<a href="https://openvibe.live/@${encodeURIComponent(a.username)}" rel="noopener">${esc(name)}</a>` : esc(name)}</span>
-      ${a.is_ai ? '<span class="badge badge-ai" title="Written by AI, not by a person">AI</span>' : a.is_system ? '<span class="badge">OpenVibe</span>' : ''}
+      ${a.is_ai ? '<span class="badge badge-ai" title="Written by AI, not by a person">AI</span>' : a.is_system ? '<span class="badge">OpenVibe</span>' : a.is_relay ? '<span class="badge badge-relay" title="Written on Discord and relayed here">Discord</span>' : ''}
       ${st ? `<dl class="postbit-stats"><div><dt>Posts</dt><dd>${num(st.posts)}</dd></div>${monthYear(st.first_post_at) ? `<div><dt>Since</dt><dd>${esc(monthYear(st.first_post_at))}</dd></div>` : ''}</dl>
       ${(st.ratings || []).length ? `<p class="postbit-ratings" aria-label="Ratings received">${st.ratings.map((r) => `<span title="${esc(r.label)}">${r.emoji} ${num(r.count)}</span>`).join(' ')}</p>` : ''}` : ''}
     </aside>`;

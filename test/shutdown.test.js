@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Graceful stop (roadmap WS-P lifecycle; server/graceful.js), on the real process with the events
- * outbox, the Discord relay, the Pulse subscriptions and the profile and search scans all on (pointed
+ * outbox, the Discord relay (with its Events worker and gateway), the Pulse subscriptions and the profile and search scans all on (pointed
  * at nothing): SIGTERM while a request is in flight and a keep-alive connection sits idle. New
  * connections are refused, the request is answered (Connection: close), every background worker is
  * stopped, community.db is closed, and the process exits 0 within the manifest's 5 s; the idle
@@ -27,6 +27,7 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer(); 
             ...process.env, PORT: String(port), HOST: '127.0.0.1', NODE_ENV: 'test', COMMUNITY_DB_PATH: path.join(dir, 'community.db'),
             EVENTS_URL: 'http://127.0.0.1:9', OV_NETWORK_INTERNAL_URL: 'http://127.0.0.1:9', OV_NETWORK_URL: 'http://127.0.0.1:9',
             OV_OAUTH_CLIENT_SECRET: 'test-secret-not-real', COMMUNITY_EVENTS_SECRET: 'e'.repeat(40), DISCORD_RELAY_ENABLED: '1',
+            DISCORD_RELAY_INBOUND: 'on', DISCORD_BOT_TOKEN: 'not-a-real-bot-token', DISCORD_GATEWAY_URL: 'ws://127.0.0.1:9/?v=10&encoding=json',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -43,6 +44,7 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer(); 
         }
         assert.ok(up, `the server did not start:\n${out}`);
         assert.match(out, /\[Events\] community →/, 'the outbox is on');
+        assert.match(out, /\[Relay\] Discord relay on: creates queued by the Events worker; events worker on; inbound on/, 'the relay, its Events worker and the gateway are on');
 
         // An idle keep-alive connection (the server keeps them 65 s).
         const agent = new http.Agent({ keepAlive: true });
@@ -73,7 +75,7 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer(); 
         const ms = Date.now() - t0;
         assert.strictEqual(code, 0, `exit 0 (got ${code} ${signal})\n${out.slice(-2000)}`);
         assert.ok(ms < 5000, `within the manifest's 5 s (${ms} ms)`);
-        assert.match(out, /\[Community\] stopped: subscriptions stopped, profile scan stopped, search scans stopped, relay stopped, outbox stopped \(\d+ pending\)/, out.slice(-2000));
+        assert.match(out, /\[Community\] stopped: subscriptions stopped, profile scan stopped, search scans stopped, relay stopped \(events worker stopped, gateway stopped\), outbox stopped \(\d+ pending\)/, out.slice(-2000));
         assert.match(out, /\[Community\] stopped in \d+ ms/);
         agent.destroy();
         console.log(`shutdown: SIGTERM → exit 0 in ${ms} ms, the request in flight answered, every worker stopped`);

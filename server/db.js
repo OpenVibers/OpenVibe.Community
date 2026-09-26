@@ -16,6 +16,26 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
+// relay_deliveries' columns: the table in SCHEMA, and migrate()'s one-time rebuild of the older shape.
+const RELAY_DELIVERIES_COLUMNS = `
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+    mapping_id INTEGER NOT NULL REFERENCES relay_mappings(id) ON DELETE CASCADE,
+    action TEXT NOT NULL DEFAULT 'create' CHECK(action IN ('create', 'edit', 'delete')),
+    dedupe_key TEXT UNIQUE NOT NULL,
+    source TEXT NOT NULL DEFAULT 'direct' CHECK(source IN ('direct', 'events')),
+    event_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'failed', 'dropped', 'skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_status INTEGER,
+    last_error TEXT,
+    delivered_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+`;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS pastes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -242,9 +262,6 @@ CREATE TABLE IF NOT EXISTS thread_votes (
     PRIMARY KEY (thread_id, subject_id)
 );
 
--- ── Discord relay (server/relay; DISCORD_RELAY_ENABLED) ──────
--- webhook_url_ref is the NAME of an environment variable holding the webhook URL: secrets never
--- live in the database.
 -- Images attached to forum posts (WS-J task 2): the bytes are a Media object (med_…, tenant community,
 -- owned by the person); an upload waits here with no post until the thread or reply naming it is saved.
 CREATE TABLE IF NOT EXISTS attachments (
@@ -299,6 +316,11 @@ CREATE TABLE IF NOT EXISTS categories (
     UNIQUE (space_id, slug)
 );
 
+-- ── Discord relay (server/relay; DISCORD_RELAY_ENABLED) ──────
+-- webhook_url_ref is the NAME of an environment variable holding the webhook URL: secrets never
+-- live in the database. migrate() adds discord_channel_id (the channel the webhook posts into;
+-- learned from Discord's answer when unset), discord_thread_id (post into this Discord thread) and
+-- inbound (replies from Discord come back as posts).
 CREATE TABLE IF NOT EXISTS relay_mappings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -309,23 +331,63 @@ CREATE TABLE IF NOT EXISTS relay_mappings (
     UNIQUE (space_id, direction, webhook_url_ref)
 );
 
--- One delivery per (thread, mapping): the dedupe key. status pending → delivered | failed.
-CREATE TABLE IF NOT EXISTS relay_deliveries (
+-- One outbound action per dedupe key (WS-J task 6): send a thread's or a reply's Discord message
+-- (create), edit it or delete it. post_id NULL: the thread's own message. source: queued by the
+-- Events worker from community.thread.* / community.post.* (event_id), or directly by the forum.
+-- status pending → delivered | failed (the dead letter: retries used up, or refused; staff retry or
+-- drop it) | dropped (by staff) | skipped (nothing left to do, e.g. deleted before it was sent).
+CREATE TABLE IF NOT EXISTS relay_deliveries (${RELAY_DELIVERIES_COLUMNS});
+CREATE INDEX IF NOT EXISTS idx_relay_deliveries_due ON relay_deliveries(status, next_attempt_at);
+
+-- External message map (WS-J task 5): every Discord message the relay knows, both ways.
+--   out  a thread (local_type 'thread': title and opening post) or a reply sent through the mapping's webhook
+--   in   a reply written on Discord, now a post with origin 'discord' (local_type 'post')
+-- external_channel_id is where the message is (a Discord thread's id for one in a thread);
+-- external_thread_id is set when the relay sent it into a Discord thread (edits and deletes name it).
+-- Unique both ways: a Discord message is one local object; a local object is one message per mapping.
+-- Edits and deletes on either side find their counterpart here.
+CREATE TABLE IF NOT EXISTS relay_message_map (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL DEFAULT 'discord' CHECK(platform IN ('discord')),
     mapping_id INTEGER NOT NULL REFERENCES relay_mappings(id) ON DELETE CASCADE,
-    dedupe_key TEXT UNIQUE NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'failed')),
-    attempts INTEGER NOT NULL DEFAULT 0,
-    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_status INTEGER,
-    last_error TEXT,
-    delivered_at DATETIME,
+    direction TEXT NOT NULL CHECK(direction IN ('out', 'in')),
+    local_type TEXT NOT NULL CHECK(local_type IN ('thread', 'post')),
+    local_id INTEGER NOT NULL,
+    thread_id INTEGER NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    external_channel_id TEXT NOT NULL,
+    external_thread_id TEXT,
+    external_message_id TEXT NOT NULL,
+    external_webhook_id TEXT,
+    external_deleted_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (thread_id, mapping_id)
+    UNIQUE (platform, external_message_id),
+    UNIQUE (platform, mapping_id, local_type, local_id)
 );
-CREATE INDEX IF NOT EXISTS idx_relay_deliveries_due ON relay_deliveries(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_relay_message_map_thread ON relay_message_map(thread_id);
+
+-- The relay's Events worker's place in OpenVibe.Events (server/relay/events-worker.js): the last seq
+-- it handled, moved in the same transaction as the deliveries that page queued.
+CREATE TABLE IF NOT EXISTS relay_cursors (
+    name TEXT PRIMARY KEY,
+    cursor INTEGER NOT NULL,
+    latest_seq INTEGER,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Messages from Discord that did not become (or change) a post, for staff (GET /api/v1/relay/inbound).
+-- Ids and the reason only, never the text.
+CREATE TABLE IF NOT EXISTS relay_inbound_failures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mapping_id INTEGER REFERENCES relay_mappings(id) ON DELETE SET NULL,
+    event TEXT NOT NULL,
+    external_channel_id TEXT,
+    external_message_id TEXT,
+    external_author_id TEXT,
+    error TEXT NOT NULL,
+    dismissed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- ── Pulse (server/pulse): public activity across the network, with provenance ──
 -- Only public things enter; AI items carry origin 'ai' and never an actor.
@@ -463,6 +525,28 @@ function migrate(db) {
         ['roadmap', 'features', 'Features', 'New things on sites that are already open.', 2],
         ['roadmap', 'platform', 'Under the hood', 'Accounts, safety, reliability and the shared systems every site uses.', 3],
     ]) seedCategory.run(slug, name, description, position, space);
+    // The Discord relay both ways (WS-J tasks 5 and 6; server/relay): where a mapping's webhook posts and
+    // whether replies come back, the Discord name on posts from Discord, and relay_deliveries rebuilt once
+    // for replies, edits and deletes (the older table allowed one row per (thread, mapping) and no actions).
+    const mappingCols = new Set(db.prepare('PRAGMA table_info(relay_mappings)').all().map((x) => x.name));
+    if (!mappingCols.has('discord_channel_id')) db.exec('ALTER TABLE relay_mappings ADD COLUMN discord_channel_id TEXT');
+    if (!mappingCols.has('discord_thread_id')) db.exec('ALTER TABLE relay_mappings ADD COLUMN discord_thread_id TEXT');
+    if (!mappingCols.has('inbound')) db.exec('ALTER TABLE relay_mappings ADD COLUMN inbound INTEGER NOT NULL DEFAULT 0');
+    const postCols = new Set(db.prepare('PRAGMA table_info(posts)').all().map((x) => x.name));
+    if (!postCols.has('relay_author')) db.exec('ALTER TABLE posts ADD COLUMN relay_author TEXT');
+    const deliveryCols = new Set(db.prepare('PRAGMA table_info(relay_deliveries)').all().map((x) => x.name));
+    if (!deliveryCols.has('action')) {
+        db.transaction(() => {
+            db.exec(`CREATE TABLE relay_deliveries_v2 (${RELAY_DELIVERIES_COLUMNS});
+                     INSERT INTO relay_deliveries_v2 (id, thread_id, mapping_id, dedupe_key, status, attempts, next_attempt_at, last_status, last_error, delivered_at, created_at, updated_at)
+                         SELECT id, thread_id, mapping_id, dedupe_key, status, attempts, next_attempt_at, last_status, last_error, delivered_at, created_at, updated_at FROM relay_deliveries;
+                     DROP TABLE relay_deliveries;
+                     ALTER TABLE relay_deliveries_v2 RENAME TO relay_deliveries;
+                     CREATE INDEX IF NOT EXISTS idx_relay_deliveries_due ON relay_deliveries(status, next_attempt_at);`);
+        })();
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_relay_deliveries_thread ON relay_deliveries(thread_id, post_id);
+             CREATE INDEX IF NOT EXISTS idx_relay_mappings_channel ON relay_mappings(discord_channel_id) WHERE discord_channel_id IS NOT NULL;`);
 }
 
 /** cth_ + 22 base64url characters (16 random bytes). */

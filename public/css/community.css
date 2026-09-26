@@ -169,6 +169,7 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .thread-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 4px 0 0; font-size: .82rem; color: var(--text-secondary); }
 .pulse-source { flex: none; margin-top: 2px; }
 .badge-ai { border-color: var(--info); color: var(--info); }
+.badge-relay { border-color: var(--accent-light); color: var(--accent-light); }
 .badge-vis { font-size: .7rem; vertical-align: middle; }
 /* Categories, requests and the roadmap (forum pages) */
 .badge-status, .badge-category { font-size: .7rem; vertical-align: middle; }

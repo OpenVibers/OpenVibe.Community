@@ -15,8 +15,10 @@
  * own posts; moderators (identity/capabilities.js discussionModerator) any, and pin/lock.
  * Edits keep every revision in post_versions.
  *
- * Side effects of a new thread/post: a Pulse item (public spaces) and, for threads, a Discord
- * relay delivery per mapping (relay/discord.js; off unless DISCORD_RELAY_ENABLED).
+ * Side effects of a new thread/post: a Pulse item (public spaces) and a Discord relay delivery per
+ * mapping (relay/discord.js; off unless DISCORD_RELAY_ENABLED; while its Events worker runs, it
+ * queues creates from community.thread/post.created instead). Edits, deletes and gating queue the
+ * matching Discord edit or delete for whatever the relay had sent.
  *
  * Members-only (OpenVibe.VIP): a space or a single thread can be for one creator's VIP members
  * (members_only_owner = the creator's usr_ subject). Reading its threads and posts, starting a
@@ -282,7 +284,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             attachments: deleted ? [] : ((attachments && attachments.get(p.id)) || []),
             pastes: deleted ? [] : ((pastes && pastes.get(p.id)) || []),
             id: p.id, thread_id: p.thread_id, is_opening: !!p.is_opening, origin: p.origin,
-            author: deleted ? null : authors.author(p.author_subject, p.origin, projections),
+            author: deleted ? null : authors.author(p.author_subject, p.origin, projections, p.relay_author),
             body_markdown: deleted ? null : p.body_markdown,
             body_html: deleted ? null : renderMarkdown(p.body_markdown),
             revision: p.revision, deleted,
@@ -311,14 +313,14 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         };
     }
 
-    /** Newly gated threads leave Pulse and the Discord relay queue at once (reads re-check as well). */
+    /**
+     * Newly gated threads leave Pulse at once, and Discord: what the relay had not sent yet is skipped and
+     * what it had sent is deleted there (reads and sends re-check as well).
+     */
     function hideGated(threadIds) {
         if (!threadIds.length) return;
         if (pulse) hook(() => { for (const id of threadIds) { pulse.threadGone(id); for (const p of db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(id)) pulse.postGone(p.id); } });
-        hook(() => {
-            const del = db.prepare("DELETE FROM relay_deliveries WHERE thread_id = ? AND status = 'pending'");
-            for (const id of threadIds) del.run(id);
-        });
+        if (relay) hook(() => relay.hideThreads(threadIds, 'made members-only'));
     }
 
     function removeThread(v, thread) {
@@ -329,6 +331,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!mine) events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
         })();
         if (pulse) hook(() => { pulse.threadGone(thread.id); for (const p of db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(thread.id)) pulse.postGone(p.id); });
+        if (relay) hook(() => relay.enqueueDelete(thread.id, null, mine ? 'deleted by its author' : 'deleted by a moderator'));
         return { ok: true, id: thread.id, deleted: 'thread' };
     }
 
@@ -586,7 +589,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const { post, thread, space } = postFor(v, postId);
             await requireMembership(v, space, thread);
             const projections = await authors.projectionsFor([post.author_subject]);
-            const a = authors.author(post.author_subject, post.origin, projections);
+            const a = authors.author(post.author_subject, post.origin, projections, post.relay_author);
             const name = a ? (a.username ? `@${a.username}` : a.display_name || 'Someone') : 'Someone';
             const quoted = String(post.body_markdown || '').split('\n').slice(0, 40).map((l) => `> ${l}`).join('\n');
             return { markdown: `**${name}** wrote:\n${quoted}\n\n` };
@@ -749,6 +752,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             attach(images, post.id);
             attachPastes(pasteRows, post.id);
             if (pulse) hook(() => pulse.postCreated(post, thread, space));
+            if (relay) hook(() => relay.enqueuePost(post, thread, space));
             const projections = await authors.projectionsFor([post.author_subject]);
             // Where the new post lands: its page in the thread (posts are numbered in id order).
             const position = db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id).c;
@@ -764,6 +768,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!mine && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator edits a post');
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
             const next = store.editPost(db, post.id, cleanBody(body.body != null ? body.body : body.body_markdown), v.subject || v.service || null);
+            if (relay && next && next.revision !== post.revision) hook(() => relay.enqueueEdit(next));
             const projections = await authors.projectionsFor([next.author_subject]);
             return { post: shapePost(next, v, projections) };
         },
@@ -787,6 +792,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 if (!(person(v) && post.author_subject === v.subject)) events.moderationAction(v, 'post.deleted', { type: 'post', id: String(post.id), owner_subject: post.author_subject || null }, { details: { thread: String(thread.id) } });
             })();
             if (pulse) hook(() => pulse.postGone(post.id));
+            if (relay) hook(() => relay.enqueueDelete(thread.id, post.id, person(v) && post.author_subject === v.subject ? 'deleted by its author' : 'deleted by a moderator'));
             return { ok: true, id: post.id };
         },
 

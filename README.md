@@ -394,9 +394,9 @@ by the API, the `members_only` box on the new-thread form, or the button on the 
 - **Listings** keep a gated thread's title with `members_only` (never a body); gated spaces are listed
   with their join link.
 - **Never public**: gated spaces and threads stay out of Pulse (not recorded, removed when gated later,
-  and filtered at read time), the Discord relay (not queued; pending deliveries dropped; re-checked at
-  send), the sitemap, the RSS feeds (a gated space's feed is 404) and JSON-LD; a member's view of a
-  gated thread is `noindex` as well.
+  and filtered at read time), the Discord relay (not queued; when gated later, what was waiting is
+  skipped and what was sent is deleted on Discord; re-checked at send), the sitemap, the RSS feeds
+  (a gated space's feed is 404) and JSON-LD; a member's view of a gated thread is `noindex` as well.
 - **Convergence**: answers are cached per viewer and resource (`server/vip/`, VIP's `createVipCache`):
   a "yes" at most `VIP_CACHE_TTL_MS` (30 s), a "no" 10 s, a failure 2 s. Community has no Events inbox,
   so **once VIP stops granting** (it applied Billing's `billing.entitlement.changed` and emitted
@@ -414,27 +414,37 @@ a score.
 
 ## Discord relay
 
-Outbound only, and off unless `DISCORD_RELAY_ENABLED=true`. When a thread is created in a
-public space that has an enabled mapping, Community posts "New thread in s/<space> by <name>"
-with the title, an excerpt and a link to the thread to that mapping's Discord webhook.
+Off unless `DISCORD_RELAY_ENABLED=true`, and inert without the owner's webhooks, mappings and bot
+token. Setup, owner steps, limits and operations: [docs/discord-relay.md](docs/discord-relay.md).
 
-- A mapping (`relay_mappings`) names the **environment variable** that holds the webhook URL
-  (`webhook_url_ref`, e.g. `DISCORD_WEBHOOK_FEEDBACK`); the URL itself never enters the
-  database or any API response. Put the variable in `/etc/openvibe/community.env`. Only
-  allow-listed names can be mapped or sent to: `DISCORD_WEBHOOK_*`, or exactly the names in
-  `DISCORD_RELAY_WEBHOOK_VARS` when that is set — staff cannot point the relay at the URL in any
-  other variable (an internal service's base URL).
-- One delivery per (thread, mapping) — the dedupe key in `relay_deliveries`. Network errors,
-  timeouts, 5xx, 429 (its `retry_after` honoured) and an unset variable are retried with
-  exponential backoff (`DISCORD_RELAY_BACKOFF_MS` · 2^(attempt−1), at most an hour) up to
-  `DISCORD_RELAY_MAX_ATTEMPTS`; other 4xx fail at once. Mentions are disabled.
-- Loop prevention: a thread whose origin is `discord` is never relayed out (checked when
-  queueing and when sending). Members/staff spaces are never relayed.
-- Staff (admin/global_mod browsers, or services with `community.comment.moderate`):
-  `GET /api/v1/relay/deliveries?status=failed` shows what failed and why,
-  `POST /api/v1/relay/deliveries/:id/retry` queues one again,
-  `GET|POST /api/v1/relay/mappings` and `PUT /api/v1/relay/mappings/:id { enabled }` manage
-  mappings (`POST { space: 'feedback', webhook_url_ref: 'DISCORD_WEBHOOK_FEEDBACK' }`).
+- **Out**: a new thread in a mapped public space is announced through the mapping's Discord
+  webhook ("New thread in s/<space> by <name>", title, excerpt, link); its replies follow into the
+  same channel (or the Discord thread the mapping names); edits PATCH and deletes (or gating a
+  thread members-only) DELETE the Discord messages through the **external message map**
+  (`relay_message_map`, unique both ways; WS-J task 5). Creates are queued by the relay's
+  **Events worker** from Community's own `community.thread.*` / `community.post.*` read back from
+  OpenVibe.Events' pull API with a stored cursor (`relay_cursors`; WS-J task 6), or by the forum
+  itself when the worker is off (no `EVENTS_URL` / client secret, or `DISCORD_RELAY_EVENTS=off`).
+  Dedupe keys in `relay_deliveries` mean nothing is queued or posted twice.
+- **In** (`DISCORD_RELAY_INBOUND=on`, `DISCORD_BOT_TOKEN`, `inbound: true` on the mapping): a
+  Discord gateway client (Node 22's WebSocket; intents GUILD_MESSAGES and MESSAGE_CONTENT) turns
+  replies to relayed messages in mapped channels into posts with origin `discord`, attributed to
+  the Discord name only (never to anyone on the site), size- and rate-limited, mentions defused;
+  edits and deletes on Discord follow through the map.
+- **Loop prevention**: origin `discord` never goes out (checked when queueing and sending);
+  webhook, bot and system messages never come in. Members/staff spaces and VIP members-only
+  content never leave the site.
+- **Secrets**: a mapping names the environment variable holding the webhook URL
+  (`webhook_url_ref`, allow-listed `DISCORD_WEBHOOK_*` or exactly `DISCORD_RELAY_WEBHOOK_VARS`);
+  the URL and the bot token never enter the database or any API response.
+- **Retries and the dead letter**: network errors, timeouts, 5xx, 429 and an unset variable are
+  retried with exponential backoff up to `DISCORD_RELAY_MAX_ATTEMPTS`, then the delivery is
+  `failed` (the dead letter); other 4xx fail at once. Mentions are disabled on every message.
+- **Staff** (admin/global_mod browsers, or services with `community.comment.moderate`):
+  `GET /api/v1/relay/status` (queue, Events worker cursor/lag/errors/gaps, gateway state),
+  `GET /api/v1/relay/deliveries?status=failed`, `POST /api/v1/relay/deliveries/:id/retry|drop`,
+  `GET /api/v1/relay/inbound` and `POST /api/v1/relay/inbound/:id/dismiss` (inbound failures),
+  `GET|POST /api/v1/relay/mappings`, `PUT /api/v1/relay/mappings/:id`.
 
 ## Pulse
 
@@ -517,9 +527,13 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `PASTES_AUTHORITY` | `live` | `live` = proxy to Live; `community` = this site's database is the authority |
 | `COMMUNITY_DB_PATH` | `./data/community.db` | SQLite file (the systemd unit sets `/var/lib/openvibe-community/community.db`) |
 | `API_CORS_ORIGINS` | Live, Media, Network, Tools, Games origins | Browser origins that may call `/api/v1/comments` and `/api/v1/pulse` with a Bearer JWT |
-| `DISCORD_RELAY_ENABLED` | off | `true` turns the outbound Discord relay on |
-| `DISCORD_RELAY_POLL_MS` / `DISCORD_RELAY_BACKOFF_MS` / `DISCORD_RELAY_MAX_ATTEMPTS` | `30000` / `30000` / `6` | Relay worker cadence, first retry delay, attempts before `failed` |
+| `DISCORD_RELAY_ENABLED` | off | `true` turns the Discord relay on ([docs/discord-relay.md](docs/discord-relay.md)) |
+| `DISCORD_RELAY_POLL_MS` / `DISCORD_RELAY_BACKOFF_MS` / `DISCORD_RELAY_MAX_ATTEMPTS` | `30000` / `30000` / `6` | Relay sender cadence, first retry delay, attempts before `failed` (the dead letter) |
 | *(any name)* e.g. `DISCORD_WEBHOOK_FEEDBACK` | — | A Discord webhook URL, named by a relay mapping's `webhook_url_ref` |
+| `DISCORD_RELAY_EVENTS` / `DISCORD_RELAY_EVENTS_POLL_MS` | on / `5000` | The relay's Events worker (needs `EVENTS_URL` and the client secret); `off` leaves creates to the forum |
+| `DISCORD_RELAY_INBOUND` / `DISCORD_BOT_TOKEN` | off / — | Replies from Discord through the gateway (a bot with the MESSAGE CONTENT intent) |
+| `DISCORD_GATEWAY_URL` | `wss://gateway.discord.gg/?v=10&encoding=json` | The Discord gateway |
+| `DISCORD_RELAY_INBOUND_PER_MINUTE` / `DISCORD_RELAY_INBOUND_MAX_CHARS` | `6` / `4000` | Inbound limits per Discord author per mapping, and per message |
 | `VIEW_HASH_SECRET` | derived from the client secret | Salt for hashed visitor ids in view counts |
 | `COOKIE_SECURE` | `true` in production | Set `false` for plain-http local dev |
 | `OV_VIP_INTERNAL_URL` | `http://127.0.0.1:4620` | OpenVibe.VIP's API (members-only spaces and threads) |
@@ -588,7 +602,8 @@ server/
   forum/              spaces/threads/posts: store, service, api (/api/v1/spaces, /posts), routes (pages)
   vip/                OpenVibe.VIP gate for members-only spaces/threads (index.js) + the vendored client
   pulse/              Pulse read model: store, service (hooks + ingest), api (/api/v1/pulse)
-  relay/              Discord relay: discord.js (queue, worker, backoff), api (/api/v1/relay)
+  relay/              Discord relay: discord.js (queue, sender, backoff, message map), events-worker.js (creates
+                      from Events), discord-gateway.js + inbound.js (replies from Discord), api (/api/v1/relay)
   http/v1.js          /api/v1 helpers: problem errors, capability guards, cursors, CORS
   identity/capabilities.js  capability checks incl. the proposed ids; discussion staff/moderators
   identity/authors.js author display from subject_projection; the AI label
@@ -609,12 +624,13 @@ scripts/import-pastes.js  Media paste bundle importer
 scripts/import-live-comments.js  Live's VOD/clip comments → Community threads (dry run by default)
 test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
 docs/capabilities-proposal/  Wave 5 capability manifests (released in openvibe-contracts v0.7.0)
+docs/discord-relay.md  the Discord relay: how it works, owner steps, staff API, limits
 ```
 
 ## What is next
 
-Spaces per streamer, game and project (with membership), inbound Discord relay (threads from
-Discord arrive with origin `discord` and are never relayed back), visibility changes for
+Spaces per streamer, game and project (with membership), the Discord relay's production round
+trip (owner steps in [docs/discord-relay.md](docs/discord-relay.md)), visibility changes for
 comment threads arriving through Events, moving paste comments onto the typed comment
 threads, and submissions (clips, art, ideas, reports for community review).
 
