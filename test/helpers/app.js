@@ -10,10 +10,12 @@ const mockMedia = require('./mock-media');
  *                 fresh in-memory database, with Network and Media mocks behind it.
  * opts.pasteLimits  overrides for service.js limits (e.g. { cooldownSeconds: 0 }).
  * opts.appOpts      passed through to createApp (commentLimits, forumLimits, relayOptions, …).
+ * opts.env          environment set after the defaults, before the app loads (its OV_OAUTH_CLIENT_SECRET
+ *                   is also the one the Network mock accepts).
  */
 async function boot(opts = {}) {
     const liveSrv = await mockLive.start();
-    const netSrv = await mockNetwork.start();
+    const netSrv = await mockNetwork.start({ clientSecret: (opts.env && opts.env.OV_OAUTH_CLIENT_SECRET) || 'shh' });
     const mediaSrv = await mockMedia.start({ publicPem: netSrv.publicPem, issuer: netSrv.url });
     process.env.NODE_ENV = 'test';
     process.env.BASE_URL = 'https://openvibe.community';
@@ -30,6 +32,7 @@ async function boot(opts = {}) {
     process.env.OV_MEDIA_INTERNAL_URL = mediaSrv.url;
     process.env.PASTES_AUTHORITY = opts.authority || 'live';
     process.env.COMMUNITY_DB_PATH = ':memory:';
+    Object.assign(process.env, opts.env || {});
     for (const k of Object.keys(require.cache)) if (k.includes('/server/')) delete require.cache[k];
     const { createApp } = require('../../server/app');
     const appOpts = { ...(opts.appOpts || {}) };

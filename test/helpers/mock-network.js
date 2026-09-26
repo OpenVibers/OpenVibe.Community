@@ -14,12 +14,13 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { serviceAuth, ids } = require('openvibe-contracts');
 
-function start() {
+function start({ clientSecret = 'shh' } = {}) {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     const publicPem = publicKey.export({ type: 'spki', format: 'pem' });
     const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' });
     const grants = [];
     const resolveCalls = [];
+    const issued = [];      // every client-credentials access token handed out (security-secrets.test.js looks for them)
     let issuer = 'http://network.test';
 
     // Network accounts: { network_user_id, subject_id, username, display_name, avatar_url }, plus
@@ -44,10 +45,12 @@ function start() {
                 if (String(req.headers['content-type'] || '').includes('application/x-www-form-urlencoded')) body = Object.fromEntries(new URLSearchParams(raw));
                 else { try { body = JSON.parse(raw); } catch { /* */ } }
                 grants.push(body);
-                if (body.client_secret !== 'shh') return json(401, { error: 'invalid_client' });
+                if (body.client_secret !== clientSecret) return json(401, { error: 'invalid_client' });
                 if (body.grant_type === 'client_credentials') {
                     const cap = String(body.scope || '').split(/\s+/).filter(Boolean);
-                    return json(200, { access_token: signService({ sub: `svc:${body.client_id}`, aud: [body.audience], cap }), token_type: 'Bearer', expires_in: 300 });
+                    const token = signService({ sub: `svc:${body.client_id}`, aud: [body.audience], cap });
+                    issued.push(token);
+                    return json(200, { access_token: token, token_type: 'Bearer', expires_in: 300 });
                 }
                 if (body.grant_type === 'authorization_code' && body.code !== 'good-code') return json(400, { error: 'invalid_grant' });
                 if (body.grant_type === 'refresh_token' && body.refresh_token !== 'refresh-1') return json(400, { error: 'invalid_grant' });
@@ -97,7 +100,7 @@ function start() {
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => {
         const url = `http://127.0.0.1:${server.address().port}`;
         issuer = url;
-        resolve({ url, grants, resolveCalls, directory, addUser, sign, signService, publicPem, close: () => new Promise((r) => server.close(r)) });
+        resolve({ url, grants, issued, resolveCalls, directory, addUser, sign, signService, publicPem, close: () => new Promise((r) => server.close(r)) });
     }));
 }
 
