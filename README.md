@@ -571,7 +571,16 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 npm install
 npm start          # http://127.0.0.1:4200
 npm test           # mocks Live, Network and Media in-process; no network needed
+npm run n-1:record # after a deploy: the N-1 fixtures from the deployed commit (or pass <ref>)
 ```
+
+`test/n-1.test.js` (roadmap WS-P task 11, in `npm test`) runs the previous release's clients against
+this one and its SQL against this schema, from `test/fixtures/n-1/`: every call `community.js`, the
+templates' forms and the openvibe-sdk community client make, and every link, script and form of the
+pages that release served, each answered compatibly (status, JSON, the response fields the client
+reads); then every statement the previous release runs must still prepare after this release opened
+(and migrated) a database the previous one created. After each deploy, record the release now in
+production as the next N-1 and commit `test/fixtures/n-1/`.
 
 ## Deploy
 

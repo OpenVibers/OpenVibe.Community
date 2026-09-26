@@ -1,0 +1,1090 @@
+{
+ "service": "community",
+ "release": "19441aa2511a7648f1dd3c1d9f70fe74e41cb530",
+ "recorded_at": "2026-09-26T14:07:23.825Z",
+ "note": "N-1 fixture: written by `npm run n-1:record`, replayed by test/n-1.test.js",
+ "manifest": {
+  "service": "community",
+  "release": "19441aa2511a",
+  "released_at": "2026-09-26T13:13:46.000Z",
+  "booted_at": "2026-09-26T14:07:22.838Z",
+  "contracts_version": "0.49.0",
+  "packages": {
+   "openvibe-shared": "1.22.0",
+   "openvibe-sdk": "0.11.0"
+  },
+  "min_client_release": null,
+  "mixed_version_window_hours": 24,
+  "components": {
+   "shell": {
+    "kind": "script",
+    "version": "19441aa2511a"
+   },
+   "server": {
+    "kind": "server",
+    "version": "19441aa2511a"
+   }
+  },
+  "assets": {},
+  "schema_generation": null,
+  "schema_compatible_from": null,
+  "contract_ranges": {},
+  "metrics_url": "/release-metrics"
+ },
+ "dynamic_calls": 3,
+ "calls": [
+  {
+   "method": "GET",
+   "path": "/api/pastes",
+   "auth": "anon",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "pastes": "array",
+    "pastes[]": "object",
+    "pastes[].id": "number",
+    "pastes[].slug": "string",
+    "pastes[].user_id": "string",
+    "pastes[].owner_subject": "string",
+    "pastes[].origin": "string",
+    "pastes[].type": "string",
+    "pastes[].title": "string",
+    "pastes[].content": "string",
+    "pastes[].language": "string",
+    "pastes[].visibility": "string",
+    "pastes[].screenshot_url": "null",
+    "pastes[].burn_after_read": "boolean",
+    "pastes[].pinned": "boolean",
+    "pastes[].views": "number",
+    "pastes[].is_nsfw": "boolean",
+    "pastes[].ai_summary": "null",
+    "pastes[].revision": "number",
+    "pastes[].url": "string",
+    "pastes[].created_at": "string",
+    "pastes[].updated_at": "string",
+    "pastes[].is_owner": "boolean",
+    "pastes[].username": "string",
+    "pastes[].display_name": "string",
+    "pastes[].avatar_url": "null",
+    "total": "number",
+    "limit": "number",
+    "offset": "number"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes",
+   "auth": "user",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "pastes": "array",
+    "pastes[]": "object",
+    "pastes[].id": "number",
+    "pastes[].slug": "string",
+    "pastes[].user_id": "string",
+    "pastes[].owner_subject": "string",
+    "pastes[].origin": "string",
+    "pastes[].type": "string",
+    "pastes[].title": "string",
+    "pastes[].content": "string",
+    "pastes[].language": "string",
+    "pastes[].visibility": "string",
+    "pastes[].screenshot_url": "null",
+    "pastes[].burn_after_read": "boolean",
+    "pastes[].pinned": "boolean",
+    "pastes[].views": "number",
+    "pastes[].is_nsfw": "boolean",
+    "pastes[].ai_summary": "null",
+    "pastes[].revision": "number",
+    "pastes[].url": "string",
+    "pastes[].created_at": "string",
+    "pastes[].updated_at": "string",
+    "pastes[].is_owner": "boolean",
+    "pastes[].username": "string",
+    "pastes[].display_name": "string",
+    "pastes[].avatar_url": "null",
+    "total": "number",
+    "limit": "number",
+    "offset": "number"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/by-user/n1star",
+   "auth": "anon",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "pastes": "array",
+    "pastes[]": "object",
+    "pastes[].id": "number",
+    "pastes[].slug": "string",
+    "pastes[].user_id": "string",
+    "pastes[].owner_subject": "string",
+    "pastes[].origin": "string",
+    "pastes[].type": "string",
+    "pastes[].title": "string",
+    "pastes[].content": "string",
+    "pastes[].language": "string",
+    "pastes[].visibility": "string",
+    "pastes[].screenshot_url": "null",
+    "pastes[].burn_after_read": "boolean",
+    "pastes[].pinned": "boolean",
+    "pastes[].views": "number",
+    "pastes[].is_nsfw": "boolean",
+    "pastes[].ai_summary": "null",
+    "pastes[].revision": "number",
+    "pastes[].url": "string",
+    "pastes[].created_at": "string",
+    "pastes[].updated_at": "string",
+    "pastes[].is_owner": "boolean",
+    "pastes[].username": "string",
+    "pastes[].display_name": "string",
+    "pastes[].avatar_url": "null",
+    "total": "number",
+    "username": "string"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/by-user/n1star",
+   "auth": "user",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "pastes": "array",
+    "pastes[]": "object",
+    "pastes[].id": "number",
+    "pastes[].slug": "string",
+    "pastes[].user_id": "string",
+    "pastes[].owner_subject": "string",
+    "pastes[].origin": "string",
+    "pastes[].type": "string",
+    "pastes[].title": "string",
+    "pastes[].content": "string",
+    "pastes[].language": "string",
+    "pastes[].visibility": "string",
+    "pastes[].screenshot_url": "null",
+    "pastes[].burn_after_read": "boolean",
+    "pastes[].pinned": "boolean",
+    "pastes[].views": "number",
+    "pastes[].is_nsfw": "boolean",
+    "pastes[].ai_summary": "null",
+    "pastes[].revision": "number",
+    "pastes[].url": "string",
+    "pastes[].created_at": "string",
+    "pastes[].updated_at": "string",
+    "pastes[].is_owner": "boolean",
+    "pastes[].username": "string",
+    "pastes[].display_name": "string",
+    "pastes[].avatar_url": "null",
+    "total": "number",
+    "username": "string"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/config",
+   "auth": "anon",
+   "status": 200,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/config",
+   "auth": "user",
+   "status": 200,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/{@paste}",
+   "auth": "anon",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "paste": "object",
+    "paste.id": "number",
+    "paste.slug": "string",
+    "paste.user_id": "string",
+    "paste.owner_subject": "string",
+    "paste.origin": "string",
+    "paste.type": "string",
+    "paste.title": "string",
+    "paste.content": "string",
+    "paste.language": "string",
+    "paste.visibility": "string",
+    "paste.screenshot_url": "null",
+    "paste.burn_after_read": "boolean",
+    "paste.pinned": "boolean",
+    "paste.views": "number",
+    "paste.is_nsfw": "boolean",
+    "paste.ai_summary": "null",
+    "paste.revision": "number",
+    "paste.url": "string",
+    "paste.created_at": "string",
+    "paste.updated_at": "string",
+    "paste.is_owner": "boolean",
+    "paste.username": "string",
+    "paste.display_name": "string",
+    "paste.avatar_url": "null"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/{@paste}",
+   "auth": "user",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "paste": "object",
+    "paste.id": "number",
+    "paste.slug": "string",
+    "paste.user_id": "string",
+    "paste.owner_subject": "string",
+    "paste.origin": "string",
+    "paste.type": "string",
+    "paste.title": "string",
+    "paste.content": "string",
+    "paste.language": "string",
+    "paste.visibility": "string",
+    "paste.screenshot_url": "null",
+    "paste.burn_after_read": "boolean",
+    "paste.pinned": "boolean",
+    "paste.views": "number",
+    "paste.is_nsfw": "boolean",
+    "paste.ai_summary": "null",
+    "paste.revision": "number",
+    "paste.url": "string",
+    "paste.created_at": "string",
+    "paste.updated_at": "string",
+    "paste.is_owner": "boolean",
+    "paste.username": "string",
+    "paste.display_name": "string",
+    "paste.avatar_url": "null"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/{@paste}/comments",
+   "auth": "anon",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "comments": "array",
+    "total": "number"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/{@paste}/comments",
+   "auth": "user",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "comments": "array",
+    "total": "number"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/{@paste}/versions",
+   "auth": "anon",
+   "status": 401,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/api/pastes/{@paste}/versions",
+   "auth": "user",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "revision": "number"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pastes",
+   "auth": "anon",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "server/render/pages.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pastes",
+   "auth": "user",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "server/render/pages.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/search",
+   "auth": "anon",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "server/render/search.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/search",
+   "auth": "user",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "server/render/search.js"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/assets/logo-192.png",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/manifest.webmanifest",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "json",
+   "reads": {
+    "name": "string",
+    "description": "string",
+    "display": "string"
+   },
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/feed.xml",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/shared/theme-loader.js?v=d9b9af081efe",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/css/community.css?v=3bf26cdbb2",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "text",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/shared/navbar.js?v=b50d9f47fc34",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/shared/footer.js?v=b99e512398d5",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/js/community.js?v=d3f570525d",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/new",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/auth/login?next=%2F",
+   "auth": "anon",
+   "accept": "html",
+   "status": 302,
+   "kind": "html",
+   "location": "/oauth/authorize",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/p/{@paste}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pastes?lang=javascript",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pastes?sort=views",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/general",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pulse",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/updates",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/sitemap.xml",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/p/{@paste}/raw",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "text",
+   "from": [
+    "page /p/{@paste}"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/p/{@paste}/download",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "text",
+   "from": [
+    "page /p/{@paste}"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/new?fork={@paste}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /p/{@paste}"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/discuss?paste={@paste}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /p/{@paste}"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/general/feed.xml",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /s/general"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/general/new",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /s/general"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/general/t/{@thread_slug}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /s/general"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/general/t/n-1-thread",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/auth/login?next=%2Fs%2Fgeneral%2Ft%2F{@thread_slug}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 302,
+   "kind": "html",
+   "location": "/oauth/authorize",
+   "from": [
+    "page /s/general/t/n-1-thread"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/c/{@comment_access}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/c/{@comment_thread}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /c/{@comment_access}"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/auth/login?next=%2Fc%2F{@comment_thread}",
+   "auth": "anon",
+   "accept": "html",
+   "status": 302,
+   "kind": "html",
+   "location": "/oauth/authorize",
+   "from": [
+    "page /c/{@comment_access}"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/s/feed.xml",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "other",
+   "from": [
+    "page /pulse"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pulse?origin=user",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /pulse"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pulse?origin=ai",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /pulse"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/pulse?origin=system",
+   "auth": "anon",
+   "accept": "html",
+   "status": 200,
+   "kind": "html",
+   "from": [
+    "page /pulse"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/auth/login?next=%2Fnew",
+   "auth": "anon",
+   "accept": "html",
+   "status": 302,
+   "kind": "html",
+   "location": "/oauth/authorize",
+   "from": [
+    "page /new"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/my",
+   "auth": "anon",
+   "accept": "html",
+   "status": 302,
+   "kind": "html",
+   "location": "/auth/login",
+   "from": [
+    "page"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/pastes",
+   "auth": "anon",
+   "status": 400,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js",
+    "public/js/community.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/pastes/screenshot",
+   "auth": "anon",
+   "status": 400,
+   "kind": "json",
+   "from": [
+    "public/js/community.js"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/pastes/{@paste}",
+   "auth": "anon",
+   "status": 401,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "PUT",
+   "path": "/api/pastes/{@paste}",
+   "auth": "anon",
+   "status": 401,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/pastes/{@paste}/comments",
+   "auth": "anon",
+   "status": 400,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/api/pastes/{@paste}/comments/1",
+   "auth": "anon",
+   "status": 401,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/pastes/{@paste}/copy",
+   "auth": "anon",
+   "status": 200,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/pastes/{@paste}/fork",
+   "auth": "anon",
+   "status": 201,
+   "kind": "json",
+   "reads": {
+    "id": "number",
+    "slug": "string",
+    "url": "string",
+    "paste": "object",
+    "paste.id": "number",
+    "paste.slug": "string",
+    "paste.user_id": "null",
+    "paste.owner_subject": "null",
+    "paste.origin": "string",
+    "paste.type": "string",
+    "paste.title": "string",
+    "paste.content": "string",
+    "paste.language": "string",
+    "paste.visibility": "string",
+    "paste.screenshot_url": "null",
+    "paste.burn_after_read": "boolean",
+    "paste.pinned": "boolean",
+    "paste.views": "number",
+    "paste.is_nsfw": "boolean",
+    "paste.ai_summary": "null",
+    "paste.revision": "number",
+    "paste.url": "string",
+    "paste.created_at": "string",
+    "paste.updated_at": "string",
+    "paste.is_owner": "boolean",
+    "paste.username": "null",
+    "paste.display_name": "null",
+    "paste.avatar_url": "null"
+   },
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/api/pastes/{@paste}/like",
+   "auth": "anon",
+   "status": 401,
+   "kind": "json",
+   "from": [
+    "node_modules/openvibe-sdk/src/community.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/c/{@comment_access}",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/comments.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/new",
+   "auth": "anon",
+   "status": 400,
+   "kind": "html",
+   "from": [
+    "server/render/pages.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/new-space",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/board.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/chat-room",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/chat-room/detach",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/new",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/settings",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/board.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/category",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/crosspost",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/delete",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/members-only",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/react",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/reply",
+   "auth": "anon",
+   "status": 303,
+   "kind": "empty",
+   "location": "/auth/login",
+   "from": [
+    "server/render/board.js",
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/state",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/status",
+   "auth": "anon",
+   "status": 403,
+   "kind": "html",
+   "from": [
+    "server/render/forum.js"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/s/general/t/n-1-thread/vote",
+   "auth": "anon",
+   "status": 400,
+   "kind": "html",
+   "from": [
+    "server/render/forum.js"
+   ]
+  }
+ ]
+}
