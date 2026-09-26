@@ -1,7 +1,7 @@
 {
  "service": "community",
- "release": "19441aa2511a7648f1dd3c1d9f70fe74e41cb530",
- "recorded_at": "2026-09-26T14:07:23.825Z",
+ "release": "90edad62e3722c7c4303da96473421cb865ec080",
+ "recorded_at": "2026-09-26T14:40:28.475Z",
  "note": "N-1 fixture: written by `npm run n-1:record`, replayed by test/n-1.test.js",
  "user_version": 0,
  "schema": [
@@ -11,6 +11,7 @@
   "CREATE TABLE comment_votes (\n    comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,\n    subject_id TEXT NOT NULL,\n    value INTEGER NOT NULL CHECK(value IN (-1, 1)),\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    PRIMARY KEY (comment_id, subject_id)\n)",
   "CREATE TABLE comments (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    thread_id INTEGER NOT NULL REFERENCES comment_threads(id) ON DELETE CASCADE,\n    parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,\n    author_subject TEXT,\n    anon_name TEXT,\n    origin TEXT NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai')),\n    message TEXT NOT NULL,\n    score INTEGER NOT NULL DEFAULT 0,\n    upvotes INTEGER NOT NULL DEFAULT 0,\n    downvotes INTEGER NOT NULL DEFAULT 0,\n    reply_count INTEGER NOT NULL DEFAULT 0,\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    deleted_at DATETIME,\n    deleted_by TEXT,\n    edited_at DATETIME                  -- the author last changed the text (migrate() adds it to older databases)\n)",
   "CREATE TABLE community_event_inbox (\n            consumer     TEXT NOT NULL,\n            event_id     TEXT NOT NULL,\n            processed_at INTEGER NOT NULL,\n            PRIMARY KEY (consumer, event_id)\n        )",
+  "CREATE TABLE game_progress (\n    subject_id TEXT PRIMARY KEY,\n    level INTEGER NOT NULL,\n    updated_at TEXT NOT NULL\n)",
   "CREATE TABLE import_hold (\n    source_type TEXT NOT NULL,\n    source_id TEXT NOT NULL,\n    reason TEXT NOT NULL,\n    detail TEXT,\n    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    PRIMARY KEY (source_type, source_id, reason)\n)",
   "CREATE TABLE legacy_id_map (\n    source_system TEXT NOT NULL,\n    source_type TEXT NOT NULL,\n    source_id TEXT NOT NULL,\n    target_type TEXT NOT NULL,\n    target_id TEXT NOT NULL,\n    PRIMARY KEY (source_system, source_type, source_id)\n)",
   "CREATE TABLE migration_runs (\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    source TEXT NOT NULL,\n    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    finished_at DATETIME,\n    report TEXT\n)",
@@ -78,6 +79,7 @@
   "INSERT INTO comment_threads (ref_service, ref_type, ref_id, ref_label, created_by, access_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(ref_service, ref_type, ref_id) DO NOTHING",
   "INSERT INTO comments (thread_id, parent_id, author_subject, anon_name, origin, message) VALUES (?, ?, ?, ?, ?, ?)",
   "INSERT INTO comments (thread_id, parent_id, author_subject, anon_name, origin, message, created_at, updated_at, edited_at) VALUES (?, ?, ?, NULL, 'user', ?, ?, ?, ?)",
+  "INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, ?, ?) ON CONFLICT(subject_id) DO UPDATE SET level = MAX(game_progress.level, excluded.level), updated_at = excluded.updated_at",
   "INSERT INTO import_hold (source_type, source_id, reason, detail) VALUES (?, ?, ?, ?) ON CONFLICT(source_type, source_id, reason) DO UPDATE SET detail = excluded.detail",
   "INSERT INTO legacy_id_map (source_system, source_type, source_id, target_type, target_id) VALUES (?, ?, ?, 'comment', ?) ON CONFLICT(source_system, source_type, source_id) DO NOTHING",
   "INSERT INTO migration_runs (source, finished_at, report) VALUES (?, CURRENT_TIMESTAMP, ?)",
@@ -186,6 +188,7 @@
   "SELECT id, legacy_media_id FROM pastes WHERE slug = ?",
   "SELECT id, slug, visibility, burn_after_read, deleted_at FROM pastes WHERE slug = ?",
   "SELECT last_at FROM paste_visits WHERE paste_id = ? AND visitor = ?",
+  "SELECT level FROM game_progress WHERE subject_id = ?",
   "SELECT name FROM sqlite_master WHERE type = 'table'",
   "SELECT p.author_subject AS s, r.reaction, COUNT(*) AS n FROM post_reactions r JOIN posts p ON p.id = r.post_id WHERE p.author_subject IN (?) AND p.deleted_at IS NULL GROUP BY p.author_subject, r.reaction",
   "SELECT post_id, reaction, subject_id FROM post_reactions WHERE post_id IN (?) ORDER BY created_at, subject_id",
