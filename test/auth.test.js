@@ -78,6 +78,15 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(bad.status, 401);
     });
 
+    await check('/auth/me: a guest is signed out (200 { user: null }), a bad cookie alone is 401', async () => {
+        const guest = await fetch(`${t.base}/auth/me`);   // no jar: no cookie, no token at all
+        assert.strictEqual(guest.status, 200);
+        assert.deepStrictEqual(await guest.json(), { user: null });
+        assert.strictEqual(guest.headers.get('cache-control'), 'private, no-store');
+        const bad = await fetch(`${t.base}/auth/me`, { headers: { cookie: 'ov_token=garbage' } });
+        assert.strictEqual(bad.status, 401, 'a present but invalid cookie');
+    });
+
     await check('silent login with a valid ov_token skips the Network and 302s to next; non-silent and bad tokens still go', async () => {
         assert.ok(t.jar.has('ov_token'), 'precondition: signed in');
         const short = await t.get('/auth/login?silent=1&next=/pastes%3Fsort%3Dviews');
