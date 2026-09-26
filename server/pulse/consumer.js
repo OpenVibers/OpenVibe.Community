@@ -9,6 +9,13 @@
  *   wiki.page.published     "Wiki: <space> / <slug>"        → the page (public, indexable only)
  *   news.story.published    "News: <topic>"                 → the story (public, indexable only)
  *
+ * And game progress (roadmap WS-M task 2, PF7): network.module.updated (source network) for a person's
+ * games.progress.summary record, whose `level` Contracts declares public. game_progress keeps the last level
+ * seen per person; a later record that crosses a multiple of GAME_MILESTONE becomes one Pulse item,
+ * "Reached level <n> in Scraplandia" (Games · level), with the person as its actor. The first record
+ * seen for a person is only a baseline (no stale "reached" item for a level reached long ago); levels
+ * that go down or stay put announce nothing; only the public fields are read.
+ *
  * And revocation (WS-B task 4): network.user.token_valid_after (source network) moves the person's token
  * cutoff (openvibe-sdk createRevocationStore); the viewer resolver refuses their older tokens.
  *
@@ -30,7 +37,10 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated']);
+const GAME_NAMESPACE = 'games.progress.summary';
+const GAME_MILESTONE = 5;
+const GAME_URL = 'https://openvibe.games/';
 const EVENT_ID_RE = /^evt_[0-9A-HJKMNP-TV-Z]{26}$/;
 const clean = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
 const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(u) ? u.slice(0, 500) : null);
@@ -63,6 +73,31 @@ function itemFor(event) {
             : `News: ${clean(p.topic, 60) || 'a new story'}`;
     const actor = event.actor && event.actor.type === 'user' ? subjectOf(event.actor) : null;
     return { source_service: k[0], source_type: k[1], source_id: subjectId, title, url, actor_subject: actor, origin: actor ? 'user' : 'system', occurred_at: at };
+}
+
+/** network.module.updated → { subject, level, at } for a games.progress.summary write, or an 'ignored:*' reason. */
+function gameProgressOf(event) {
+    if (event.source !== 'network') return 'ignored:source';
+    const p = event.payload && typeof event.payload === 'object' ? event.payload : {};
+    if (p.namespace !== GAME_NAMESPACE) return 'ignored:namespace';
+    if (p.change !== 'created' && p.change !== 'updated') return 'ignored:change';
+    const subject = subjectOf(p.owner);
+    const level = p.public && Number.isInteger(p.public.level) ? p.public.level : null;
+    if (!subject || level == null || level < 0 || level > 100000) return 'ignored:payload';
+    return { subject, level, at: event.occurred_at || event.timestamp || new Date().toISOString() };
+}
+
+/** Record the level; a crossed milestone becomes a Pulse item. Inside the inbox claim. → outcome */
+function applyGameProgress(db, g) {
+    const prev = db.prepare('SELECT level FROM game_progress WHERE subject_id = ?').get(g.subject);
+    db.prepare(`INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(subject_id) DO UPDATE SET level = MAX(game_progress.level, excluded.level), updated_at = excluded.updated_at`).run(g.subject, g.level, g.at);
+    if (!prev) return 'games:baseline';
+    const milestone = Math.floor(g.level / GAME_MILESTONE) * GAME_MILESTONE;
+    if (milestone <= prev.level || milestone < GAME_MILESTONE) return 'games:no_milestone';
+    const r = store.upsertItem(db, { source_service: 'games', source_type: 'level', source_id: `${g.subject}:${milestone}`, title: `Reached level ${milestone} in Scraplandia`,
+        url: GAME_URL, actor_subject: g.subject, origin: 'user', occurred_at: g.at });
+    return r.created ? 'pulse:created' : 'pulse:updated';
 }
 
 function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = null, now = () => Date.now(), log = console } = {}) {
@@ -107,6 +142,19 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
             const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: vipCache.handleEvent(event) ? 'vip:invalidated' : 'vip:unchanged' }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;
             return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+        }
+        if (event.event_type === 'network.module.updated') {
+            const g = gameProgressOf(event);
+            if (typeof g === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: g }); }
+            try {
+                const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: applyGameProgress(db, g) }));
+                if (r.duplicate) stats.duplicates++; else stats.applied++;
+                return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+            } catch (err) {
+                stats.failed++;
+                log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
+                return problem(500, 'community.event_failed', 'processing failed; it will be retried');
+            }
         }
         const item = itemFor(event);
         if (typeof item === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: item }); }
@@ -158,4 +206,4 @@ function startSubscriptions({ config, port, secret, eventsUrl = process.env.EVEN
     return { topics: TOPICS, endpoint, stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; } };
 }
 
-module.exports = { createPulseConsumer, startSubscriptions, itemFor, TOPICS };
+module.exports = { createPulseConsumer, startSubscriptions, itemFor, gameProgressOf, TOPICS, GAME_MILESTONE };

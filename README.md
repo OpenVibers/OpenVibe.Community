@@ -482,6 +482,12 @@ per source service/type/id).
   `public` is refused, `X-OV-Subject` names the person for origin `user`. Re-posting a source
   updates its title and link; origin, actor and time stay the first record's.
   `DELETE /api/v1/pulse/items/:service/:type/:id` retracts one.
+- **From Events** (`POST /internal/events`, `server/pulse/consumer.js`):
+  - go-lives (`live.stream.started`), plus public, indexable Blog posts, Wiki pages and News stories;
+  - game milestones (roadmap WS-M task 2): Network's `network.module.updated` for a person's
+    `games.progress.summary`, whose `level` is a public field. The first record seen for a person is a
+    baseline. Each later record that crosses a multiple of 5 becomes one item, "Reached level 10 in Scraplandia"
+    (Games · level), with the person as actor. The last level per person is kept in `game_progress`.
 - **Reading**: `GET /api/v1/pulse?origin=user|ai|system&after=<cursor>&limit=` (newest first,
   keyset cursor), and the `/pulse` page. AI items carry `label: 'AI'` and never an actor —
   they are never attributed to a person (roadmap §33); system items name no one either.

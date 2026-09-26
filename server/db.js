@@ -420,6 +420,12 @@ CREATE TABLE IF NOT EXISTS pulse_items (
     UNIQUE (source_service, source_type, source_id)
 );
 CREATE INDEX IF NOT EXISTS idx_pulse_recent ON pulse_items(occurred_at DESC, id DESC);
+-- The last games.progress.summary level seen per person (Pulse milestones, server/pulse/consumer.js).
+CREATE TABLE IF NOT EXISTS game_progress (
+    subject_id TEXT PRIMARY KEY,
+    level INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_pulse_origin ON pulse_items(origin, occurred_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS import_hold (

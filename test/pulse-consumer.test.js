@@ -60,6 +60,30 @@ const evt = (over) => ({ event_id: `evt_01JAB2C3D4E5F6G7H8J9K0M${String(++seq).p
     assert.strictEqual(r.json.outcome, 'ignored:source');
     assert.deepStrictEqual(vipDrops, [v1.event_id]);
     assert.strictEqual(items().length, 2, 'no Pulse item for a membership');
+    // Game progress (WS-M task 2): games.progress.summary writes through network.module.updated.
+    const USR2 = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR';
+    const mod = (level, over = {}) => evt({ event_type: 'network.module.updated', source: 'network', visibility: 'internal', subject: { type: 'user', id: USR2 }, actor: { type: 'service', id: 'games' },
+        payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', namespace_owner: 'games', schema_version: 1, revision: 1, change: 'updated', reason: 'write', keys: ['level'], public: { level, achievements: 3, playtime_hours: 2 } }, ...over });
+    r = await post(mod(7));
+    assert.strictEqual(r.json.outcome, 'games:baseline', 'the first record seen is a baseline, not a stale announcement');
+    r = await post(mod(9));
+    assert.strictEqual(r.json.outcome, 'games:no_milestone');
+    const m11 = mod(11);
+    r = await post(m11);
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    assert.deepStrictEqual(items()[2], { source_service: 'games', source_type: 'level', source_id: `${USR2}:10`, title: 'Reached level 10 in Scraplandia', url: 'https://openvibe.games/', actor_subject: USR2, origin: 'user' });
+    assert.strictEqual((await post(m11)).json.duplicate, true);
+    r = await post(mod(6));
+    assert.strictEqual(r.json.outcome, 'games:no_milestone', 'a level going down (another character) announces nothing');
+    r = await post(mod(12));
+    assert.strictEqual(r.json.outcome, 'games:no_milestone', 'the stored level never went down, so 10 is not crossed again');
+    r = await post(mod(15));
+    assert.strictEqual(items()[3].title, 'Reached level 15 in Scraplandia');
+    assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'ai.usage_summary', change: 'updated', public: { level: 20 } } }))).json.outcome, 'ignored:namespace');
+    assert.strictEqual((await post(mod(20, { source: 'games' }))).json.outcome, 'ignored:source', 'only Network speaks for user modules');
+    assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', change: 'delete' } }))).json.outcome, 'ignored:change');
+    assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', change: 'updated', keys: ['level'] } }))).json.outcome, 'ignored:payload', 'no public level, nothing read');
+    assert.strictEqual(items().length, 4);
     srv.close();
     console.log('pulse consumer: all checks passed');
     process.exit(0);
