@@ -102,6 +102,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 
 /* Paste page */
 .crumbs { font-size: .85rem; color: var(--text-muted); margin: 4px 0 14px; }
+/* Underlined: a crumb link sits in muted text and must not be told apart by colour alone (axe link-in-text-block). */
+.crumbs a { text-decoration: underline; text-underline-offset: 2px; }
 .paste-head h1 { word-break: break-word; }
 .paste-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--text-secondary); font-size: .9rem; margin: 0 0 12px; }
 .sep { color: var(--text-muted); }
