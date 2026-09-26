@@ -23,19 +23,41 @@ const server = app.listen(config.port, config.host, () => {
 });
 server.keepAliveTimeout = 65_000;
 // Subscribe Pulse to public activity at Events (idempotent; off without EVENTS_URL / COMMUNITY_EVENTS_SECRET).
+let subscriptions = null;
 try {
     const secret = String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',')[0].trim();
-    require('./pulse/consumer').startSubscriptions({ config, port: config.port, secret });
+    subscriptions = require('./pulse/consumer').startSubscriptions({ config, port: config.port, secret });
 } catch (err) { console.warn('[Pulse consumer] not subscribed:', err.message); }
 // community.profile on Network (Contracts 0.41.0): a 5-minute scan of changed authors (off without the client secret).
-try { require('./identity/profile-module').createProfileModule({ db: require('./db').getDb(), config }).start(); } catch (err) { console.warn('[Modules] community.profile not started:', err.message); }
+let profiles = null;
+try { profiles = require('./identity/profile-module').createProfileModule({ db: require('./db').getDb(), config }); profiles.start(); } catch (err) { console.warn('[Modules] community.profile not started:', err.message); }
 // Public threads and pastes in OpenVibe.Search (WS-O task 10): community.index_document.* through the outbox (off without EVENTS_URL).
-try { require('./search/documents').createSearchDocuments({ db: require('./db').getDb() }).start(); } catch (err) { console.warn('[Search] documents not started:', err.message); }
+let searchDocs = null;
+try { searchDocs = require('./search/documents').createSearchDocuments({ db: require('./db').getDb() }); searchDocs.start(); } catch (err) { console.warn('[Search] documents not started:', err.message); }
 
-function shutdown(signal) {
-    console.log(`[Community] ${signal} — closing`);
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 5000).unref();
-}
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// ── Stop (roadmap WS-P lifecycle; server/graceful.js) ────────
+// SIGTERM: the Pulse subscription retries, the community.profile scan and the search-document scans
+// stop (nothing new starts); the server stops taking connections, closes idle keep-alive ones (it keeps
+// them 65 s otherwise) and lets requests in flight finish (4 s at most); then the profile scan in
+// progress, the Discord relay's drain and the events outbox's send finish (unsent rows stay in their
+// tables for the next start), community.db closes, and the process exits 0, within the manifest's 5 s.
+const { within } = require('./graceful');
+let profilesDone = null;
+require('./graceful').gracefulStop({
+    name: 'Community', server,
+    stop: [
+        () => { if (subscriptions) subscriptions.stop(); },
+        () => { if (profiles) profilesDone = profiles.stop(); },
+        () => { if (searchDocs) searchDocs.stop(); },
+    ],
+    close: [
+        () => within(1000, profilesDone),
+        () => within(1000, app.locals.relay && app.locals.relay.stop()),
+        () => within(1500, require('./events').stop()),
+        () => {
+            const ev = require('./events').status();
+            console.log(`[Community] stopped: subscriptions ${subscriptions ? 'stopped' : 'off'}, profile scan ${profiles && profiles.enabled ? 'stopped' : 'off'}, search scans ${searchDocs ? 'stopped' : 'off'}, relay ${config.discordRelay.enabled ? 'stopped' : 'off'}, outbox ${ev.enabled ? `stopped (${ev.pending} pending)` : 'off'}`);
+            require('./db').closeDb();
+        },
+    ],
+});

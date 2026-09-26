@@ -565,7 +565,8 @@ to appear.
 
 ```
 server/
-  index.js            process entry (listen, shutdown)
+  index.js            process entry (listen, graceful stop)
+  graceful.js         SIGTERM: stop timers and scans, drain HTTP (4 s), settle the relays, close the DB, exit 0 (5 s at most)
   app.js              Express app factory: middleware, routes
   config.js           env → config
   db.js               SQLite (better-sqlite3): schema, opened at COMMUNITY_DB_PATH

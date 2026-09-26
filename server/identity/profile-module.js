@@ -95,20 +95,27 @@ function createProfileModule({ db, config, fetchImpl = globalThis.fetch, log = c
             changed('pastes', 'owner_subject', ['created_at', 'updated_at', 'deleted_at']),
         ].join(' UNION ');
         const subjects = db.prepare(sql).all({ from, to }).map((r) => r.s).filter((s) => USR.test(String(s || '')));
-        for (const s of subjects) await push(s);
+        for (const s of subjects) { if (stopped) return subjects.length; await push(s); }
         lastScan = to;
         return subjects.length;
     }
 
+    let running = null;
+    let stopped = false;
     function start() {
         if (!enabled || timer) return false;
+        stopped = false;
         ensureSchema(db);
-        timer = setInterval(() => { scan().catch((err) => { stats.lastError = err.message; }); }, SCAN_MS);
+        timer = setInterval(() => {
+            if (running) return;
+            running = scan().catch((err) => { stats.lastError = err.message; }).finally(() => { running = null; });
+        }, SCAN_MS);
         if (timer.unref) timer.unref();
         log.log && log.log('[Modules] community.profile: scanning every 5 minutes');
         return true;
     }
-    function stop() { if (timer) clearInterval(timer); timer = null; }
+    /** Graceful stop: no further scans; resolves when a scan in progress has finished (it stops between people). */
+    function stop() { stopped = true; if (timer) clearInterval(timer); timer = null; return running || Promise.resolve(); }
 
     return { enabled, push, scan, start, stop, stats: () => ({ enabled, ...stats }) };
 }

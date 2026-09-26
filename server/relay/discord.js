@@ -43,6 +43,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
     const refAllowed = (name) => typeof name === 'string' && ENV_NAME.test(name) && (allowed ? allowed.has(name) : WEBHOOK_VAR.test(name));
     let timer = null;
     let draining = null;
+    let stopped = false;
 
     function deliveryKey(threadId, mappingId) { return `thread:${threadId}:mapping:${mappingId}`; }
 
@@ -136,6 +137,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
     /** Send every due delivery once. One drain at a time. → { delivered, retry, failed } */
     function drain() {
         if (draining) return draining;
+        if (stopped) return Promise.resolve({ delivered: 0, retry: 0, failed: 0 });
         draining = (async () => {
             const summary = { delivered: 0, retry: 0, failed: 0 };
             if (!enabled) return summary;
@@ -149,11 +151,13 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
 
     function start() {
         if (!enabled || timer) return;
+        stopped = false;
         timer = setInterval(() => { drain().catch((err) => console.warn('[Relay] drain failed:', err.message)); }, pollMs);
         if (timer.unref) timer.unref();
         kick();
     }
-    function stop() { if (timer) clearInterval(timer); timer = null; }
+    /** Graceful stop: no further drains; resolves when the drain in progress has finished (the rest stay pending). */
+    function stop() { stopped = true; if (timer) clearInterval(timer); timer = null; return draining || Promise.resolve(); }
 
     // ── admin (staff) ────────────────────────────────────────
     function shapeMapping(m) {

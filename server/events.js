@@ -20,6 +20,7 @@ const { createEventsClient, createOutbox } = require('openvibe-sdk/events');
 const config = require('./config');
 
 let outbox = null;
+let pruneTimer = null;
 const stats = { queued: 0, lastError: null };
 const PRUNE_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -35,8 +36,8 @@ function init(db, { eventsUrl = process.env.EVENTS_URL, clientSecret = config.oa
     });
     outbox.ensureSchema();
     outbox.start();
-    const prune = setInterval(() => { try { outbox.prune(); } catch { /* next time */ } }, PRUNE_EVERY_MS);
-    if (prune.unref) prune.unref();
+    pruneTimer = setInterval(() => { try { outbox.prune(); } catch { /* next time */ } }, PRUNE_EVERY_MS);
+    if (pruneTimer.unref) pruneTimer.unref();
     console.log(`[Events] community → ${eventsUrl} (${outbox.pending()} pending)`);
     return outbox;
 }
@@ -122,6 +123,15 @@ function status() {
     if (!outbox) return { enabled: false };
     return { enabled: true, pending: outbox.pending(), rejected: outbox.rejected(), queued_since_boot: stats.queued, last_error: stats.lastError };
 }
+/**
+ * Graceful stop (server/index.js): no further sends; resolves when the send in progress has finished.
+ * Rows written after this (a request that was still finishing) stay in the outbox for the next start.
+ */
+function stop() {
+    if (pruneTimer) clearInterval(pruneTimer);
+    pruneTimer = null;
+    return outbox ? outbox.stop() : Promise.resolve();
+}
 function _reset() { if (outbox) outbox.stop(); outbox = null; stats.queued = 0; stats.lastError = null; }
 
-module.exports = { init, record, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, _reset };
+module.exports = { init, record, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, stop, _reset };

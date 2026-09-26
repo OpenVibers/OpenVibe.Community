@@ -475,4 +475,11 @@ function getDb() {
     return _shared;
 }
 
-module.exports = { openDb, getDb, registerFunctions, SCHEMA, newThreadAccessId };
+/** Graceful stop: close the process-wide database (a later getDb() opens it again). */
+function closeDb() {
+    const db = _shared;
+    _shared = null;
+    if (db) try { db.close(); } catch { /* already closed */ }
+}
+
+module.exports = { openDb, getDb, closeDb, registerFunctions, SCHEMA, newThreadAccessId };

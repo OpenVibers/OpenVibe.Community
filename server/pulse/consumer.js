@@ -147,11 +147,15 @@ function startSubscriptions({ config, port, secret, eventsUrl = process.env.EVEN
     };
     const delays = [0, 10_000, 60_000, 5 * 60_000, 15 * 60_000];
     let i = 0;
-    const run = () => attempt().catch((err) => {
-        if (++i < delays.length) { const t = setTimeout(run, delays[i]); if (t.unref) t.unref(); } else log.warn('[Pulse consumer] subscriptions not created:', err.message);
-    });
-    const t = setTimeout(run, delays[0]); if (t.unref) t.unref();
-    return { topics: TOPICS, endpoint };
+    let timer = null;
+    let stopped = false;
+    const run = () => { timer = null; if (stopped) return; attempt().catch((err) => {
+        if (stopped) return;
+        if (++i < delays.length) { timer = setTimeout(run, delays[i]); if (timer.unref) timer.unref(); } else log.warn('[Pulse consumer] subscriptions not created:', err.message);
+    }); };
+    timer = setTimeout(run, delays[0]); if (timer.unref) timer.unref();
+    // Graceful stop: no further attempts (they run again at the next start).
+    return { topics: TOPICS, endpoint, stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; } };
 }
 
 module.exports = { createPulseConsumer, startSubscriptions, itemFor, TOPICS };
