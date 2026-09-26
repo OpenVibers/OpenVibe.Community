@@ -27,6 +27,13 @@ function createPastesProxy(opts = {}) {
 
     return async function pastesProxy(req, res) {
         const target = `${upstreamBase()}${req.url === '/' ? '' : req.url}`;
+        // The path is the visitor's: "/api/pastes/../../internal/x" (or %2e%2e) would resolve to another of
+        // Live's routes, with the visitor's token; an encoded slash or backslash is one for Live once decoded.
+        // Only Live's paste API is proxied.
+        const base = new URL(upstreamBase()).pathname;
+        let resolved = null;
+        try { resolved = new URL(target).pathname; } catch { /* not a URL: refused below */ }
+        if (!resolved || (resolved !== base && !resolved.startsWith(`${base}/`)) || /%(2f|5c)/i.test(resolved)) return res.status(404).json({ error: 'Not found' });
         const headers = {};
         for (const [k, v] of Object.entries(req.headers)) {
             if (HOP_BY_HOP.has(k) || v == null) continue;
