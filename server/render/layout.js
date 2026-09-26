@@ -57,6 +57,7 @@ function navbarInit(opts) {
         sessionUrl: '/auth/me',
         loginUrl: `/auth/login?next=${encodeURIComponent(opts.canonicalPath || '/')}`,
         logoutUrl: '/auth/logout?next={path}',   // Sign out in the shared navbar ends this site's session too
+        notificationsRealtime: true,             // the bell hears new notifications over OpenVibe.Events (Shared 1.22.0)
     };
     return cfg;
 }
