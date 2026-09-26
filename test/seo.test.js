@@ -52,7 +52,11 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('security headers are present on pages', async () => {
         const r = await t.get('/');
-        assert.ok(r.headers.get('content-security-policy').includes("script-src 'self' 'unsafe-inline' https://openvibe.network"));
+        const csp = r.headers.get('content-security-policy');
+        assert.ok(csp.includes("script-src 'self' 'unsafe-inline' https://openvibe.network"));
+        // Cloudflare Web Analytics (injected at the edge, disclosed in the privacy text) may load and report.
+        assert.match(csp, /script-src [^;]*https:\/\/static\.cloudflareinsights\.com/);
+        assert.match(csp, /connect-src [^;]*https:\/\/cloudflareinsights\.com/);
         assert.strictEqual(r.headers.get('x-content-type-options'), 'nosniff');
         assert.strictEqual(r.headers.get('x-powered-by'), null);
     });

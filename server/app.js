@@ -79,12 +79,14 @@ function createApp(opts = {}) {
             directives: {
                 defaultSrc: ["'self'"],
                 // Shared chrome (theme-loader, navbar, footer, history, ov-mark) comes from the Network.
-                scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://cdnjs.cloudflare.com'],
+                // Cloudflare Web Analytics: Cloudflare injects its beacon at the edge and the privacy text says it may
+                // measure performance; script-src loads the beacon, connect-src is where it reports.
+                scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com'],
                 styleSrc: ["'self'", "'unsafe-inline'", 'https://cdnjs.cloudflare.com', 'https://fonts.googleapis.com', 'https://openvibe.network'],
                 fontSrc: ["'self'", 'https://cdnjs.cloudflare.com', 'https://fonts.gstatic.com', 'data:'],
                 // Screenshots serve from openvibe.media (which may 302 to object storage); avatars from Live/Network.
                 imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-                connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.live', 'https://openvibe.media', 'https://events.openvibe.network'],
+                connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.live', 'https://openvibe.media', 'https://events.openvibe.network', 'https://cloudflareinsights.com'],
                 // The Network's hidden /sso/check frame: how a visitor who is signed in elsewhere gets signed in here.
                 frameSrc: ["'self'", 'https://openvibe.network'],
                 frameAncestors: ["'self'"],
