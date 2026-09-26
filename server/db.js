@@ -316,6 +316,20 @@ CREATE TABLE IF NOT EXISTS categories (
     UNIQUE (space_id, slug)
 );
 
+-- A space's chat room on OpenVibe.Chat (WS-I task 4; server/chat-rooms.js), one per space. room_id and
+-- room_slug are Chat's; name, kind and visibility are what Chat answered when it was attached (or last
+-- re-attached). attached_by is the usr_ subject who attached it.
+CREATE TABLE IF NOT EXISTS space_chat_rooms (
+    space_id INTEGER PRIMARY KEY REFERENCES spaces(id) ON DELETE CASCADE,
+    room_id INTEGER,
+    room_slug TEXT NOT NULL,
+    room_name TEXT NOT NULL,
+    room_kind TEXT NOT NULL DEFAULT 'community',
+    room_visibility TEXT NOT NULL DEFAULT 'public',
+    attached_by TEXT,
+    attached_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Discord relay (server/relay; DISCORD_RELAY_ENABLED) ──────
 -- webhook_url_ref is the NAME of an environment variable holding the webhook URL: secrets never
 -- live in the database. migrate() adds discord_channel_id (the channel the webhook posts into;

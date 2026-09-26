@@ -29,6 +29,11 @@
  * thread's title with its members_only flag, never a body; gated things never reach Pulse, the Discord
  * relay, sitemaps or feeds. Moderators gate spaces (for any creator) and threads; a thread's author
  * gates it to their own members.
+ *
+ * A chat room (OpenVibe.Chat, WS-I task 4): a space's owner (its creator, or the creator whose members'
+ * space it is) or discussion staff attach one room to the space; the space page links it. Chat checks
+ * that the same person manages the room, with their own token (chat-rooms.js), so services cannot attach
+ * (moderator services can detach). Community keeps the link: space_chat_rooms.
  */
 const store = require('./store');
 const events = require('../events');
@@ -92,7 +97,7 @@ const TITLE_MIN = 3, TITLE_MAX = 200;
 const BODY_MAX = 40_000;
 const THREADS_PER_DAY = 20;
 
-function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, limits = {} } = {}) {
+function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {} } = {}) {
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
@@ -106,6 +111,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     const moderator = (v) => discussionModerator(v);
     const person = (v) => !!(v && v.subject);
+
+    // ── a space's chat room (OpenVibe.Chat) ──────────────────
+    const chatRoomRow = (spaceId) => (spaceId == null ? null : db.prepare('SELECT * FROM space_chat_rooms WHERE space_id = ?').get(spaceId) || null);
+    const shapeChatRoom = (r) => (r ? {
+        slug: r.room_slug, name: r.room_name, kind: r.room_kind, visibility: r.room_visibility,
+        url: chatRooms ? chatRooms.roomUrl(r.room_slug) : `https://openvibe.chat/r/${encodeURIComponent(r.room_slug)}`,
+        attached_at: isoTime(r.attached_at),
+    } : null);
+    /** The space's owner (its creator, or the creator whose VIP members' space it is) or discussion staff. */
+    const canManageChatRoom = (v, space) => moderator(v) || (person(v) && (space.created_by === v.subject || space.members_only_owner === v.subject));
 
     // ── access ───────────────────────────────────────────────
     function canRead(v, space) {
@@ -310,6 +325,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             members_only: s.members_only_owner ? (mo || { owner: s.members_only_owner, owner_username: null, join_url: vip ? vip.joinUrl(s.members_only_owner) : null }) : null,
             thread_count: s.thread_count != null ? s.thread_count : undefined,
             last_activity_at: s.last_activity_at !== undefined ? isoTime(s.last_activity_at) : undefined,
+            chat_room: shapeChatRoom(chatRoomRow(s.id)),
         };
     }
 
@@ -479,6 +495,45 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             return { space: shapeSpace(s, await membersOnly(s.members_only_owner)) };
         },
 
+        /**
+         * Attach a chat room to the space { room: slug or openvibe.chat link } — the space's owner or staff,
+         * signed in themselves (Chat checks they manage the room). Attaching the same room again is a no-op;
+         * another room replaces it (Chat is told the space let go of the old one). → { chat_room, created }
+         */
+        async attachChatRoom(v, spaceSlug, body = {}) {
+            const space = spaceFor(v, spaceSlug);
+            if (!person(v) && !moderator(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account');
+            if (!canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the space\'s owner or staff attach a chat room');
+            if (!v || v.kind !== 'user' || !v.token) fail(403, 'chat_room.person_only', 'Attach a chat room while signed in with your own account');
+            if (!chatRooms) fail(503, 'chat_room.unavailable', 'Chat rooms cannot be attached right now');
+            const slug = chatRooms.parseRoomRef(body.room);
+            if (!slug) fail(400, 'chat_room.invalid', 'Name the room by its address (night-owls) or its link (https://openvibe.chat/r/night-owls)');
+            const before = chatRoomRow(space.id);
+            const out = await chatRooms.attach({ token: v.token, room: slug, space: space.slug, title: space.name });
+            const same = !!before && before.room_slug === out.room.slug;
+            db.prepare(`INSERT INTO space_chat_rooms (space_id, room_id, room_slug, room_name, room_kind, room_visibility, attached_by) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (space_id) DO UPDATE SET room_id = excluded.room_id, room_slug = excluded.room_slug, room_name = excluded.room_name,
+                            room_kind = excluded.room_kind, room_visibility = excluded.room_visibility,
+                            attached_by = CASE WHEN space_chat_rooms.room_slug = excluded.room_slug THEN space_chat_rooms.attached_by ELSE excluded.attached_by END,
+                            attached_at = CASE WHEN space_chat_rooms.room_slug = excluded.room_slug THEN space_chat_rooms.attached_at ELSE CURRENT_TIMESTAMP END`)
+                .run(space.id, out.room.id, out.room.slug, out.room.name, out.room.kind, out.room.visibility, v.subject || null);
+            if (before && !same) await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug });
+            return { space: { slug: space.slug, name: space.name, url: `/s/${space.slug}` }, chat_room: shapeChatRoom(chatRoomRow(space.id)), created: !same };
+        },
+
+        /** Detach the space's chat room — the space's owner or staff (moderator services too). Idempotent. → { detached, chat } */
+        async detachChatRoom(v, spaceSlug) {
+            const space = spaceFor(v, spaceSlug);
+            if (!person(v) && !moderator(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account');
+            if (!canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the space\'s owner or staff detach its chat room');
+            const before = chatRoomRow(space.id);
+            if (!before) return { detached: false, chat: null };
+            db.prepare('DELETE FROM space_chat_rooms WHERE space_id = ?').run(space.id);
+            // Chat's side of the link goes too when the person may remove it there (best effort: the space no longer shows it either way).
+            const chat = chatRooms && v.kind === 'user' && v.token ? await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug }) : 'unavailable';
+            return { detached: true, chat };
+        },
+
         /** A page of threads. ?sort=hot|new|top&page=&category=<slug>&status=<status> */
         async listThreads(v, spaceSlug, q = {}) {
             const space = spaceFor(v, spaceSlug);
@@ -499,7 +554,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 space: { ...shapeSpace(space, await membersOnly(space.members_only_owner)), group: self.group || null, parent: self.parent || null },
                 sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
                 categories: store.listCategories(db, space.id).map(shapeCategory), category: category ? category.slug : null, status: q.status || null,
-                viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v), signed_in: person(v) },
+                viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v), signed_in: person(v), can_manage_chat_room: canManageChatRoom(v, space) },
                 children: index.spaces.filter((c) => c.parent && c.parent.slug === space.slug),
                 groups: moderator(v) ? store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name })) : undefined,
                 threads: await shapeThreads(rows, () => space, v),

@@ -149,7 +149,9 @@ function createApp(opts = {}) {
     const vip = opts.vip || createVipGate({ config, ...(opts.vipOptions || {}) });
     // Images on posts go to OpenVibe.Media's Object API as med_ objects (media/objects.js).
     const mediaObjects = opts.mediaObjects || require('./media/objects').createMediaObjects({ config });
-    const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, limits: opts.forumLimits });
+    // A space's chat room on OpenVibe.Chat (chat-rooms.js): attached with the person's own token.
+    const chatRooms = opts.chatRooms || require('./chat-rooms').createChatRooms({ config });
+    const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, chatRooms, limits: opts.forumLimits });
     const community = config.pastesAuthority === 'community';
     const comments = createCommentService({ db, network, pastesLocal: community, limits: opts.commentLimits });
     seo.useForum(forum);

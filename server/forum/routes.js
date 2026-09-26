@@ -10,6 +10,7 @@
  *   GET  /s/:space/new   POST /s/:space/new               start a thread
  *   GET  /s/:space/t/:slug                                a thread (?page=)
  *   POST /s/:space/t/:slug/reply | /vote | /state | /delete | /members-only   no-JS forms
+ *   POST /s/:space/chat-room, /s/:space/chat-room/detach   the space's chat room (its owner or staff)
  *
  * A members-only (OpenVibe.VIP) space or thread the viewer may not use renders a teaser with the
  * creator's join link (403), never its posts.
@@ -116,8 +117,9 @@ function createForumRoutes({ forum, viewers, config }) {
         try {
             const out = await forum.listThreads(req.viewer, req.params.space, { sort: req.query.sort, page: req.query.page, category: req.query.category, status: req.query.status });
             if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
-            if (out.space.style === 'forum') return html(res, boardPages.forumSpacePage({ ...out, user: req.user }));
-            html(res, forumPages.spacePage({ ...out, user: req.user, footer: out.viewer.can_moderate ? boardPages.settingsForm(out.space, out.groups) : '' }));
+            const chatRoom = forumPages.chatRoomBox(out.space, { canManage: out.viewer.can_manage_chat_room, error: typeof req.query.chat_error === 'string' ? req.query.chat_error.slice(0, 200) : null });
+            if (out.space.style === 'forum') return html(res, boardPages.forumSpacePage({ ...out, user: req.user, chatRoom }));
+            html(res, forumPages.spacePage({ ...out, user: req.user, chatRoom, footer: out.viewer.can_moderate ? boardPages.settingsForm(out.space, out.groups) : '' }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
@@ -242,6 +244,24 @@ function createForumRoutes({ forum, viewers, config }) {
             await forum.updateSpaceSettings(req.viewer, req.params.space, { name: b.name, description: b.description, style: b.style, votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null });
             seo.resetCaches();
             res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // The space's chat room (no JS): attach by address or link, detach. A refusal comes back as a notice on the space.
+    const chatBack = (req, error) => `/s/${encodeURIComponent(req.params.space)}${error ? `?chat_error=${encodeURIComponent(error)}` : ''}#chat-room`;
+    router.post('/s/:space/chat-room', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.attachChatRoom(req.viewer, req.params.space, { room: String((req.body || {}).room || '').slice(0, 300) });
+            res.redirect(303, chatBack(req));
+        } catch (err) {
+            if (err instanceof ApiError && String(err.code).startsWith('chat_room.')) return res.redirect(303, chatBack(req, err.message));
+            failPage(req, res, err, next);
+        }
+    }));
+    router.post('/s/:space/chat-room/detach', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.detachChatRoom(req.viewer, req.params.space);
+            res.redirect(303, chatBack(req));
         } catch (err) { failPage(req, res, err, next); }
     }));
 

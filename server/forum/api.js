@@ -27,6 +27,9 @@
  *   POST   /spaces { slug, name, description?, style?: feed|forum, votes?, reactions?, group?, parent?, visibility?, kind? }   moderators
  *   PUT    /spaces/:space/settings { name?, description?, style?, votes?, reactions?, group?, parent?, position?, kind? }  moderators
  *   POST   /spaces/:space/threads/:slug/crosspost { to: slug }  another space gets a thread linking back (people)
+ *   PUT    /spaces/:space/chat-room { room: slug | https://openvibe.chat/r/<slug> }   the space's owner or staff, signed in
+ *                                                         themselves (Chat checks they manage the room) → { chat_room, created }
+ *   DELETE /spaces/:space/chat-room                       the space's owner or staff (idempotent) → { detached, chat }
  *   POST   /posts/:id/reactions { reaction: agree|winner|funny|informative|friendly|sympathy|dumb|disgusting|bad_reading|late|null }
  *   PUT    /posts/:id { body }   DELETE /posts/:id   GET /posts/:id/versions
  *
@@ -76,6 +79,9 @@ function createSpacesApi({ forum, viewers }) {
     router.put('/:space/threads/:slug/state', serviceCap(MOD), jsonBody, run((req) => forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/threads/:slug/members-only', writeOrMod, jsonBody, run((req) => forum.setThreadMembersOnly(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/members-only', serviceCap(MOD), jsonBody, run((req) => forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
+    // A chat room (OpenVibe.Chat): people attach with their own token; moderator services may only detach.
+    router.put('/:space/chat-room', jsonBody, run((req) => forum.attachChatRoom(req.viewer, p(req).space, req.body || {}), (out) => (out.created ? 201 : 200)));
+    router.delete('/:space/chat-room', serviceCap(MOD), run((req) => forum.detachChatRoom(req.viewer, p(req).space)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

@@ -76,6 +76,14 @@ module.exports = {
         unavailableTtlMs: parseInt(process.env.VIP_CACHE_UNAVAILABLE_TTL_MS, 10) || 2_000,
     },
 
+    // OpenVibe.Chat — a space can attach a chat room (server/chat-rooms.js). Community asks Chat, with the
+    // signed-in person's own Network token, whether they manage the room; the space page links it.
+    chat: {
+        url: (process.env.OV_CHAT_URL || 'https://openvibe.chat').replace(/\/$/, ''),
+        internalUrl: (process.env.OV_CHAT_INTERNAL_URL || 'http://127.0.0.1:4400').replace(/\/$/, ''),
+        timeoutMs: parseInt(process.env.CHAT_TIMEOUT_MS, 10) || 4000,
+    },
+
     // Discord relay (server/relay; docs/discord-relay.md). Off by default, and inert without an owner's
     // webhook variables, mappings and (for inbound) bot token.
     //   out  threads and replies in mapped public spaces → the mapping's Discord webhook; edits and deletes follow

@@ -32,6 +32,7 @@ Pastes moved to Community in roadmap Wave 5. `PASTES_AUTHORITY` picks who owns t
 | Raw text, screenshots | OpenVibe.Media public host | 302 from `/p/:slug/raw`, `/p/:slug/screenshot` |
 | Shared chrome, themes | `https://openvibe.network/shared/*.js` | loaded in every page |
 | VIP memberships (members-only spaces/threads) | **OpenVibe.VIP** (`POST /api/v1/policies/evaluate`) | `OV_VIP_INTERNAL_URL`, service token (audience `openvibe.vip`, `vip.resource.policy.evaluate`) |
+| A space's chat room | **OpenVibe.Chat** (`POST/DELETE /api/chat/rooms/:room/attachments`) | `OV_CHAT_INTERNAL_URL`, the signed-in person's own Network token (no service grant) |
 
 Why go through Live and not straight to Media: the visitor's JWT names the account by its
 **Network** id, while the `user_id` Media stores for pastes is **Live's** own — different
@@ -371,7 +372,27 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `PUT /spaces/:space/threads/:slug/state` `{ pinned?, locked? }` | Moderators |
 | `PUT /spaces/:space/members-only` `{ owner: 'usr_…' \| null }` | Moderators: gate a space to a creator's VIP members (or open it) |
 | `PUT /spaces/:space/threads/:slug/members-only` `{ owner: 'usr_…' \| true \| null }` | The author (to their own members) or moderators (any creator) |
+| `PUT /spaces/:space/chat-room` `{ room: slug \| https://openvibe.chat/r/<slug> }` | The space's owner or staff, signed in themselves: attach a chat room (201; the same room again 200) |
+| `DELETE /spaces/:space/chat-room` | The space's owner or staff (moderator services too): detach it (idempotent) |
 | `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` · `GET /posts/:id/versions` | Author or moderator |
+
+### A space's chat room (OpenVibe.Chat)
+
+A space can have one chat room on [OpenVibe.Chat](https://github.com/OpenVibers/OpenVibe.Chat) (roadmap WS-I
+task 4, `server/chat-rooms.js`). Its owner (the space's creator, or the creator whose members' space it is)
+or discussion staff attach one by its address or link, from the space page (no JavaScript) or
+`PUT /api/v1/spaces/:space/chat-room`; the space page (feed and forum style) then links it, with its kind
+(chat, call, announcements) and "members only" for a private room. Each side checks its own end:
+Community checks the space; Chat checks that the same person manages the room, because Community asks it
+with the person's own Network token (`POST ${OV_CHAT_INTERNAL_URL}/api/chat/rooms/:room/attachments`,
+`{ service: 'community', resource: <space>, title }`). So services cannot attach (a service has no
+person's token; moderator services may detach), and no capability or grant is involved. Chat's refusals
+come back as `chat_room.not_owner` (403), `chat_room.not_found` (404: no such room, or a private one the
+person is not in) and `chat_room.unavailable` (503/502); on the page they are a notice. Attaching the same
+room again is a no-op; another room replaces it (Chat is told the space let go of the old one, best
+effort); detaching removes Community's link and asks Chat to drop its side when the person may. Community
+keeps the link in `space_chat_rooms` (the room's id, slug, and its name, kind and visibility as Chat
+answered). No event is published for it (no contract has one yet).
 
 ### Members-only spaces and threads (OpenVibe.VIP)
 
@@ -537,6 +558,9 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `VIEW_HASH_SECRET` | derived from the client secret | Salt for hashed visitor ids in view counts |
 | `COOKIE_SECURE` | `true` in production | Set `false` for plain-http local dev |
 | `OV_VIP_INTERNAL_URL` | `http://127.0.0.1:4620` | OpenVibe.VIP's API (members-only spaces and threads) |
+| `OV_CHAT_INTERNAL_URL` | `http://127.0.0.1:4400` | OpenVibe.Chat's API (a space's chat room) |
+| `OV_CHAT_URL` | `https://openvibe.chat` | Public Chat site, for the room links |
+| `CHAT_TIMEOUT_MS` | `4000` | One Chat call |
 | `OV_VIP_URL` | `https://openvibe.vip` | Public VIP site, for join links |
 | `VIP_TIMEOUT_MS` | `2000` | One VIP call |
 | `VIP_CACHE_TTL_MS` / `VIP_CACHE_DENY_TTL_MS` / `VIP_CACHE_UNAVAILABLE_TTL_MS` | `30000` / `10000` / `2000` | How long a yes / no / failure is cached (the yes TTL is the convergence bound) |

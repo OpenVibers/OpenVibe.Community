@@ -90,7 +90,27 @@ function threadRow(t, space) {
   </li>`;
 }
 
-function spacePage({ space, threads, sort, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, footer = '' }) {
+/**
+ * The space's chat room on OpenVibe.Chat (a link), and for the space's owner or staff the no-JS forms to
+ * attach one (by address or link) or detach it. Empty when there is none and the viewer cannot attach.
+ */
+function chatRoomBox(space, { canManage = false, error = null } = {}) {
+    const r = space.chat_room;
+    if (!r && !canManage) return '';
+    const kind = r ? ({ call: 'Call room', system: 'Announcements' }[r.kind] || 'Chat room') : '';
+    const link = r ? `<p><a class="btn" href="${esc(r.url)}" rel="noopener"><i class="fa-solid fa-comments" aria-hidden="true"></i> ${esc(r.name)}</a> <span class="muted small">${kind} on OpenVibe.Chat${r.visibility === 'private' ? ' · members only' : ''}</span></p>` : '';
+    const manage = canManage ? `<details class="space-settings"${error ? ' open' : ''}><summary>${r ? 'Change or detach the chat room' : 'Attach a chat room'}</summary>
+  ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
+  <form class="paste-form" method="post" action="/s/${esc(space.slug)}/chat-room">
+    <label class="field"><span>Room address or link (you must own the room on OpenVibe.Chat)</span><input name="room" required maxlength="300" placeholder="night-owls or https://openvibe.chat/r/night-owls" value="${r ? esc(r.slug) : ''}"></label>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">${r ? 'Attach this room instead' : 'Attach'}</button></div>
+  </form>
+  ${r ? `<form class="inline-form" method="post" action="/s/${esc(space.slug)}/chat-room/detach"><button class="btn btn-sm btn-ghost" type="submit">Detach the chat room</button></form>` : ''}
+</details>` : '';
+    return `<section class="chat-room" id="chat-room" aria-labelledby="chat-room-h"><h2 class="h3" id="chat-room-h">Chat room</h2>${link}${manage}</section>`;
+}
+
+function spacePage({ space, threads, sort, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, footer = '', chatRoom = '' }) {
     const tabs = Object.keys(SORT_LABELS).filter((s) => s !== 'top' || space.votes !== false).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s, category, status }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
     const filtered = !!(category || status);
     const indexable = space.visibility === 'public' && !space.members_only && !filtered;
@@ -109,6 +129,7 @@ function spacePage({ space, threads, sort, page, pages, total, user, categories 
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
   ${start}
 </header>
+${chatRoom}
 ${categoryNav}${statusNav}
 <nav class="tabs sort-tabs" aria-label="Sort threads">${tabs}</nav>
 <section data-results>
@@ -339,6 +360,6 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
 }
 
 module.exports = {
-    spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, spaceHref, who,
+    spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, spaceHref, who, chatRoomBox,
     pager, visBadge, vipBadge, statusBadge, categoryBadge, voteForm, modActions, reactionBar, postImages, imageField, pasteField, pasteCards, crosspostBlock, STATUS_LABELS,
 };

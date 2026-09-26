@@ -263,6 +263,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .badge-sticky { font-size: .65rem; border-color: var(--accent); color: var(--accent-light); }
 .board-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0 12px; }
 .space-settings, .crosspost-form { margin: 18px 0; }
+.chat-room { margin: 12px 0 16px; padding: 10px 14px; border: 1px solid var(--border-light); border-radius: 10px; background: var(--bg-card); }
+.chat-room h2 { margin: 0 0 6px; }
 .space-settings summary, .crosspost-form summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
 .discuss-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .postbits { display: grid; gap: 12px; margin: 12px 0; }

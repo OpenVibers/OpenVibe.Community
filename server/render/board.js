@@ -109,7 +109,7 @@ function settingsForm(space, groups = []) {
 }
 
 // ── /s/:space (forum style) ──────────────────────────────────
-function forumSpacePage({ space, threads, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, children = [], groups = [] }) {
+function forumSpacePage({ space, threads, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, children = [], groups = [], chatRoom = '' }) {
     const filtered = !!(category || status);
     const indexable = space.visibility === 'public' && !space.members_only && !filtered;
     const href = (o = {}) => f.spaceHref(space.slug, { sort: 'active', category, status, ...o }).replace(/[?&]sort=active/, '').replace(/\?&/, '?').replace(/\?$/, '');
@@ -127,6 +127,7 @@ function forumSpacePage({ space, threads, page, pages, total, user, categories =
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
 </header>
 ${children.length ? `<section class="board-group" aria-label="Child boards">${boardTable(children, 'Child boards')}</section>` : ''}
+${chatRoom}
 <div class="board-toolbar">${start}${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</div>
 ${tags}${statuses}
 <section data-results>
