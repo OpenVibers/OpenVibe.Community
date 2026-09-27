@@ -1,14 +1,14 @@
 {
  "service": "community",
- "release": "794e7e2453306fc6f5f164e86e034a276edf273d",
- "recorded_at": "2026-09-27T22:05:48.223Z",
+ "release": "82e2bb941f5cae0515c6696e6490bfdd9f7e1437",
+ "recorded_at": "2026-09-27T23:24:25.749Z",
  "note": "N-1 fixture: written by `npm run n-1:record`, replayed by test/n-1.test.js",
  "manifest": {
   "service": "community",
-  "release": "794e7e245330",
-  "released_at": "2026-09-27T21:47:40.000Z",
-  "booted_at": "2026-09-27T22:05:47.256Z",
-  "contracts_version": "0.49.0",
+  "release": "82e2bb941f5c",
+  "released_at": "2026-09-27T22:59:26.000Z",
+  "booted_at": "2026-09-27T23:24:24.819Z",
+  "contracts_version": "0.71.0",
   "packages": {
    "openvibe-shared": "1.22.0",
    "openvibe-sdk": "0.11.0"
@@ -18,17 +18,20 @@
   "components": {
    "shell": {
     "kind": "script",
-    "version": "794e7e245330"
+    "version": "82e2bb941f5c"
    },
    "server": {
     "kind": "server",
-    "version": "794e7e245330"
+    "version": "82e2bb941f5c"
    }
   },
   "assets": {},
   "schema_generation": null,
   "schema_compatible_from": null,
   "contract_ranges": {},
+  "client_generation": null,
+  "min_client_generation": null,
+  "shell": null,
   "metrics_url": "/release-metrics"
  },
  "dynamic_calls": 3,
