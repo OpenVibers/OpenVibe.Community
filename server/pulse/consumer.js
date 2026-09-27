@@ -37,7 +37,7 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged', 'network.account.export_requested', 'network.account.deleted']);
 const GAME_NAMESPACE = 'games.progress.summary';
 const GAME_MILESTONE = 5;
 const GAME_URL = 'https://openvibe.games/';
@@ -100,7 +100,7 @@ function applyGameProgress(db, g) {
     return r.created ? 'pulse:created' : 'pulse:updated';
 }
 
-function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = null, now = () => Date.now(), log = console } = {}) {
+function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = null, accountSend = null, now = () => Date.now(), log = console } = {}) {
     const keys = (secrets || []).filter((s) => typeof s === 'string' && s.length >= 32);
     const inbox = createInbox(db, { table: 'community_event_inbox', now });
     inbox.ensureSchema();
@@ -136,6 +136,19 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
                 log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
                 return problem(500, 'community.event_failed', 'processing failed; it will be retried');
             }
+        }
+        if (event.event_type === 'network.account.export_requested' || event.event_type === 'network.account.deleted') {
+            // Account export and deletion (ADR-033, ../identity/account-data.js): once per export or deletion by its own record,
+            // answered after Network took the part or confirmation, so a failure is redelivered without erasing twice.
+            if (!accountSend) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: 'ignored:no_client' }); }
+            return require('../identity/account-data').apply(db, event, { send: accountSend, log }).then((outcome) => {
+                stats.applied++;
+                res.json({ event_id: event.event_id, duplicate: outcome === 'unchanged', outcome });
+            }, (err) => {
+                stats.failed++;
+                log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
+                problem(500, 'community.event_failed', 'processing failed; it will be retried');
+            });
         }
         if (event.event_type === 'network.subject.merged') {
             // Two accounts became one (ADR-029): the folded-in subject's rows become the survivor's (../identity/subject-merge.js).

@@ -29,6 +29,7 @@ const INVENTORY = {
     'server/chat-rooms.js': [1, 'OV_CHAT_INTERNAL_URL /api/chat/rooms/<slug>/attachments; the slug must match ROOM_SLUG and is encoded'],
     'server/events.js': [3, 'service token (Network) and the outbox publisher: EVENTS_URL'],
     'server/identity/network.js': [2, 'Network /internal/identity/resolve-batch with a service token'],
+    'server/identity/account-data.js': [2, 'Network /oauth/token and /internal/account-exports and /internal/account-deletions (fixed paths) with a service token'],
     'server/identity/profile-module.js': [3, 'Network modules API (community.profile) with a service token'],
     'server/live-client.js': [1, 'OV_LIVE_INTERNAL_URL/api + fixed paths; slugs encoded (callers check SLUG_RE)'],
     'server/media/files.js': [2, 'OV_MEDIA_INTERNAL_URL v1 file store, service token'],
