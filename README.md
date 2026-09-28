@@ -2,6 +2,8 @@
 
 **https://openvibe.community — the people of OpenVibe.**
 
+## Purpose
+
 The community hub of the OpenVibe network: community-run, open source, free speech within
 the rules. It is the home of **pastes** (code, text and screenshots with a link), the
 **forum** (spaces, threads and posts), the **comment threads** every other OpenVibe product
@@ -10,6 +12,30 @@ embeds, and **Pulse**, the network's public activity. Submissions follow.
 It is a small Node/Express app (CommonJS, no framework, one SQLite database) that
 server-renders every page — crawlers and no-JS readers get the whole thing — and adds a
 little progressive JavaScript for pagination, copy buttons and the upload path.
+
+## Owns
+
+- pastes (authority since 2026-09-22, `PASTES_AUTHORITY=community`), their versions, likes and
+  comments
+- the typed comment threads every other product embeds, the forum (spaces, threads, posts, votes,
+  categories), Pulse (the network's public activity) and the Discord relay
+- the `community.*` events, Search documents for public threads, and the `community.profile` user module
+- one SQLite database (`/var/lib/openvibe-community/community.db` in production)
+
+## Does not own
+
+- identity and SSO (OpenVibe.Network), file bytes (OpenVibe.Media keeps screenshots and attachments),
+  memberships (OpenVibe.VIP decides members-only spaces and threads), chat rooms (OpenVibe.Chat)
+- the content of the products whose threads it hosts: a product stores only the thread id
+
+## Depends on
+
+- OpenVibe.Network (SSO, JWKS, service tokens, `identity.subject.resolve`, the `community.profile` module)
+- OpenVibe.Media (screenshot and attachment uploads), OpenVibe.VIP (members-only gates), OpenVibe.Chat
+  (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
+- OpenVibe.Live only when `PASTES_AUTHORITY=live` (the rollback mode), and for old VOD/clip comment imports
+- `openvibe-contracts` v0.71.0, `openvibe-sdk` v0.12.0 (events outbox, per-actor limits),
+  `openvibe-shared` v1.22.0, pinned by release tarball
 
 ## How it fits the network
 
@@ -518,11 +544,23 @@ Community checks service tokens against these capabilities (manifests in
 | `community.comment.moderate` | active in contracts (v0.7.0) | thread visibility, comment/post/thread moderation, relay admin |
 | `community.pulse.write` | active in contracts (v0.7.0) | publishing to Pulse |
 | `community.post.create` | active in contracts (v0.7.0) | forum writes |
+| `community.space.read` / `.manage`, `community.thread.read`, `community.vote.set`, `community.pulse.read` | active in contracts | spaces, threads, votes and Pulse reads by services and apps |
 
-This repository pins `openvibe-contracts` v0.49.0, which knows every id above, so they all go
+This repository pins `openvibe-contracts` v0.71.0, which knows every id above, so they all go
 through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
 the installed contracts do not know locally, with the library's own matching rule (the exact id
 or a `prefix.*` grant).
+
+Called elsewhere, as the service principal `community` (the OAuth client `community`):
+
+| Service | Grant | Why |
+| --- | --- | --- |
+| OpenVibe.Network | `identity.subject.resolve`; `network.modules.write` on `community.profile` | author names and avatars; the profile module |
+| OpenVibe.Media | `media.object.upload` | new screenshots and forum attachments |
+| OpenVibe.VIP | `vip.resource.policy.evaluate` | members-only spaces and threads |
+| OpenVibe.Events | `events.event.publish`, `events.subscription.manage` | the outbox relay; Pulse, account and block subscriptions created at boot |
+
+A space's chat room is attached with the signed-in person's own Network token (no service grant).
 
 ### Per-actor limits
 
@@ -616,17 +654,53 @@ reads); then every statement the previous release runs must still prepare after 
 (and migrated) a database the previous one created. After each deploy, record the release now in
 production as the next N-1 and commit `test/fixtures/n-1/`.
 
+## Acceptance
+
+`npm test` runs every `test/*.test.js` with mock Live, Network and Media and a real RS256 key, no
+network. What they prove, among others: the paste API as the browser clients use it and the import
+(`pastes-api`, `import`); comment threads, the forum and its server-rendered pages (`comments`, `forum`,
+`forum-ssr`, `ssr`); members-only gates that fail closed (`members-only`); private things stay private on
+every read path and nobody acts on someone else's ids (`security-private`, `security-idor`); SSRF,
+secrets, open redirects (`security-ssrf`, `security-secrets`, `open-redirect`); Pulse and the Events
+consumer (`pulse`, `pulse-consumer`, `events`); revocation, blocks, account export and deletion
+(`revocation`, `blocks`, `account-data`); the Discord relay (`relay*`); per-actor limits
+(`actor-limits`); graceful shutdown (`shutdown`); and the previous release against this one (`n-1`).
+
+## Security
+
+Reporting a vulnerability: [SECURITY.md](SECURITY.md). The rules the code keeps:
+
+- **Auth.** Browsers use Network JWTs (Bearer or `ov_token`); services use tokens for audience
+  `openvibe.community` with the route's capability, and name the person in `X-OV-Subject`. Identity is
+  never read from bodies or queries; a token issued before a person's `token_valid_after` is refused.
+- **Private data.** Unlisted and private pastes get unguessable slugs, burn-after-read pastes are read
+  once, members-only spaces and threads fail closed when VIP is unreachable, screenshots lose their
+  EXIF/XMP metadata, and view counts use hashed visitor ids (`VIEW_HASH_SECRET`).
+- **Egress.** Community calls only its configured Network, Live, Media, VIP, Chat and Events hosts,
+  and Discord (webhooks named by variable, the gateway) when the relay is on.
+- **Secrets.** `OV_OAUTH_CLIENT_SECRET`, `COMMUNITY_EVENTS_SECRET`, `VIEW_HASH_SECRET`,
+  `DISCORD_BOT_TOKEN` and the Discord webhook variables live in `/etc/openvibe/community.env` (0600), by
+  name only; a relay mapping stores a variable's name, never the URL.
+
 ## Deploy
 
 ```
 /opt/openvibe.community                     # git checkout, `npm ci --omit=dev`
 /etc/openvibe/community.env                 # secrets (0600)
-deploy/systemd/openvibe-community.service   # → /etc/systemd/system/, User=openvibe, port 4200
+deploy/systemd/openvibe-community.service   # → /etc/systemd/system/, User=ubuntu, port 4200
 deploy/nginx/openvibe.community.conf        # → /etc/nginx/sites-available/, TLS from
                                             #   /etc/letsencrypt/live/openvibe.community/
 ```
 
-Update: `git pull && npm ci --omit=dev && systemctl restart openvibe-community`. The schema
+Production deploys with `sudo ovhost deploy community` on the host (strategy `git-checkout`: fetch,
+fast-forward `/opt/openvibe.community`, install on a lockfile change, restart, wait for `/api/ready`).
+The unit is `openvibe-community.service` on `127.0.0.1:4200`, the env file `/etc/openvibe/community.env`. After a
+deploy, record the N-1 fixtures (`npm run n-1:record`).
+Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
+restart; afterwards `sudo ovhost rollback community --to <sha>`. Nothing blocks a rollback: the schema
+code only adds tables and columns.
+
+The schema
 is created idempotently at boot in every mode (comments, the forum, Pulse and the relay live
 in Community's database whichever service owns pastes; the three seed spaces are inserted
 once). The database lives in the unit's `StateDirectory` (`/var/lib/openvibe-community`), so
@@ -685,7 +759,7 @@ server/
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
-(openvibe-shared is the pinned OpenVibe.Shared v1.5.1 release, installed by npm)
+(openvibe-shared is the pinned OpenVibe.Shared v1.22.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
 scripts/import-pastes.js  Media paste bundle importer
 scripts/import-live-comments.js  Live's VOD/clip comments → Community threads (dry run by default)
