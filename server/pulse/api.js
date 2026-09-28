@@ -16,17 +16,21 @@ const { run, serviceCap, jsonBody } = require('../http/v1');
 
 const WRITE = 'community.pulse.write';
 
-function createPulseApi({ pulse, viewers }) {
+function createPulseApi({ pulse, viewers, limits }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
+    // Per-actor limits (server/actor-limits.js): the feed takes the defaults. A service posts or retracts
+    // an item when something public happens on its site (most arrive through Events instead): one a second.
+    router.use(limits.reads('community.pulse.read'));
+    const ingest = limits('community.pulse.write', { minute: 60, hour: 1200 });
 
     const servicesOnly = (req, res, next) => (req.viewer.kind === 'service' ? next()
         : contracts.http.sendProblem(res, 403, 'capability.denied', { detail: `a service token with ${WRITE} is required`, ctx: req.ov }));
 
     router.get('/', run((req) => pulse.list(req.query)));
-    router.post('/items', servicesOnly, serviceCap(WRITE), jsonBody, run((req) => pulse.ingest(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
-    router.delete('/items/:service/:type/:id', servicesOnly, serviceCap(WRITE), run((req) => pulse.retract(req.viewer, req.params.service, req.params.type, req.params.id)));
+    router.post('/items', servicesOnly, serviceCap(WRITE), ingest, jsonBody, run((req) => pulse.ingest(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
+    router.delete('/items/:service/:type/:id', servicesOnly, serviceCap(WRITE), ingest, run((req) => pulse.retract(req.viewer, req.params.service, req.params.type, req.params.id)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

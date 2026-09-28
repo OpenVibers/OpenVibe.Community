@@ -38,10 +38,16 @@ const { hasCap } = require('../identity/viewer');
 
 const PASTE_CAPS = ['community.paste.create', 'community.paste.write', 'community.paste.moderate'];
 
-function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = null }) {
+function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = null, limits }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
+    // Per-actor limits (server/actor-limits.js): reads take the defaults. The paste service's own limits
+    // (a person's cooldown and daily cap, comment limits) keep deciding for people; these cap requests,
+    // refused ones included, and the writes without a content limit. Live's AI pastes count as svc:live.
+    router.use(limits.reads('community.paste.read'));
+    const staffWrite = limits('community.paste.admin', { minute: 10, hour: 100 });   // bulk and fork cleanups
+    const react = limits('community.paste.react', { minute: 120, hour: 1200 });       // likes and copy counts
 
     const json = express.json({ limit: '1mb' });
     const jsonErrors = (err, _req, res, next) => (err ? res.status(400).json({ error: 'Malformed JSON body' }) : next());
@@ -106,41 +112,43 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
         ? contracts.http.sendProblem(res, 403, 'capability.denied', { detail: 'needs_ai is for services holding community.paste.moderate', ctx: req.ov })
         : next()), run((req) => service.list(req.viewer, req.query)));
 
-    router.post('/', guard('community.paste.create'), anonWriteLimiter, body,
+    router.post('/', guard('community.paste.create'), limits('community.paste.create', { minute: 30, hour: 600 }), anonWriteLimiter, body,
         run((req) => (req.file ? service.createScreenshot(req.viewer, req.body || {}, req.file, ctx(req)) : service.createText(req.viewer, req.body || {})), 201));
 
     router.get('/config', anyCap, run((req) => service.config(req.viewer)));
 
     router.get('/admin/stats', staffOnly, run(() => service.stats()));
     router.get('/admin/forks', staffOnly, run((req) => service.forks(req.query)));
-    router.delete('/admin/forks', staffOnly, run((req) => service.deleteForks(req.viewer)));
-    router.post('/bulk', staffOnly, json, jsonErrors, run((req) => service.bulk(req.body || {}, req.viewer)));
+    router.delete('/admin/forks', staffOnly, staffWrite, run((req) => service.deleteForks(req.viewer)));
+    router.post('/bulk', staffOnly, staffWrite, json, jsonErrors, run((req) => service.bulk(req.body || {}, req.viewer)));
 
-    router.post('/screenshot', guard('community.paste.create'), anonWriteLimiter, withFile,
+    // An image paste stores its file in OpenVibe.Media.
+    router.post('/screenshot', guard('community.paste.create'), limits('community.paste.screenshot', { minute: 20, hour: 300 }), anonWriteLimiter, withFile,
         run((req) => service.createScreenshot(req.viewer, req.body || {}, req.file, ctx(req)), 201));
 
     router.get('/by-user/:username', anyCap, run((req) => service.byUser(req.viewer, req.params.username, req.query)));
 
     // ── one paste ────────────────────────────────────────────
     router.get('/:slug', anyCap, run((req) => service.get(req.viewer, slug(req), { ...ctx(req), noView: String(req.query.no_view || '') === '1' })));
-    router.put('/:slug', guard('community.paste.write'), json, jsonErrors, run((req) => service.update(req.viewer, slug(req), req.body || {})));
-    router.delete('/:slug', guard('community.paste.write'), run((req) => service.remove(req.viewer, slug(req))));
+    router.put('/:slug', guard('community.paste.write'), limits('community.paste.edit', { minute: 30, hour: 300 }), json, jsonErrors, run((req) => service.update(req.viewer, slug(req), req.body || {})));
+    router.delete('/:slug', guard('community.paste.write'), limits('community.paste.delete', { minute: 60, hour: 600 }), run((req) => service.remove(req.viewer, slug(req))));
 
-    router.post('/:slug/censor', staffOnly, withFile, run((req) => service.censor(req.viewer, slug(req), req.file)));
-    router.post('/:slug/ai', serviceModerator, json, jsonErrors, run((req) => service.setAi(req.viewer, slug(req), req.body || {})));
+    router.post('/:slug/censor', staffOnly, limits('community.paste.censor', { minute: 20, hour: 200 }), withFile, run((req) => service.censor(req.viewer, slug(req), req.file)));
+    // Live's AI pass writes one paste's summary at a time, behind a model call.
+    router.post('/:slug/ai', serviceModerator, limits('community.paste.ai', { minute: 60, hour: 1200 }), json, jsonErrors, run((req) => service.setAi(req.viewer, slug(req), req.body || {})));
 
     router.get('/:slug/raw', (req, res) => res.redirect(302, `/p/${encodeURIComponent(slug(req))}/raw`));
     router.get('/:slug/versions', anyCap, run((req) => service.versions(req.viewer, slug(req))));
 
-    router.post('/:slug/fork', guard('community.paste.write'), anonWriteLimiter, json, jsonErrors, run((req) => service.fork(req.viewer, slug(req)), 201));
-    router.post('/:slug/like', guard('community.paste.write'), run((req) => service.like(req.viewer, slug(req))));
-    router.post('/:slug/copy', guard('community.paste.write'), run((req) => service.copy(req.viewer, slug(req))));
+    router.post('/:slug/fork', guard('community.paste.write'), limits('community.paste.fork', { minute: 20, hour: 300 }), anonWriteLimiter, json, jsonErrors, run((req) => service.fork(req.viewer, slug(req)), 201));
+    router.post('/:slug/like', guard('community.paste.write'), react, run((req) => service.like(req.viewer, slug(req))));
+    router.post('/:slug/copy', guard('community.paste.write'), react, run((req) => service.copy(req.viewer, slug(req))));
 
     router.get('/:slug/comments', anyCap, run((req) => service.comments(req.viewer, slug(req), req.query)));
-    router.post('/:slug/comments', guard('community.paste.write'), anonWriteLimiter, json, jsonErrors,
+    router.post('/:slug/comments', guard('community.paste.write'), limits('community.paste.comment', { minute: 20, hour: 300 }), anonWriteLimiter, json, jsonErrors,
         run((req) => service.addComment(req.viewer, slug(req), req.body || {}, ctx(req)), 201));
     // Deleting someone else's comment is moderation: X-OV-Staff (with community.paste.moderate) for services.
-    router.delete('/:slug/comments/:commentId', guard('community.paste.write'), run((req) => service.deleteComment(req.viewer, slug(req), req.params.commentId)));
+    router.delete('/:slug/comments/:commentId', guard('community.paste.write'), limits('community.paste.comment_delete', { minute: 60, hour: 600 }), run((req) => service.deleteComment(req.viewer, slug(req), req.params.commentId)));
 
     // Avatars belong to the Network account; Live's proxy set a Live-local avatar here.
     router.post('/:slug/set-avatar', (_req, res) => res.status(501).json({ error: 'Set your picture on openvibe.network' }));

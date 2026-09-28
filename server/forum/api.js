@@ -46,17 +46,23 @@ const { run, serviceCap, serviceAnyCap, jsonBody } = require('../http/v1');
 const POST = 'community.post.create';
 const MOD = 'community.comment.moderate';
 
-function createSpacesApi({ forum, viewers }) {
+function createSpacesApi({ forum, viewers, limits }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
     const write = serviceCap(POST);
     const writeOrMod = serviceAnyCap([POST, MOD]);
     const p = (req) => req.params;
+    // Per-actor limits (server/actor-limits.js): reads take the defaults. The person limits in service.js
+    // (threads 3 a minute and a daily cap, replies 6, uploads 12, votes 60) keep deciding for people;
+    // these cap requests, refused ones included, and every write that has no content limit.
+    router.use(limits.reads('community.forum.read'));
+    const configure = limits('community.space.configure', { minute: 30, hour: 300 });   // moderators' settings
+    const editThread = limits('community.thread.edit', { minute: 30, hour: 300 });
 
     router.get('/', run((req) => forum.listSpaces(req.viewer)));
-    router.post('/', serviceCap(MOD), jsonBody, run((req) => forum.createSpace(req.viewer, req.body || {}), 201));
-    router.put('/:space/settings', serviceCap(MOD), jsonBody, run((req) => forum.updateSpaceSettings(req.viewer, p(req).space, req.body || {})));
+    router.post('/', serviceCap(MOD), limits('community.space.create', { minute: 10, hour: 60 }), jsonBody, run((req) => forum.createSpace(req.viewer, req.body || {}), 201));
+    router.put('/:space/settings', serviceCap(MOD), configure, jsonBody, run((req) => forum.updateSpaceSettings(req.viewer, p(req).space, req.body || {})));
     router.get('/:space', run((req) => forum.space(req.viewer, p(req).space)));
     router.get('/:space/threads', run((req) => forum.listThreads(req.viewer, p(req).space, req.query)));
     router.get('/:space/categories', run((req) => forum.categories(req.viewer, p(req).space)));
@@ -65,37 +71,40 @@ function createSpacesApi({ forum, viewers }) {
     const withFile = (req, res, next) => one(req, res, (err) => (err
         ? contracts.http.sendProblem(res, err.code === 'LIMIT_FILE_SIZE' ? 413 : 400, err.code === 'LIMIT_FILE_SIZE' ? 'attachments.too_large' : 'attachments.invalid', { detail: err.code === 'LIMIT_FILE_SIZE' ? 'Images are limited to 8 MB' : 'Send one image as multipart field `file`', ctx: req.ov })
         : next()));
-    router.post('/:space/attachments', write, withFile, run((req) => forum.uploadAttachment(req.viewer, p(req).space, req.file), 201));
-    router.put('/:space/categories/:category', serviceCap(MOD), jsonBody, run((req) => forum.putCategory(req.viewer, p(req).space, p(req).category, req.body || {})));
-    router.delete('/:space/categories/:category', serviceCap(MOD), run((req) => forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
-    router.put('/:space/threads/:slug/category', writeOrMod, jsonBody, run((req) => forum.setThreadCategory(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/threads/:slug/status', serviceCap(MOD), jsonBody, run((req) => forum.setThreadStatus(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.post('/:space/threads/:slug/crosspost', write, jsonBody, run((req) => forum.crosspost(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
-    router.post('/:space/threads', write, jsonBody, run((req) => forum.createThread(req.viewer, p(req).space, req.body || {}), 201));
+    // An upload is stored in OpenVibe.Media: 20 a minute, above the 12 a person may keep.
+    router.post('/:space/attachments', write, limits('community.attachment.upload', { minute: 20, hour: 200 }), withFile, run((req) => forum.uploadAttachment(req.viewer, p(req).space, req.file), 201));
+    router.put('/:space/categories/:category', serviceCap(MOD), configure, jsonBody, run((req) => forum.putCategory(req.viewer, p(req).space, p(req).category, req.body || {})));
+    router.delete('/:space/categories/:category', serviceCap(MOD), configure, run((req) => forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
+    router.put('/:space/threads/:slug/category', writeOrMod, editThread, jsonBody, run((req) => forum.setThreadCategory(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/status', serviceCap(MOD), configure, jsonBody, run((req) => forum.setThreadStatus(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.post('/:space/threads/:slug/crosspost', write, limits('community.thread.crosspost', { minute: 10, hour: 60 }), jsonBody, run((req) => forum.crosspost(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
+    router.post('/:space/threads', write, limits('community.thread.create', { minute: 10, hour: 60 }), jsonBody, run((req) => forum.createThread(req.viewer, p(req).space, req.body || {}), 201));
     router.get('/:space/threads/:slug', run((req) => forum.getThread(req.viewer, p(req).space, p(req).slug, req.query)));
-    router.delete('/:space/threads/:slug', writeOrMod, run((req) => forum.deleteThread(req.viewer, p(req).space, p(req).slug)));
-    router.post('/:space/threads/:slug/posts', write, jsonBody, run((req) => forum.reply(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
-    router.post('/:space/threads/:slug/votes', write, jsonBody, run((req) => forum.voteThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/threads/:slug/state', serviceCap(MOD), jsonBody, run((req) => forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/threads/:slug/members-only', writeOrMod, jsonBody, run((req) => forum.setThreadMembersOnly(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/members-only', serviceCap(MOD), jsonBody, run((req) => forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
+    router.delete('/:space/threads/:slug', writeOrMod, editThread, run((req) => forum.deleteThread(req.viewer, p(req).space, p(req).slug)));
+    router.post('/:space/threads/:slug/posts', write, limits('community.post.create', { minute: 20, hour: 300 }), jsonBody, run((req) => forum.reply(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
+    router.post('/:space/threads/:slug/votes', write, limits('community.thread.vote', { minute: 120, hour: 1200 }), jsonBody, run((req) => forum.voteThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/state', serviceCap(MOD), configure, jsonBody, run((req) => forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/members-only', writeOrMod, editThread, jsonBody, run((req) => forum.setThreadMembersOnly(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/members-only', serviceCap(MOD), configure, jsonBody, run((req) => forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
     // A chat room (OpenVibe.Chat): people attach with their own token; moderator services may only detach.
-    router.put('/:space/chat-room', jsonBody, run((req) => forum.attachChatRoom(req.viewer, p(req).space, req.body || {}), (out) => (out.created ? 201 : 200)));
-    router.delete('/:space/chat-room', serviceCap(MOD), run((req) => forum.detachChatRoom(req.viewer, p(req).space)));
+    router.put('/:space/chat-room', configure, jsonBody, run((req) => forum.attachChatRoom(req.viewer, p(req).space, req.body || {}), (out) => (out.created ? 201 : 200)));
+    router.delete('/:space/chat-room', serviceCap(MOD), configure, run((req) => forum.detachChatRoom(req.viewer, p(req).space)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }
 
-function createPostsApi({ forum, viewers }) {
+function createPostsApi({ forum, viewers, limits }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
     const writeOrMod = serviceAnyCap([POST, MOD]);
+    // Per-actor limits (server/actor-limits.js), as on /api/v1/spaces.
+    router.use(limits.reads('community.forum.read'));
 
-    router.put('/:id', writeOrMod, jsonBody, run((req) => forum.editPost(req.viewer, req.params.id, req.body || {})));
-    router.post('/:id/reactions', serviceCap(POST), jsonBody, run((req) => forum.react(req.viewer, req.params.id, req.body || {})));
-    router.delete('/:id', writeOrMod, run((req) => forum.deletePost(req.viewer, req.params.id)));
+    router.put('/:id', writeOrMod, limits('community.post.edit', { minute: 30, hour: 300 }), jsonBody, run((req) => forum.editPost(req.viewer, req.params.id, req.body || {})));
+    router.post('/:id/reactions', serviceCap(POST), limits('community.post.react', { minute: 120, hour: 1200 }), jsonBody, run((req) => forum.react(req.viewer, req.params.id, req.body || {})));
+    router.delete('/:id', writeOrMod, limits('community.post.delete', { minute: 60, hour: 600 }), run((req) => forum.deletePost(req.viewer, req.params.id)));
     router.get('/:id/versions', writeOrMod, run((req) => forum.postVersions(req.viewer, req.params.id)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
@@ -103,12 +112,14 @@ function createPostsApi({ forum, viewers }) {
 }
 
 /** /api/v1/space-groups — the board index's groups: GET (everyone), PUT /:group { name, description?, position? } (moderators). */
-function createGroupsApi({ forum, viewers }) {
+function createGroupsApi({ forum, viewers, limits }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
+    // Per-actor limits (server/actor-limits.js), as on /api/v1/spaces.
+    router.use(limits.reads('community.forum.read'));
     router.get('/', run(async (req) => ({ groups: (await forum.listSpaces(req.viewer)).groups.map(({ spaces, ...g }) => ({ ...g, spaces: spaces.map((sp) => sp.slug) })) })));
-    router.put('/:group', serviceCap(MOD), jsonBody, run((req) => forum.putGroup(req.viewer, req.params.group, req.body || {})));
+    router.put('/:group', serviceCap(MOD), limits('community.space.configure', { minute: 30, hour: 300 }), jsonBody, run((req) => forum.putGroup(req.viewer, req.params.group, req.body || {})));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }

@@ -26,7 +26,7 @@ const { discussionModerator } = require('../identity/capabilities');
 const forumStore = require('../forum/store');
 const { SNOWFLAKE, DELIVERY_STATUSES } = require('./discord');
 
-function createRelayApi({ relay, db, viewers, inbound = null }) {
+function createRelayApi({ relay, db, viewers, inbound = null, limits }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
@@ -37,6 +37,10 @@ function createRelayApi({ relay, db, viewers, inbound = null }) {
         if (v.kind === 'anonymous') return contracts.http.sendProblem(res, 401, 'auth.required', { detail: 'Sign in as staff', ctx: req.ov });
         return contracts.http.sendProblem(res, 403, 'capability.denied', { detail: 'Relay administration is for staff', ctx: req.ov });
     });
+    // Per-actor limits (server/actor-limits.js), after the staff check: reads take the defaults, and
+    // retries, drops, dismissals and mapping changes are a person's clicks, 30 a minute at most.
+    router.use(limits.reads('community.relay.read'));
+    const manage = limits('community.relay.manage', { minute: 30, hour: 300 });
 
     const idOf = (req) => (/^\d{1,15}$/.test(req.params.id) ? Number(req.params.id) : fail(404, 'route.not_found', 'Not found'));
     /** Discord ids in a mapping body: digits, or null/'' to clear; undefined when absent. */
@@ -56,23 +60,23 @@ function createRelayApi({ relay, db, viewers, inbound = null }) {
         const action = ['create', 'edit', 'delete'].includes(req.query.action) ? req.query.action : null;
         return { enabled: relay.enabled, deliveries: relay.listDeliveries({ status, action, limit: intIn(req.query.limit, 50, 1, 200) }) };
     }));
-    router.post('/deliveries/:id/retry', run((req) => {
+    router.post('/deliveries/:id/retry', manage, run((req) => {
         if (!relay.retry(idOf(req))) fail(404, 'relay.delivery_not_found', 'No such delivery waiting to be sent');
         return { ok: true };
     }));
-    router.post('/deliveries/:id/drop', run((req) => {
+    router.post('/deliveries/:id/drop', manage, run((req) => {
         if (!relay.drop(idOf(req))) fail(404, 'relay.delivery_not_found', 'No such pending or failed delivery');
         return { ok: true };
     }));
     router.get('/inbound', run((req) => ({
         enabled: !!inbound, failures: inbound ? inbound.listFailures({ all: req.query.all === '1', limit: intIn(req.query.limit, 50, 1, 200) }) : [],
     })));
-    router.post('/inbound/:id/dismiss', run((req) => {
+    router.post('/inbound/:id/dismiss', manage, run((req) => {
         if (!inbound || !inbound.dismiss(idOf(req))) fail(404, 'relay.inbound_not_found', 'No such inbound failure to dismiss');
         return { ok: true };
     }));
     router.get('/mappings', run(() => ({ enabled: relay.enabled, mappings: relay.listMappings() })));
-    router.post('/mappings', jsonBody, run((req) => {
+    router.post('/mappings', manage, jsonBody, run((req) => {
         const b = req.body || {};
         const space = forumStore.getSpace(db, String(b.space || ''));
         if (!space) fail(400, 'relay.invalid_space', 'Unknown space');
@@ -82,7 +86,7 @@ function createRelayApi({ relay, db, viewers, inbound = null }) {
         const ids = discordIds(b);
         return { mapping: relay.addMapping({ space_id: space.id, webhook_url_ref: ref, enabled: b.enabled !== false, ...ids, inbound: b.inbound === undefined ? undefined : !!b.inbound }) };
     }, 201));
-    router.put('/mappings/:id', jsonBody, run((req) => {
+    router.put('/mappings/:id', manage, jsonBody, run((req) => {
         const b = req.body || {};
         const fields = { ...discordIds(b) };
         if (b.enabled !== undefined) fields.enabled = !!b.enabled;

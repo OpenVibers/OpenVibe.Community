@@ -59,6 +59,7 @@ const { createRelayEventsWorker } = require('./relay/events-worker');
 const { createDiscordGateway } = require('./relay/discord-gateway');
 const { createDiscordInbound } = require('./relay/inbound');
 const { createRelayApi } = require('./relay/api');
+const { createActorLimits } = require('./actor-limits');
 const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
 
@@ -190,9 +191,13 @@ function createApp(opts = {}) {
         },
     });
 
+    // Per-actor limits for every API router below (server/actor-limits.js), after each one resolves its
+    // viewer; the per-address /api/ limit stays in front. opts.actorLimits: { limits, now } (tests).
+    const limits = createActorLimits({ registry: metrics.registry, ...(opts.actorLimits || {}) });
+
     // ── /api/pastes (before any body parser: in 'live' mode bodies stream through to Live) ──
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
-    if (community) app.use('/api/pastes', require('./pastes/api').createPastesApi({ service: app.locals.pastes, viewers, anonWriteLimiter }));
+    if (community) app.use('/api/pastes', require('./pastes/api').createPastesApi({ service: app.locals.pastes, viewers, anonWriteLimiter, limits }));
     else app.use('/api/pastes', createPastesProxy({ liveUrl: opts.liveUrl }));
 
     // ── /api/v1: comments, forum, Pulse, relay admin ─────────
@@ -203,16 +208,18 @@ function createApp(opts = {}) {
         message: { error: 'Too many requests — try again later' },
     });
     const cors = v1.cors(config.apiCorsOrigins);
-    app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter }));
-    app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers }));
+    app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter, limits }));
+    app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers, limits }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
     const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, vipCache: vip && vip.cache, revocations, accountSend: config.oauth && config.oauth.clientSecret ? require('./identity/account-data').createSender({ config }) : null, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
     app.locals.pulseConsumer = pulseConsumer;
+    // Never per-actor limited: Events pushes at its own pace (a 429 only makes it retry and fall behind),
+    // and these deliveries carry token cutoffs and account deletions.
     app.use('/internal/events', pulseConsumer.router);
-    app.use('/api/v1/spaces', createSpacesApi({ forum, viewers }));
-    app.use('/api/v1/posts', createPostsApi({ forum, viewers }));
-    app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers }));
-    app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound }));
+    app.use('/api/v1/spaces', createSpacesApi({ forum, viewers, limits }));
+    app.use('/api/v1/posts', createPostsApi({ forum, viewers, limits }));
+    app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers, limits }));
+    app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports (a same-origin

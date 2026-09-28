@@ -18,6 +18,13 @@ module.exports = {
     // Hops in front of Node that set X-Forwarded-For: Cloudflare → nginx → Node.
     trustProxy: process.env.TRUST_PROXY != null ? Number(process.env.TRUST_PROXY) : 2,
 
+    // Per-actor limits at the API routes (server/actor-limits.js, roadmap WS-R task 4): the reads one
+    // caller may make to one API per minute and per hour. Writes set their own numbers per route.
+    limits: {
+        minute: parseInt(process.env.COMMUNITY_LIMITS_MINUTE, 10) || 120,
+        hour: parseInt(process.env.COMMUNITY_LIMITS_HOUR, 10) || 3000,
+    },
+
     // Identity provider — OpenVibe.Network (OAuth2 authorization server + JWKS)
     networkUrl: (process.env.OV_NETWORK_URL || 'https://openvibe.network').replace(/\/$/, ''),
     networkInternalUrl: (process.env.OV_NETWORK_INTERNAL_URL || 'http://127.0.0.1:4000').replace(/\/$/, ''),

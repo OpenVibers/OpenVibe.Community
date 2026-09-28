@@ -524,6 +524,34 @@ through the library's `capabilities.check`. `server/identity/capabilities.js` st
 the installed contracts do not know locally, with the library's own matching rule (the exact id
 or a `prefix.*` grant).
 
+### Per-actor limits
+
+Every API router also limits who calls it, once the viewer is resolved and before the route does any
+work (`server/actor-limits.js`, openvibe-sdk/limits, roadmap WS-R task 4). The per-address `/api/`
+limit and the per-person content limits (cooldowns, writes a minute, daily caps) stay. Counted: a
+person as `user:usr_…` (their own token, or named by a service or app in `X-OV-Subject`); a
+first-party service relaying a signed-out visitor by the address it forwards; a service or app acting
+as itself (moderation, AI output, Pulse) by its principal; a signed-out browser by address. A
+first-party service reading for itself is not counted on reads. Past a limit: `429` problem+json
+`rate_limited` with `Retry-After`, one `[Limits]` log line and `community_rate_limited_total{limit,window}`.
+
+| Routes | Per caller |
+| --- | --- |
+| Reads of each API (pastes, comments, forum, Pulse, relay) | `COMMUNITY_LIMITS_MINUTE` / `COMMUNITY_LIMITS_HOUR` (120 a minute, 3000 an hour) |
+| Comment, paste comment and reply create | 20 / 300 |
+| Thread create, crosspost; space create | 10 / 60 |
+| Paste create 30 / 600; screenshot 20 / 300; fork 20 / 300; AI summary 60 / 1200 | as listed |
+| Edits (comments, posts, pastes, thread category and members-only) | 30 / 300 |
+| Deletes and moderation (visibility, comment, post, paste deletes) | 60 / 600 |
+| Votes, reactions, likes and copies | 120 / 1200 |
+| Space settings, categories, status, state, groups, chat room; relay changes | 30 / 300 |
+| Attachment upload 20 / 200; paste censor 20 / 200; bulk and fork cleanups 10 / 100 | as listed |
+| Thread resolve 60 / 1200; Pulse item post and retract 60 / 1200 | as listed |
+
+Never limited: `/api/health`, `/api/ready`, `/release.json`, `/metrics` and the signed Events
+deliveries at `/internal/events` (they carry token cutoffs and account deletions). Pages keep their
+per-address form limits. `test/actor-limits.test.js`.
+
 ## SEO
 
 Every page carries a title, description, canonical, robots, Open Graph + Twitter card and
