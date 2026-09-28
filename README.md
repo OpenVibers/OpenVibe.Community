@@ -35,7 +35,7 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
 - OpenVibe.Live only when `PASTES_AUTHORITY=live` (the rollback mode), and for old VOD/clip comment imports
 - `openvibe-contracts` v0.71.0, `openvibe-sdk` v0.12.0 (events outbox, per-actor limits),
-  `openvibe-shared` v1.22.0, pinned by release tarball
+  `openvibe-shared` v1.25.0, pinned by release tarball
 
 ## How it fits the network
 
@@ -759,7 +759,7 @@ server/
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
-(openvibe-shared is the pinned OpenVibe.Shared v1.22.0 release, installed by npm)
+(openvibe-shared is the pinned OpenVibe.Shared v1.25.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
 scripts/import-pastes.js  Media paste bundle importer
 scripts/import-live-comments.js  Live's VOD/clip comments → Community threads (dry run by default)
