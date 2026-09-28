@@ -68,7 +68,7 @@ function sinceParam(value) {
 function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
     // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
-    const tell = (fn) => { if (!pulse) return; try { fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
+    const tell = async (fn) => { if (!pulse) return; try { await fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
     const visitorSecret = process.env.VIEW_HASH_SECRET
         || crypto.createHash('sha256').update(`community-views:${(config.oauth && config.oauth.clientSecret) || crypto.randomBytes(16).toString('hex')}`).digest('hex');
 
@@ -86,8 +86,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
      * A paste the viewer may see, or 404: private ones look exactly like missing ones to everyone
      * but their owner and staff — for reads, and for edits/deletes too (no 403 that confirms a slug).
      */
-    function visible(v, slug) {
-        const p = store.getBySlug(db, String(slug));
+    async function visible(v, slug) {
+        const p = await store.getBySlug(db, String(slug));
         if (!p || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Paste not found');
         return p;
     }
@@ -153,8 +153,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     }
 
     async function projectionsFor(subjects) {
-        if (!network) return store.getProjections(db, subjects);
-        try { return await network.projections(subjects); } catch { return store.getProjections(db, subjects); }
+        if (!network) return await store.getProjections(db, subjects);
+        try { return await network.projections(subjects); } catch { return await store.getProjections(db, subjects); }
     }
 
     async function shapeMany(rows, v, { preview = false } = {}) {
@@ -179,16 +179,16 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     }
 
     // ── rate limits (acting persons) ─────────────────────────
-    function pasteRateCheck(v) {
+    async function pasteRateCheck(v) {
         if (!limited(v)) return;
         if (L.cooldownSeconds > 0) {
-            const elapsed = (Date.now() - store.lastPasteTime(db, v.subject)) / 1000;
+            const elapsed = (Date.now() - await store.lastPasteTime(db, v.subject)) / 1000;
             if (elapsed < L.cooldownSeconds) {
                 const wait = Math.ceil(L.cooldownSeconds - elapsed);
                 fail(429, `Please wait ${wait}s before creating another paste`, { cooldown: wait });
             }
         }
-        if (L.maxPerUserPerDay > 0 && store.countOwnerSince(db, v.subject, '-1 day') >= L.maxPerUserPerDay) {
+        if (L.maxPerUserPerDay > 0 && await store.countOwnerSince(db, v.subject, '-1 day') >= L.maxPerUserPerDay) {
             fail(429, `Daily paste limit reached (${L.maxPerUserPerDay}/day)`);
         }
     }
@@ -220,25 +220,25 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         b.n += 1;
         return b.n > L.viewEventsPerMinPerIp;
     }
-    const sweep = setInterval(() => {
+    const sweep = setInterval(async () => {
         const now = Date.now();
         for (const [k, b] of ipBudget) if (now - b.start > 120_000) ipBudget.delete(k);
         for (const [k, l] of recentComments) if (!l.length || now - l[0].at > 120_000) recentComments.delete(k);
-        try { store.pruneVisits(db, 30); } catch { /* db closed in tests */ }
+        try { await store.pruneVisits(db, 30); } catch { /* db closed in tests */ }
     }, 10 * 60_000);
     if (sweep.unref) sweep.unref();
 
-    function countView(v, p, { ip, userAgent } = {}) {
+    async function countView(v, p, { ip, userAgent } = {}) {
         if (BOT_UA.test(String(userAgent || ''))) return;
         if (overBudget(ip || 'unknown')) return;
         const visitor = v && v.subject ? `u:${v.subject}` : `ip:${crypto.createHmac('sha256', visitorSecret).update(String(ip || 'unknown')).digest('hex').slice(0, 32)}`;
-        const r = store.recordVisit(db, p.id, visitor, L.viewCooldownSec);
+        const r = await store.recordVisit(db, p.id, visitor, L.viewCooldownSec);
         p.views = r.views; p.unique_views = r.unique_views;
     }
 
     /** Burn-after-read: the paste is gone the moment this read makes it spent. */
-    function burn(p) {
-        store.softDelete(db, p.id);
+    async function burn(p) {
+        await store.softDelete(db, p.id);
         fail(410, 'This paste has been burned after reading.');
     }
 
@@ -277,16 +277,16 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
      * unlisted or private paste always gets a secret slug: its slug is its only protection, and a
      * service forwarding a person's request (Live's /api/pastes) passes their body through as-is.
      */
-    function slugFor(v, body, visibility) {
-        if (!isService(v) || body.slug == null || body.slug === '' || visibility !== 'public') return store.generateSlug(db, { secret: visibility !== 'public' });
+    async function slugFor(v, body, visibility) {
+        if (!isService(v) || body.slug == null || body.slug === '' || visibility !== 'public') return await store.generateSlug(db, { secret: visibility !== 'public' });
         const slug = String(body.slug);
         if (!SERVICE_SLUG_RE.test(slug) || RESERVED_SLUGS.has(slug.toLowerCase())) fail(400, 'Invalid slug');
-        if (db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(slug)) fail(409, 'Slug already taken');
+        if (await db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(slug)) fail(409, 'Slug already taken');
         return slug;
     }
 
-    function created(row, extra = {}) {
-        tell((p) => p.pasteCreated(row));
+    async function created(row, extra = {}) {
+        await tell((p) => p.pasteCreated(row));
         return { id: row.id, slug: row.slug, url: `/p/${row.slug}`, ...extra };
     }
 
@@ -308,79 +308,79 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             // ?username= lists one person's pastes (Live resolved it to its own id; we go through
             // the projection cache). Their own unlisted/private ones only for them (or staff).
             if (q.username && q.username !== 'all') {
-                const subject = store.subjectsByUsername(db, q.username)[0];
+                const subject = (await store.subjectsByUsername(db, q.username))[0];
                 if (!subject) return { pastes: [], total: 0, limit: 0, offset: 0, hasMore: false };
                 opts.ownerSubject = subject;
                 if (truthy(q.include_unlisted) && (v.subject === subject || isStaff(v))) opts.includeHidden = true;
             }
-            const { rows, total } = store.listPastes(db, opts);
+            const { rows, total } = await store.listPastes(db, opts);
             return { pastes: await shapeMany(rows, v, { preview: true }), total, limit, offset };
         },
 
         /** GET /api/pastes/by-user/:username */
         async byUser(v, username, q = {}) {
-            const subject = store.subjectsByUsername(db, username)[0];
+            const subject = (await store.subjectsByUsername(db, username))[0];
             if (!subject) fail(404, 'User not found');
             const limit = intIn(q.limit, 30, 1, 100);
             const includeHidden = v.subject === subject;
-            const { rows, total } = store.listPastes(db, { ownerSubject: subject, includeHidden, limit, offset: 0, sort: q.sort === 'oldest' ? 'oldest' : 'newest' });
-            const proj = store.getProjections(db, [subject]).get(subject);
+            const { rows, total } = await store.listPastes(db, { ownerSubject: subject, includeHidden, limit, offset: 0, sort: q.sort === 'oldest' ? 'oldest' : 'newest' });
+            const proj = (await store.getProjections(db, [subject])).get(subject);
             return { pastes: await shapeMany(rows, v, { preview: true }), total, username: (proj && proj.username) || String(username) };
         },
 
         /** GET /api/pastes/:slug — counts a page view unless noView; burns a spent burn-after-read paste. */
         async get(v, slug, ctx = {}) {
-            const p = visible(v, slug);
+            const p = await visible(v, slug);
             // ?no_view=1 skips view counting, never the burn: any read of a burn paste is the read.
             if ((!ctx.noView || p.burn_after_read) && !isOwner(v, p)) {
                 if (p.burn_after_read) {
-                    p.views = store.bumpViews(db, p.id);
-                    if (p.views > 1) burn(p);
+                    p.views = await store.bumpViews(db, p.id);
+                    if (p.views > 1) await burn(p);
                 } else {
-                    countView(v, p, ctx);
+                    await countView(v, p, ctx);
                 }
             }
-            const liked = v.subject ? store.hasLiked(db, p.id, v.subject) : false;
+            const liked = v.subject ? await store.hasLiked(db, p.id, v.subject) : false;
             return { paste: { ...(await shapeOne(p, v)), liked } };
         },
 
         /** GET /p/:slug/raw — plain text, Media's raw rules (a burn paste survives exactly one read). */
-        raw(v, slug, ctx = {}) {
-            const p = store.getBySlug(db, String(slug));
+        async raw(v, slug, ctx = {}) {
+            const p = await store.getBySlug(db, String(slug));
             if (p && p.type === 'screenshot' && (p.visibility !== 'private' || canSeeHidden(v, p))) return { redirect: `/p/${encodeURIComponent(p.slug)}/screenshot` };
             if (!p || p.type !== 'paste' || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Not found');
             if (!isOwner(v, p)) {
                 if (p.burn_after_read) {
-                    if (p.views > 0) burn(p);
-                    store.bumpViews(db, p.id);
+                    if (p.views > 0) await burn(p);
+                    await store.bumpViews(db, p.id);
                 } else {
-                    countView(v, p, ctx);
+                    await countView(v, p, ctx);
                 }
             }
             return { content: String(p.content || '') };
         },
 
         /** GET /p/:slug/screenshot target (the stored Media URL). For a burn-after-read screenshot it is a read (raw's rule). */
-        screenshotUrl(v, slug) {
-            const p = store.getBySlug(db, String(slug));
+        async screenshotUrl(v, slug) {
+            const p = await store.getBySlug(db, String(slug));
             if (!p || !p.screenshot_url || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Not found');
             if (p.burn_after_read && !isOwner(v, p)) {
-                if (p.views > 0) burn(p);
-                store.bumpViews(db, p.id);
+                if (p.views > 0) await burn(p);
+                await store.bumpViews(db, p.id);
             }
             return p.screenshot_url;
         },
 
         /** POST /api/pastes (text) */
         async createText(v, body = {}) {
-            pasteRateCheck(v);
+            await pasteRateCheck(v);
             const content = body.content;
             if (!content || typeof content !== 'string' || content.trim().length === 0) fail(400, 'Content is required');
             if (content.length > L.maxSizeKb * 1024) fail(400, `Paste too large (max ${L.maxSizeKb} KB)`);
             const metadata = serviceMetadata(v, body);
             const visibility = visibilityOf(body.visibility, !!v.subject);
-            const row = store.insertPaste(db, {
-                slug: slugFor(v, body, visibility),
+            const row = await store.insertPaste(db, {
+                slug: await slugFor(v, body, visibility),
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'paste',
@@ -394,18 +394,18 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
                 ...aiFields(v, body),
             });
-            return created(row, { paste: await shapeOne(row, v) });
+            return await created(row, { paste: await shapeOne(row, v) });
         },
 
         /** POST /api/pastes/screenshot (and multipart POST /api/pastes) */
         async createScreenshot(v, body = {}, file, ctx = {}) {
-            pasteRateCheck(v);
+            await pasteRateCheck(v);
             if (!file || !file.buffer) fail(400, 'No screenshot uploaded');
             if (!IMAGE_MIME.test(file.mimetype || '')) fail(400, 'Only PNG, JPEG, WebP, or GIF images allowed');
             if (file.buffer.length > L.screenshotMaxSizeMb * 1024 * 1024) fail(400, `File too large (max ${L.screenshotMaxSizeMb} MB)`);
             if (!media) fail(503, 'Media service unavailable');
             const visibility = visibilityOf(body.visibility, !!v.subject);
-            const slug = slugFor(v, body, visibility);
+            const slug = await slugFor(v, body, visibility);
             const extra = serviceMetadata(v, body);
             const bytes = stripImageMetadata(file.buffer, file.mimetype);
             let stored;
@@ -423,7 +423,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 size_bytes: bytes.length,
                 mime_type: file.mimetype,
             };
-            const row = store.insertPaste(db, {
+            const row = await store.insertPaste(db, {
                 slug,
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
@@ -440,13 +440,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
                 ...aiFields(v, body),
             });
-            return created(row, { paste: await shapeOne(row, v) });
+            return await created(row, { paste: await shapeOne(row, v) });
         },
 
         /** PUT /api/pastes/:slug — owner (or staff) only. */
         async update(v, slug, body = {}) {
             needIdentity(v);
-            const p = visible(v, slug);
+            const p = await visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
             const patch = {};
             if (body.title !== undefined) patch.title = store.sanitizeTitle(body.title);
@@ -460,49 +460,49 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (body.is_nsfw !== undefined) patch.is_nsfw = truthy(body.is_nsfw) ? 1 : 0;
             if (body.pinned !== undefined && isStaff(v)) patch.pinned = truthy(body.pinned) ? 1 : 0;
             if (!Object.keys(patch).length) fail(400, 'Nothing to update');
-            const row = db.transaction(() => {
-                const r = store.updatePaste(db, p.id, patch, v.subject || null);
+            const row = await db.tx(async () => {
+                const r = await store.updatePaste(db, p.id, patch, v.subject || null);
                 // Staff editing someone else's paste goes to the moderation audit log (ADR-022).
-                if (!isOwner(v, p) && isStaff(v)) events.moderationAction(v, patch.visibility !== undefined && Object.keys(patch).length === 1 ? 'paste.visibility_changed' : 'paste.edited', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null }, { details: { fields: Object.keys(patch) } });
+                if (!isOwner(v, p) && isStaff(v)) await events.moderationAction(v, patch.visibility !== undefined && Object.keys(patch).length === 1 ? 'paste.visibility_changed' : 'paste.edited', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null }, { details: { fields: Object.keys(patch) } });
                 return r;
-            })();
-            tell((pl) => pl.pasteChanged(row));
+            });
+            await tell((pl) => pl.pasteChanged(row));
             return { paste: await shapeOne(row, v) };
         },
 
         /** DELETE /api/pastes/:slug — owner (or staff) only. */
-        remove(v, slug) {
+        async remove(v, slug) {
             needIdentity(v);
-            const p = visible(v, slug);
+            const p = await visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
-            db.transaction(() => {
-                store.softDelete(db, p.id);
-                if (!isOwner(v, p)) events.moderationAction(v, 'paste.deleted', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
-            })();
-            tell((pl) => pl.pasteGone(p.slug));
+            await db.tx(async () => {
+                await store.softDelete(db, p.id);
+                if (!isOwner(v, p)) await events.moderationAction(v, 'paste.deleted', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
+            });
+            await tell((pl) => pl.pasteGone(p.slug));
             return { success: true };
         },
 
         /** GET /api/pastes/:slug/versions — edit history, owner (or staff) only. */
-        versions(v, slug) {
+        async versions(v, slug) {
             needIdentity(v);
-            const p = visible(v, slug);
+            const p = await visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
-            const list = store.listVersions(db, p.id);
+            const list = await store.listVersions(db, p.id);
             return { revision: p.revision, versions: list.length ? list : [{ revision: p.revision, title: p.title, content: p.content, language: p.language, edited_by: p.owner_subject, created_at: p.updated_at }] };
         },
 
         /** POST /api/pastes/:slug/fork */
         async fork(v, slug) {
-            const original = visible(v, slug);
+            const original = await visible(v, slug);
             if (original.type !== 'paste') fail(400, 'Only text pastes can be forked');
             // A lasting copy would outlive the burn; only the owner (or staff) may fork one.
             if (original.burn_after_read && !canSeeHidden(v, original)) fail(403, 'Burn-after-read pastes cannot be forked');
-            pasteRateCheck(v);
+            await pasteRateCheck(v);
             // A fork never widens who can find the content: unlisted stays unlisted (and gets a secret slug).
             const visibility = visibilityOf(original.visibility, !!v.subject);
-            const row = store.insertPaste(db, {
-                slug: store.generateSlug(db, { secret: visibility !== 'public' }),
+            const row = await store.insertPaste(db, {
+                slug: await store.generateSlug(db, { secret: visibility !== 'public' }),
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'paste',
@@ -512,37 +512,37 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 visibility,
                 forked_from: original.id,
             });
-            return created(row, { paste: await shapeOne(row, v) });
+            return await created(row, { paste: await shapeOne(row, v) });
         },
 
         /** POST /api/pastes/:slug/like — toggles; needs a person. */
-        like(v, slug) {
+        async like(v, slug) {
             if (!v.subject) fail(401, 'Authentication required');
-            const p = visible(v, slug);
-            return store.toggleLike(db, p.id, v.subject);
+            const p = await visible(v, slug);
+            return await store.toggleLike(db, p.id, v.subject);
         },
 
         /** POST /api/pastes/:slug/copy */
-        copy(v, slug) {
-            const p = visible(v, slug);
-            return { copies: store.incrementCopies(db, p.id) };
+        async copy(v, slug) {
+            const p = await visible(v, slug);
+            return { copies: await store.incrementCopies(db, p.id) };
         },
 
         /** GET /api/pastes/:slug/comments */
         async comments(v, slug, q = {}) {
-            const p = visible(v, slug);
+            const p = await visible(v, slug);
             const limit = Math.min(parseInt(q.limit || '50', 10) || 50, 100);
             const offset = Math.max(parseInt(q.offset || '0', 10) || 0, 0);
-            const list = store.listComments(db, p.id, limit, offset);
+            const list = await store.listComments(db, p.id, limit, offset);
             const subjects = [];
             for (const c of list) { subjects.push(c.author_subject); for (const r of c.replies) subjects.push(r.author_subject); }
             const projections = await projectionsFor(subjects);
-            return { comments: list.map((c) => shapeComment(c, projections)), total: store.countComments(db, p.id) };
+            return { comments: list.map((c) => shapeComment(c, projections)), total: await store.countComments(db, p.id) };
         },
 
         /** POST /api/pastes/:slug/comments — anonymous comments allowed (with a name). */
         async addComment(v, slug, body = {}, ctx = {}) {
-            const p = visible(v, slug);
+            const p = await visible(v, slug);
             const author = v.subject || null;
             if (!author && !L.commentAnonAllowed) fail(401, 'You must be logged in to comment');
             const message = String(body.message || '').trim();
@@ -558,85 +558,85 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const parentId = body.parent_id ? parseInt(body.parent_id, 10) : null;
             let parent = null;
             if (parentId) {
-                parent = store.getComment(db, parentId);
+                parent = await store.getComment(db, parentId);
                 if (!parent || parent.paste_id !== p.id) fail(400, 'Invalid parent comment');
                 if (parent.parent_id) fail(400, 'Cannot reply to a reply — reply to the original comment instead');
             }
             // Platform blocks: no comment on a paste whose owner blocked you, no reply to a comment whose author did.
-            if (author && blocks.hasBlocked(db, p.owner_subject, author)) fail(403, 'You cannot comment on this paste: its owner blocked you', { code: 'community.blocked' });
-            if (author && parent && blocks.hasBlocked(db, parent.author_subject, author)) fail(403, 'You cannot reply to this comment: its author blocked you', { code: 'community.blocked' });
-            const c = store.createComment(db, { paste_id: p.id, author_subject: author, anon_name: anonName, parent_id: parentId, message });
+            if (author && await blocks.hasBlocked(db, p.owner_subject, author)) fail(403, 'You cannot comment on this paste: its owner blocked you', { code: 'community.blocked' });
+            if (author && parent && await blocks.hasBlocked(db, parent.author_subject, author)) fail(403, 'You cannot reply to this comment: its author blocked you', { code: 'community.blocked' });
+            const c = await store.createComment(db, { paste_id: p.id, author_subject: author, anon_name: anonName, parent_id: parentId, message });
             if (limited(v)) commentRecorded(rateKey, message);
             return { comment: shapeComment(c, await projectionsFor([author])) };
         },
 
         /** DELETE /api/pastes/:slug/comments/:id — the author, the paste's owner, or staff. */
-        deleteComment(v, slug, commentId) {
+        async deleteComment(v, slug, commentId) {
             needIdentity(v);
-            const p = visible(v, slug);
-            const c = store.getComment(db, parseInt(commentId, 10));
+            const p = await visible(v, slug);
+            const c = await store.getComment(db, parseInt(commentId, 10));
             if (!c || c.paste_id !== p.id) fail(404, 'Comment not found');
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
             if (!isAuthor && !isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized to delete this comment');
-            db.transaction(() => {
-                store.softDeleteComment(db, c.id);
-                if (!isAuthor && !isOwner(v, p)) events.moderationAction(v, 'comment.deleted', { type: 'paste_comment', id: String(c.id), owner_subject: c.author_subject || null }, { details: { paste: p.slug } });
-            })();
+            await db.tx(async () => {
+                await store.softDeleteComment(db, c.id);
+                if (!isAuthor && !isOwner(v, p)) await events.moderationAction(v, 'comment.deleted', { type: 'paste_comment', id: String(c.id), owner_subject: c.author_subject || null }, { details: { paste: p.slug } });
+            });
             return { message: 'Comment deleted' };
         },
 
         /** GET /api/pastes/config */
-        config(v) {
+        async config(v) {
             return {
                 maxSizeKb: L.maxSizeKb,
                 screenshotMaxSizeMb: L.screenshotMaxSizeMb,
                 cooldownSeconds: L.cooldownSeconds,
                 maxPerUserPerDay: L.maxPerUserPerDay,
-                todayCount: v.subject ? store.countOwnerSince(db, v.subject, '-1 day') : 0,
+                todayCount: v.subject ? await store.countOwnerSince(db, v.subject, '-1 day') : 0,
             };
         },
 
         // ── staff (api.js has already checked the viewer is staff) ──
-        stats() { return { stats: store.stats(db) }; },
+        async stats() { return { stats: await store.stats(db) }; },
 
-        forks(q = {}) {
+        async forks(q = {}) {
             const limit = intIn(q.limit, 100, 1, 500);
             const offset = Math.max(parseInt(q.offset, 10) || 0, 0);
-            const { forks, total } = store.listForks(db, limit, offset);
+            const { forks, total } = await store.listForks(db, limit, offset);
             return { forks: forks.map((f) => ({ ...f, user_id: f.owner_subject || null })), total, limit, offset };
         },
 
-        deleteForks(v) {
-            return db.transaction(() => {
-                const deleted = store.deleteAllForks(db);
-                events.moderationAction(v, 'forks.deleted', { type: 'pastes', id: 'forks' }, { details: { deleted } });
+        async deleteForks(v) {
+            return await db.tx(async () => {
+                const deleted = await store.deleteAllForks(db);
+                await events.moderationAction(v, 'forks.deleted', { type: 'pastes', id: 'forks' }, { details: { deleted } });
                 return { success: true, deleted };
-            })();
+            });
         },
 
-        bulk(body = {}, v = null) {
+        async bulk(body = {}, v = null) {
             const { slugs, action } = body;
             if (!Array.isArray(slugs) || !slugs.length) fail(400, 'No slugs provided');
             if (!['delete', 'public', 'unlisted', 'private'].includes(action)) fail(400, 'Invalid action');
             let done = 0, skipped = 0;
-            db.transaction(() => {
+            await db.tx(async () => {
                 for (const slug of slugs.slice(0, 500)) {
-                    const p = store.getBySlug(db, String(slug));
+                    const p = await store.getBySlug(db, String(slug));
                     if (!p) { skipped++; continue; }
-                    if (action === 'delete') store.softDelete(db, p.id);
-                    else store.setVisibility(db, p.id, action);
-                    if (action !== 'public') tell((pl) => pl.pasteGone(p.slug));
+                    if (action === 'delete') await store.softDelete(db, p.id);
+                    else await store.setVisibility(db, p.id, action);
+                    if (action !== 'public') await tell((pl) => pl.pasteGone(p.slug));
                     done++;
                 }
-                if (done) events.moderationAction(v, 'pastes.bulk', { type: 'pastes', id: 'bulk' }, { details: { bulk_action: action, done, skipped } });
-            })();
+                if (done) await events.moderationAction(v, 'pastes.bulk', { type: 'pastes', id: 'bulk' }, { details: { bulk_action: action, done, skipped } });
+            });
             return { done, skipped };
         },
 
         /** POST /api/pastes/:slug/censor — replace a screenshot's image (slug or numeric id). */
         async censor(v, slugOrId, file) {
-            let p = store.getBySlug(db, String(slugOrId));
-            if (!p && /^\d+$/.test(String(slugOrId))) p = store.getById(db, parseInt(slugOrId, 10));
+            let p = await store.getBySlug(db, String(slugOrId));
+            if (!p && /^\d+$/.test(String(slugOrId))) p = await store.getById(db, parseInt(slugOrId, 10));
             if (!p) fail(404, 'Paste not found');
             if (p.type !== 'screenshot' || !p.screenshot_url) fail(400, 'Not a screenshot paste');
             if (!file || !file.buffer) fail(400, 'Censored image is required');
@@ -649,21 +649,21 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');
             }
-            const row = db.transaction(() => {
-                const r = store.setScreenshot(db, p.id, stored.url, stored.media_ref);
-                events.moderationAction(v, 'paste.censored', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
+            const row = await db.tx(async () => {
+                const r = await store.setScreenshot(db, p.id, stored.url, stored.media_ref);
+                await events.moderationAction(v, 'paste.censored', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
                 return r;
-            })();
+            });
             return { paste: await shapeOne(row, v) };
         },
 
         /** POST /api/pastes/:slug/ai — the AI pass writes its results back. */
         async setAi(v, slug, body = {}) {
-            const p = store.getBySlug(db, String(slug));
+            const p = await store.getBySlug(db, String(slug));
             if (!p) fail(404, 'Paste not found');
             const summary = body.ai_summary == null ? null : String(body.ai_summary).slice(0, 2000);
             const tags = body.ai_tags == null ? null : (typeof body.ai_tags === 'string' ? body.ai_tags : JSON.stringify(body.ai_tags)).slice(0, 2000);
-            const row = store.setAi(db, p.id, summary, tags);
+            const row = await store.setAi(db, p.id, summary, tags);
             return { ok: true, paste: await shapeOne(row, v) };
         },
     };

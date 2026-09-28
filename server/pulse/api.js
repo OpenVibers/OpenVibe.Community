@@ -28,9 +28,9 @@ function createPulseApi({ pulse, viewers, limits }) {
     const servicesOnly = (req, res, next) => (req.viewer.kind === 'service' ? next()
         : contracts.http.sendProblem(res, 403, 'capability.denied', { detail: `a service token with ${WRITE} is required`, ctx: req.ov }));
 
-    router.get('/', run((req) => pulse.list(req.query)));
-    router.post('/items', servicesOnly, serviceCap(WRITE), ingest, jsonBody, run((req) => pulse.ingest(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
-    router.delete('/items/:service/:type/:id', servicesOnly, serviceCap(WRITE), ingest, run((req) => pulse.retract(req.viewer, req.params.service, req.params.type, req.params.id)));
+    router.get('/', run(async (req) => await pulse.list(req.query)));
+    router.post('/items', servicesOnly, serviceCap(WRITE), ingest, jsonBody, run(async (req) => await pulse.ingest(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
+    router.delete('/items/:service/:type/:id', servicesOnly, serviceCap(WRITE), ingest, run(async (req) => await pulse.retract(req.viewer, req.params.service, req.params.type, req.params.id)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

@@ -2,8 +2,8 @@
 Description=OpenVibe.Community — The people of OpenVibe (pastes; forums and submissions to follow)
 # Live (openvibe-live) and Network (openvibe-network) should be up first, but
 # Community degrades gracefully if they aren't (paste pages answer 502, sign-in retries).
-After=network.target
-Wants=openvibe-live.service openvibe-network.service
+After=network.target postgresql.service pgbouncer.service valkey-server.service
+Wants=openvibe-live.service openvibe-network.service postgresql.service pgbouncer.service valkey-server.service
 
 [Service]
 Type=simple
@@ -21,8 +21,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Community's own database (used once PASTES_AUTHORITY=community; untouched before that).
-# The code tree stays read-only; the database lives in /var/lib/openvibe-community.
+# The code tree stays read-only. Community's database is PostgreSQL (ov_community, ADR-035); /var/lib/openvibe-community
+# keeps the pre-PostgreSQL SQLite file (read-only) for the rollback window and the one-time import.
 StateDirectory=openvibe-community
 Environment=COMMUNITY_DB_PATH=/var/lib/openvibe-community/community.db
 

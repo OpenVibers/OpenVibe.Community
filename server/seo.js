@@ -176,8 +176,8 @@ async function buildSitemap() {
     if (_forum) {
         add('/s', null, 'hourly', '0.8');
         add('/pulse', null, 'hourly', '0.5');
-        for (const s of _forum.publicSpaces()) add(`/s/${s.slug}`, s.last_activity_at || null, 'hourly', '0.7');
-        for (const t of _forum.recentPublic({ limit: 1000 })) add(`/s/${t.space_slug}/t/${t.slug}`, isoDate(t.last_activity_at || t.created_at), 'daily', '0.6');
+        for (const s of await _forum.publicSpaces()) add(`/s/${s.slug}`, s.last_activity_at || null, 'hourly', '0.7');
+        for (const t of await _forum.recentPublic({ limit: 1000 })) add(`/s/${t.space_slug}/t/${t.slug}`, isoDate(t.last_activity_at || t.created_at), 'daily', '0.6');
     }
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`;
 }

@@ -26,7 +26,7 @@ const { boot, check, done } = require('./helpers/app');
         if (form !== undefined) { h['content-type'] = 'application/x-www-form-urlencoded'; body = new URLSearchParams(form).toString(); }
         return t.get(path, { method, headers: h, body, cookies: cookie ? [`ov_token=${cookie}`] : [] });
     };
-    const pasteRow = (slug, extra = {}) => t.db.prepare('INSERT INTO pastes (slug, owner_subject, title, content, language, visibility, burn_after_read) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const pasteRow = async (slug, extra = {}) => await t.db.prepare('INSERT INTO pastes (slug, owner_subject, title, content, language, visibility, burn_after_read) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(slug, alex.subject_id, extra.title || 'Snippet', extra.content || 'const a = 1;\nconsole.log(a);', 'javascript', extra.visibility || 'public', extra.burn ? 1 : 0);
 
     let topic;
@@ -81,10 +81,10 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(html.includes('class="postbit') && html.includes('postbit-author') && html.includes('<dt>Posts</dt>') && html.includes('Rate</summary>') && html.includes('🏆'));
         r = await call('/s/general/t/welcome-thread/react', { method: 'POST', cookie: samJwt, form: { post: String(post.id), reaction: 'funny' } });
         assert.strictEqual(r.status, 303); assert.ok(r.headers.get('location').endsWith(`#post-${post.id}`));
-        t.db.prepare("UPDATE spaces SET reactions = 0 WHERE slug = 'general'").run();
+        await t.db.prepare("UPDATE spaces SET reactions = 0 WHERE slug = 'general'").run();
         assert.strictEqual((await rate(samJwt, 'agree')).json().code, 'space.reactions_off');
         assert.deepStrictEqual((await call('/api/v1/spaces/general/threads/welcome-thread')).json().posts[0].reactions, []);
-        t.db.prepare("UPDATE spaces SET reactions = 1 WHERE slug = 'general'").run();
+        await t.db.prepare("UPDATE spaces SET reactions = 1 WHERE slug = 'general'").run();
     });
 
     await check('quote: ?quote= fills the reply box with the quoted post', async () => {
@@ -94,7 +94,7 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('pastes on posts: public and unlisted as cards; private and burn-after-read refused', async () => {
-        pasteRow('snip1'); pasteRow('snip2', { visibility: 'unlisted', title: 'Hidden-ish' }); pasteRow('secret1', { visibility: 'private' }); pasteRow('burn1', { burn: true });
+        await pasteRow('snip1'); await pasteRow('snip2', { visibility: 'unlisted', title: 'Hidden-ish' }); await pasteRow('secret1', { visibility: 'private' }); await pasteRow('burn1', { burn: true });
         let r = await call('/api/v1/spaces/general/threads/welcome-thread/posts', { method: 'POST', cookie: samJwt, json: { body: 'look at these', pastes: 'https://openvibe.community/p/snip1 snip2' } });
         assert.strictEqual(r.status, 201, r.text);
         assert.deepStrictEqual(r.json().post.pastes.map((p) => [p.slug, p.lines]), [['snip1', 2], ['snip2', 2]]);
@@ -102,7 +102,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual((await call('/api/v1/spaces/general/threads/welcome-thread/posts', { method: 'POST', cookie: samJwt, json: { body: 'x', pastes: ['nope-nope'] } })).status, 404);
         const html = (await call('/s/general/t/welcome-thread')).text;
         assert.ok(html.includes('class="paste-embed"') && html.includes('href="/p/snip1"') && html.includes('hljs'));
-        t.db.prepare("UPDATE pastes SET visibility = 'private' WHERE slug = 'snip2'").run();
+        await t.db.prepare("UPDATE pastes SET visibility = 'private' WHERE slug = 'snip2'").run();
         const after = (await call('/api/v1/spaces/general/threads/welcome-thread')).json().posts.find((p) => p.body_markdown === 'look at these');
         assert.deepStrictEqual(after.pastes.map((p) => p.slug), ['snip1'], 'a paste made private drops out');
     });

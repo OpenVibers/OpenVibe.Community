@@ -51,28 +51,28 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
     let stopped = false;
 
     const iso = () => new Date(now()).toISOString();
-    const readCursor = () => db.prepare('SELECT cursor, latest_seq FROM relay_cursors WHERE name = ?').get(CURSOR) || null;
-    function writeCursor(cursor, latest) {
-        db.prepare(`INSERT INTO relay_cursors (name, cursor, latest_seq, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(name) DO UPDATE SET cursor = excluded.cursor, latest_seq = excluded.latest_seq, updated_at = CURRENT_TIMESTAMP`).run(CURSOR, cursor, latest == null ? null : latest);
+    const readCursor = async () => await db.prepare('SELECT cursor, latest_seq FROM relay_cursors WHERE name = ?').get(CURSOR) || null;
+    async function writeCursor(cursor, latest) {
+        await db.prepare(`INSERT INTO relay_cursors (name, cursor, latest_seq, updated_at) VALUES (?, ?, ?, ov_now())
+                    ON CONFLICT(name) DO UPDATE SET cursor = excluded.cursor, latest_seq = excluded.latest_seq, updated_at = ov_now()`).run(CURSOR, cursor, latest == null ? null : latest);
     }
 
     /** One event → deliveries queued (0 when it is not for the relay). */
-    function handle(ev) {
+    async function handle(ev) {
         stats.seen++;
         if (!ev || ev.source !== 'community' || !ev.payload || ev.payload.redacted) return 0;
         const p = ev.payload;
         if (p.visibility && p.visibility !== 'public') return 0;
         if (ev.event_type === 'community.thread.created') {
-            const thread = db.prepare('SELECT * FROM threads WHERE id = ?').get(Number(p.thread_id));
-            const space = thread ? forumStore.getSpaceById(db, thread.space_id) : null;
-            return relay.enqueueThread(thread, space, { source: 'events', eventId: ev.event_id || null });
+            const thread = await db.prepare('SELECT * FROM threads WHERE id = ?').get(Number(p.thread_id));
+            const space = thread ? await forumStore.getSpaceById(db, thread.space_id) : null;
+            return await relay.enqueueThread(thread, space, { source: 'events', eventId: ev.event_id || null });
         }
         if (ev.event_type === 'community.post.created') {
-            const post = forumStore.getPost(db, Number(p.post_id));
-            const thread = post ? db.prepare('SELECT * FROM threads WHERE id = ?').get(post.thread_id) : null;
-            const space = thread ? forumStore.getSpaceById(db, thread.space_id) : null;
-            return relay.enqueuePost(post, thread, space, { source: 'events', eventId: ev.event_id || null });
+            const post = await forumStore.getPost(db, Number(p.post_id));
+            const thread = post ? await db.prepare('SELECT * FROM threads WHERE id = ?').get(post.thread_id) : null;
+            const space = thread ? await forumStore.getSpaceById(db, thread.space_id) : null;
+            return await relay.enqueuePost(post, thread, space, { source: 'events', eventId: ev.event_id || null });
         }
         return 0;
     }
@@ -84,11 +84,11 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
         running = (async () => {
             let queuedNow = 0;
             try {
-                let cur = readCursor();
+                let cur = await readCursor();
                 if (!cur) {
                     const head = await client.pull({ topic: TOPICS, afterSeq: 0, limit: 1 });
                     const latest = Number(head.latest_seq) || 0;
-                    writeCursor(latest, latest);
+                    await writeCursor(latest, latest);
                     stats.started_at_seq = latest;
                     console.log(`[Relay] Events worker starts at seq ${latest} (earlier threads are not announced)`);
                     cur = { cursor: latest, latest_seq: latest };
@@ -104,12 +104,12 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
                     const next = Number(page.next_after_seq);
                     const latest = Number(page.latest_seq);
                     const moved = Number.isFinite(next) && next > cursor ? next : cursor;
-                    queuedNow += db.transaction(() => {
+                    queuedNow += await db.tx(async () => {
                         let n = 0;
-                        for (const item of page.events || []) n += handle(item && item.event);
-                        writeCursor(moved, Number.isFinite(latest) ? latest : null);
+                        for (const item of page.events || []) n += await handle(item && item.event);
+                        await writeCursor(moved, Number.isFinite(latest) ? latest : null);
                         return n;
-                    })();
+                    });
                     stats.pages++;
                     if (moved === cursor || !Number.isFinite(latest) || moved >= latest) break;
                     cursor = moved;
@@ -146,9 +146,9 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
         return running ? running.then(() => undefined) : Promise.resolve();
     }
 
-    function status() {
+    async function status() {
         if (!on) return { enabled: false, reason };
-        const cur = readCursor();
+        const cur = await readCursor();
         return {
             enabled: true, running: !!timer, topics: TOPICS,
             cursor: cur ? cur.cursor : null, latest_seq: cur ? cur.latest_seq : null,

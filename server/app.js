@@ -41,7 +41,7 @@ const pages = require('./render/pages');
 const { assetVersion } = require('./render/layout');
 const { createAuthClient, createAuthRoutes, optionalAuth } = require('./auth/routes');
 const { createPastesProxy } = require('./pastes/proxy');
-const { openDb, getDb } = require('./db');
+const { getDb } = require('./db');
 const { createNetworkIdentity } = require('./identity/network');
 const { createViewerResolver } = require('./identity/viewer');
 const v1 = require('./http/v1');
@@ -67,7 +67,7 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const VERSION = require('../package.json').version;
 
-function createApp(opts = {}) {
+async function createApp(opts = {}) {
     const app = express();
     app.disable('x-powered-by');
     app.set('trust proxy', config.trustProxy);
@@ -115,11 +115,13 @@ function createApp(opts = {}) {
     { const legal = require('openvibe-shared/legal'); app.get(legal.PATHS, legal.handler({ id: 'community', service: 'community', host: 'openvibe.community', name: 'OpenVibe.Community', profile: 'ugc' })); app.get('/tos', (_req, res) => res.redirect(301, '/terms')); }
 
     // ── Community's database, identity, and what lives in it in every mode ──
-    const db = opts.db || (opts.dbPath ? openDb(opts.dbPath) : getDb());
+    const db = opts.db || getDb();
     const network = opts.network || createNetworkIdentity({ config, db });
     // Network's per-person token cutoffs (network.user.token_valid_after): sign out everywhere, password
     // changes and bans refuse older tokens here at once (WS-B task 4).
-    const revocations = require('openvibe-sdk/auth').createRevocationStore(db, { table: 'token_revocations' });
+    // Cutoffs are read into memory before the app serves: isRevoked() is synchronous on every signed-in request.
+    const revocations = require('openvibe-sdk/auth').createPgRevocationStore(db, { table: 'token_revocations' });
+    await revocations.load();
     const viewers = createViewerResolver({ auth, config, network, revocations });
     const pulse = createPulse({ db, network, config });
     const relay = opts.relay || createDiscordRelay({
@@ -140,7 +142,7 @@ function createApp(opts = {}) {
             }),
             gateway: relayInbound && config.discordRelay.inbound ? createDiscordGateway({
                 token: config.discordRelay.botToken, url: config.discordRelay.gatewayUrl,
-                onDispatch: (type, data, ctx) => relayInbound.handle(type, data, ctx),
+                onDispatch: async (type, data, ctx) => await relayInbound.handle(type, data, ctx),
                 ...(opts.gatewayOptions || {}),
             }) : null,
             inbound: relayInbound,
@@ -169,7 +171,7 @@ function createApp(opts = {}) {
         const media = opts.media || {
             tokens: files.tokens,
             async upload({ buffer, filename, mime, owner = null }) {
-                if (!mediaObjects.configured) return files.upload({ buffer, filename, mime });
+                if (!mediaObjects.configured) return await files.upload({ buffer, filename, mime });
                 const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste' });
                 return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id };
             },
@@ -193,7 +195,11 @@ function createApp(opts = {}) {
 
     // Per-actor limits for every API router below (server/actor-limits.js), after each one resolves its
     // viewer; the per-address /api/ limit stays in front. opts.actorLimits: { limits, now } (tests).
-    const limits = createActorLimits({ registry: metrics.registry, ...(opts.actorLimits || {}) });
+    // Valkey (ADR-035): the per-actor limit counters, shared across processes; opts.valkey for tests (null: none).
+    const valkey = opts.valkey !== undefined ? opts.valkey
+        : (config.valkey.url ? require('openvibe-sdk/valkey').createValkey({ url: config.valkey.url, prefix: config.valkey.prefix }) : null);
+    app.locals.valkey = valkey;
+    const limits = createActorLimits({ registry: metrics.registry, valkey, ...(opts.actorLimits || {}) });
 
     // ── /api/pastes (before any body parser: in 'live' mode bodies stream through to Live) ──
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
@@ -227,7 +233,7 @@ function createApp(opts = {}) {
     release.mount(app, { registry: metrics.registry });
     // Readiness reports what is actually served: 503 only without the database; Network key,
     // Live (live mode) and Media (community mode) failures degrade (server/observability.js).
-    const readiness = require('./observability').createCommunityReadiness({ db, auth, config, relay, release: release.release, fetchImpl: opts.fetchImpl });
+    const readiness = require('./observability').createCommunityReadiness({ db, auth, config, relay, release: release.release, fetchImpl: opts.fetchImpl, valkey });
     app.get('/api/ready', readiness.handler);
 
     // ── Static assets (content-hashed ?v= → immutable) ───────
@@ -307,10 +313,10 @@ function createApp(opts = {}) {
         // The store is the authority: raw text is served here, the screenshot link is the stored
         // Media URL. (Never bounce to Media's /p/… — after cutover it redirects back here.)
         const notFound = (res) => res.status(404).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('Not found');
-        app.get('/p/:slug/raw', withUser, (req, res) => {
+        app.get('/p/:slug/raw', withUser, async (req, res) => {
             if (!SLUG_RE.test(req.params.slug)) return notFound(res);
             try {
-                const out = app.locals.pastes.raw(req.viewer, req.params.slug, ctxOf(req));
+                const out = await app.locals.pastes.raw(req.viewer, req.params.slug, ctxOf(req));
                 if (out.redirect) return res.redirect(302, out.redirect);
                 res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', 'private, no-store');
                 res.type('text/plain; charset=utf-8').send(out.content);
@@ -320,9 +326,9 @@ function createApp(opts = {}) {
                 throw err;
             }
         });
-        app.get('/p/:slug/screenshot', withUser, (req, res) => {
+        app.get('/p/:slug/screenshot', withUser, async (req, res) => {
             if (!SLUG_RE.test(req.params.slug)) return notFound(res);
-            try { res.redirect(302, app.locals.pastes.screenshotUrl(req.viewer, req.params.slug)); }
+            try { res.redirect(302, await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug)); }
             catch (err) {
                 if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
                 if (err.status === 404) return notFound(res);

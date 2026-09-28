@@ -9,22 +9,22 @@
  */
 
 /** → { item, created } */
-function upsertItem(db, it) {
+async function upsertItem(db, it) {
     const find = db.prepare('SELECT * FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?');
-    return db.transaction(() => {
+    return await db.tx(async () => {
         const key = [it.source_service, it.source_type, String(it.source_id)];
-        if (find.get(...key)) {
-            db.prepare('UPDATE pulse_items SET title = ?, url = ? WHERE source_service = ? AND source_type = ? AND source_id = ?').run(it.title, it.url, ...key);
-            return { item: find.get(...key), created: false };
+        if (await find.get(...key)) {
+            await db.prepare('UPDATE pulse_items SET title = ?, url = ? WHERE source_service = ? AND source_type = ? AND source_id = ?').run(it.title, it.url, ...key);
+            return { item: await find.get(...key), created: false };
         }
-        db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at)
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at);
-        return { item: find.get(...key), created: true };
-    })();
+        return { item: await find.get(...key), created: true };
+    });
 }
 
-function removeItem(db, service, type, id) {
-    return db.prepare('DELETE FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?').run(service, type, String(id)).changes;
+async function removeItem(db, service, type, id) {
+    return (await db.prepare('DELETE FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?').run(service, type, String(id))).changes;
 }
 
 /**
@@ -35,11 +35,11 @@ function removeItem(db, service, type, id) {
  *   opts.before   [occurred_at, id] of the last item already seen
  * → { rows, hasMore }
  */
-function listItems(db, { origin = null, before = null, limit = 30 } = {}) {
-    const rows = db.prepare(`
+async function listItems(db, { origin = null, before = null, limit = 30 } = {}) {
+    const rows = await db.prepare(`
         SELECT i.* FROM pulse_items i
-        WHERE (@origin IS NULL OR i.origin = @origin)
-          AND (@at IS NULL OR i.occurred_at < @at OR (i.occurred_at = @at AND i.id < @id))
+        WHERE (@origin::text IS NULL OR i.origin = @origin)
+          AND (@at::text IS NULL OR i.occurred_at < @at OR (i.occurred_at = @at AND i.id < @id::bigint))
           AND (i.source_service <> 'community'
                OR (i.source_type = 'paste' AND EXISTS (SELECT 1 FROM pastes p WHERE p.slug = i.source_id AND p.deleted_at IS NULL AND p.visibility = 'public'))
                OR (i.source_type = 'thread' AND EXISTS (SELECT 1 FROM threads t JOIN spaces s ON s.id = t.space_id

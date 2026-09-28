@@ -115,15 +115,15 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
         const all = [];
         for (const r of rows) { all.push(r); if (r.replies) all.push(...r.replies); }
         const projections = await authors.projectionsFor(all.map((c) => c.author_subject));
-        const votes = myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
+        const votes = await myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
         return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v)));
     }
 
     /** A thread by the id this viewer may use: the access id for anyone, the sequential id for services only. */
-    function threadById(v, id) {
+    async function threadById(v, id) {
         const s = String(id == null ? '' : id);
-        if (ACCESS_ID_RE.test(s)) return store.getThreadByAccessId(db, s);
-        if (v && v.kind === 'service' && /^\d{1,15}$/.test(s)) return store.getThread(db, Number(s));
+        if (ACCESS_ID_RE.test(s)) return await store.getThreadByAccessId(db, s);
+        if (v && v.kind === 'service' && /^\d{1,15}$/.test(s)) return await store.getThread(db, Number(s));
         return null;
     }
 
@@ -132,23 +132,23 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
         if (!t || (t.visibility === 'hidden' && !moderator(v))) fail(404, 'thread.not_found', 'Comment thread not found');
         return t;
     }
-    const visibleThread = (v, id) => visible(v, threadById(v, id));
+    const visibleThread = async (v, id) => visible(v, await threadById(v, id));
 
-    function visibleComment(v, id) {
-        const c = /^\d{1,15}$/.test(String(id)) ? store.getComment(db, Number(id)) : null;
+    async function visibleComment(v, id) {
+        const c = /^\d{1,15}$/.test(String(id)) ? await store.getComment(db, Number(id)) : null;
         if (!c || c.deleted_at) fail(404, 'comment.not_found', 'Comment not found');
-        return { comment: c, thread: visible(v, store.getThread(db, c.thread_id)) };
+        return { comment: c, thread: visible(v, await store.getThread(db, c.thread_id)) };
     }
 
     /** Community's own entities must exist (and be visible) before anyone opens a thread on them. */
-    function checkCommunityRef(ref) {
+    async function checkCommunityRef(ref) {
         if (ref.service !== 'community') return;
         if (ref.type === 'paste') {
             if (!pastesLocal) return; // PASTES_AUTHORITY=live: Live owns them, nothing to check here
-            const p = pasteStore.getBySlug(db, ref.id);
+            const p = await pasteStore.getBySlug(db, ref.id);
             if (!p || p.visibility === 'private') fail(404, 'ref.not_found', 'No such paste');
         } else if (ref.type === 'post') {
-            const ok = /^\d{1,15}$/.test(ref.id) && db.prepare(`SELECT 1 FROM posts p JOIN threads t ON t.id = p.thread_id JOIN spaces s ON s.id = t.space_id
+            const ok = /^\d{1,15}$/.test(ref.id) && await db.prepare(`SELECT 1 FROM posts p JOIN threads t ON t.id = p.thread_id JOIN spaces s ON s.id = t.space_id
                                                                 WHERE p.id = ? AND p.deleted_at IS NULL AND t.deleted_at IS NULL AND s.visibility = 'public'`).get(Number(ref.id));
             if (!ok) fail(404, 'ref.not_found', 'No such post');
         }
@@ -157,10 +157,10 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
     const signedInOnly = (t) => (SIGNED_IN_ONLY[t.ref_service] || []).includes(t.ref_type);
 
     /** Who owns a thread's Community entity (a paste's owner, a forum post's author), or null. */
-    function entityOwner(t) {
+    async function entityOwner(t) {
         if (t.ref_service !== 'community') return null;
-        if (t.ref_type === 'paste' && pastesLocal) { const p = pasteStore.getBySlug(db, t.ref_id); return p ? p.owner_subject || null : null; }
-        if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) { const r = db.prepare('SELECT author_subject FROM posts WHERE id = ?').get(Number(t.ref_id)); return r ? r.author_subject || null : null; }
+        if (t.ref_type === 'paste' && pastesLocal) { const p = await pasteStore.getBySlug(db, t.ref_id); return p ? p.owner_subject || null : null; }
+        if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) { const r = await db.prepare('SELECT author_subject FROM posts WHERE id = ?').get(Number(t.ref_id)); return r ? r.author_subject || null : null; }
         return null;
     }
 
@@ -182,7 +182,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
         SIGNED_IN_ONLY,
 
         /** POST /threads/resolve { ref } → { thread, created } */
-        resolve(v, body = {}) {
+        async resolve(v, body = {}) {
             const ref = body && body.ref;
             const check = ref && typeof ref === 'object' ? contracts.validate('common.entity-ref@1', ref) : { valid: false };
             if (!check.valid) fail(400, 'ref.invalid', 'ref must be an EntityRef {service, type, id}');
@@ -190,10 +190,10 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
                 const types = BROWSER_REF_TYPES[ref.service];
                 if (!types || !types.includes(ref.type)) fail(403, 'ref.type_not_allowed', `Comments on ${ref.service}/${ref.type} can only be opened by that service`);
             }
-            checkCommunityRef(ref);
+            await checkCommunityRef(ref);
             // Labels are display caches; only a service's word is taken for them.
             const label = v.kind === 'service' && ref.label ? String(ref.label).slice(0, 200) : null;
-            const { thread, created } = store.resolveThread(db, ref, { label, createdBy: v.subject || (v.kind === 'service' ? v.service : null) });
+            const { thread, created } = await store.resolveThread(db, ref, { label, createdBy: v.subject || (v.kind === 'service' ? v.service : null) });
             return { thread: shapeThread(thread, v), created };
         },
 
@@ -203,17 +203,17 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
          * comment's replies instead.
          */
         async get(v, id, q = {}) {
-            const t = visibleThread(v, id);
+            const t = await visibleThread(v, id);
             const limit = Math.min(Math.max(parseInt(q.limit, 10) || PAGE, 1), 100);
             const after = cursorId(q.after);
             let rows, hasMore;
             if (q.parent != null && q.parent !== '') {
                 const parent = cursorId(q.parent);
-                const p = parent != null ? store.getComment(db, parent) : null;
+                const p = parent != null ? await store.getComment(db, parent) : null;
                 if (!p || p.thread_id !== t.id || p.parent_id) fail(404, 'comment.not_found', 'Comment not found');
-                ({ rows, hasMore } = store.listReplies(db, parent, { after, limit }));
+                ({ rows, hasMore } = await store.listReplies(db, parent, { after, limit }));
             } else {
-                ({ rows, hasMore } = store.listTopLevel(db, t.id, { after, sort: q.sort === 'new' ? 'new' : 'old', limit, replyLimit: REPLY_PAGE }));
+                ({ rows, hasMore } = await store.listTopLevel(db, t.id, { after, sort: q.sort === 'new' ? 'new' : 'old', limit, replyLimit: REPLY_PAGE }));
             }
             const comments = await shapeComments(rows, v, t);
             return {
@@ -231,14 +231,14 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
 
         /** POST /threads/:id/comments { message, parent_id?, anon_name? } */
         async add(v, id, body = {}) {
-            const t = visibleThread(v, id);
+            const t = await visibleThread(v, id);
             if (t.visibility === 'locked' && !moderator(v)) fail(403, 'thread.locked', 'This comment thread is locked');
             const message = cleanMessage(body.message);
 
             let parent = null;
             let parentId = null;
             if (body.parent_id != null && body.parent_id !== '') {
-                parent = /^\d{1,15}$/.test(String(body.parent_id)) ? store.getComment(db, Number(body.parent_id)) : null;
+                parent = /^\d{1,15}$/.test(String(body.parent_id)) ? await store.getComment(db, Number(body.parent_id)) : null;
                 if (!parent || parent.thread_id !== t.id || parent.deleted_at) fail(400, 'comment.invalid_parent', 'Invalid parent comment');
                 // One level of nesting: a reply to a reply joins the top-level comment's replies.
                 parentId = parent.parent_id || parent.id;
@@ -249,10 +249,10 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             // Platform blocks: no reply to a comment whose author blocked you (the one answered, and the
             // top-level comment it joins), no comment on a paste or post whose owner blocked you.
             if (parent) {
-                const top = parent.parent_id ? store.getComment(db, parent.parent_id) : null;
-                blocks.refuseIfBlocked(db, [parent.author_subject, top && top.author_subject], author, 'reply to this comment');
+                const top = parent.parent_id ? await store.getComment(db, parent.parent_id) : null;
+                await blocks.refuseIfBlocked(db, [parent.author_subject, top && top.author_subject], author, 'reply to this comment');
             }
-            blocks.refuseIfBlocked(db, [entityOwner(t)], author, `comment on this ${t.ref_type}`, 'its owner');
+            await blocks.refuseIfBlocked(db, [await entityOwner(t)], author, `comment on this ${t.ref_type}`, 'its owner');
             if (!author && origin !== 'ai' && !moderator(v) && signedInOnly(t)) fail(401, 'auth.required', 'Sign in to comment here');
             let anonName = null;
             if (!author && origin !== 'ai') {
@@ -260,7 +260,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
             }
             const key = author ? `s:${author}` : null;
             commentLimiter.check(key, message);
-            const c = store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message });
+            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message });
             commentLimiter.record(key, message);
             return { comment: (await shapeComments([c], v, t))[0] };
         },
@@ -271,52 +271,52 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
          */
         async getComment(v, commentId) {
             if (!v || v.kind !== 'service') fail(404, 'comment.not_found', 'Comment not found');
-            const { comment: c, thread: t } = visibleComment(v, commentId);
+            const { comment: c, thread: t } = await visibleComment(v, commentId);
             return { comment: (await shapeComments([c], v, t))[0], thread: shapeThread(t, v) };
         },
 
         /** PATCH /:commentId { message } — the author only. */
         async edit(v, commentId, body = {}) {
             if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to edit a comment');
-            const { comment: c, thread: t } = visibleComment(v, commentId);
+            const { comment: c, thread: t } = await visibleComment(v, commentId);
             if (!(c.author_subject && c.author_subject === v.subject)) fail(403, 'comment.not_yours', 'Only the author can edit a comment');
             if (t.visibility === 'locked' && !moderator(v)) fail(403, 'thread.locked', 'This comment thread is locked');
             const message = cleanMessage(body.message);
-            const row = message === c.message ? c : store.editComment(db, c.id, message);
+            const row = message === c.message ? c : await store.editComment(db, c.id, message);
             return { comment: (await shapeComments([row], v, t))[0] };
         },
 
         /** DELETE /comments/:id — the author or a moderator. */
-        remove(v, commentId) {
-            const { comment: c } = visibleComment(v, commentId);
+        async remove(v, commentId) {
+            const { comment: c } = await visibleComment(v, commentId);
             if (!(v && v.subject) && !moderator(v)) fail(401, 'auth.required', 'Sign in to delete a comment');
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
             if (!isAuthor && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
-            store.softDeleteComment(db, c.id, v.subject || v.service || null);
+            await store.softDeleteComment(db, c.id, v.subject || v.service || null);
             return { ok: true, id: c.id };
         },
 
         /** POST /comments/:id/votes { value: 1 | -1 | 0 } */
-        vote(v, commentId, body = {}) {
+        async vote(v, commentId, body = {}) {
             const value = parseVote(body.value);
             if (value === null) fail(400, 'vote.invalid', 'value must be 1, -1 or 0');
             if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to vote');
-            const { comment: c, thread: t } = visibleComment(v, commentId);
+            const { comment: c, thread: t } = await visibleComment(v, commentId);
             if (t.visibility !== 'public') fail(403, 'thread.locked', 'This comment thread is locked');
             voteLimiter.check(`s:${v.subject}`);
-            const out = applyVote(db, 'comment', c.id, v.subject, value);
+            const out = await applyVote(db, 'comment', c.id, v.subject, value);
             voteLimiter.record(`s:${v.subject}`);
             return { comment_id: c.id, ...out };
         },
 
         /** PUT /threads/:id/visibility { visibility } — moderators. */
-        setVisibility(v, id, body = {}) {
+        async setVisibility(v, id, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators change a thread\'s visibility');
             const visibility = body.visibility;
             if (!VISIBILITIES.includes(visibility)) fail(400, 'thread.invalid_visibility', `visibility must be one of ${VISIBILITIES.join(', ')}`);
-            const t = threadById(v, id);
+            const t = await threadById(v, id);
             if (!t) fail(404, 'thread.not_found', 'Comment thread not found');
-            return { thread: shapeThread(store.setThreadVisibility(db, t.id, visibility), v) };
+            return { thread: shapeThread(await store.setThreadVisibility(db, t.id, visibility), v) };
         },
     };
 }

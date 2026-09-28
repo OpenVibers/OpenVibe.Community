@@ -32,7 +32,7 @@ function createMediaFiles({ config, fetchImpl = globalThis.fetch } = {}) {
             body: fd,
             signal: AbortSignal.timeout(60_000),
         });
-        if (res.status === 401 && !retried) { tokens.invalidate(); return upload({ buffer, filename, mime }, true); }
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await upload({ buffer, filename, mime }, true); }
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || !data.key || !data.url) {
             const err = new Error(`Media upload ${res.status}: ${(data && (data.detail || data.error)) || 'bad response'}`);

@@ -6,8 +6,9 @@ const mockNetwork = require('./mock-network');
 const mockMedia = require('./mock-media');
 
 /**
- * opts.authority  'live' (default) or 'community' — the latter runs the native paste API on a
- *                 fresh in-memory database, with Network and Media mocks behind it.
+ * opts.authority  'live' (default) or 'community' — the latter runs the native paste API, with Network and
+ *                 Media mocks behind it. Every boot gets a migrated database of its own (./db.js: PGlite, or the
+ *                 PostgreSQL containers under npm run test:pg, with Valkey for the limit counters).
  * opts.pasteLimits  overrides for service.js limits (e.g. { cooldownSeconds: 0 }).
  * opts.appOpts      passed through to createApp (commentLimits, forumLimits, relayOptions, …).
  * opts.env          environment set after the defaults, before the app loads (its OV_OAUTH_CLIENT_SECRET
@@ -31,16 +32,18 @@ async function boot(opts = {}) {
     process.env.TRUST_PROXY = '1';
     process.env.OV_MEDIA_INTERNAL_URL = mediaSrv.url;
     process.env.PASTES_AUTHORITY = opts.authority || 'live';
-    process.env.COMMUNITY_DB_PATH = ':memory:';
+    // test:pg: the Valkey container too, under a prefix of its own.
+    if (process.env.COMMUNITY_TEST_STORE === 'pg' && process.env.OV_TEST_VALKEY_URL) {
+        process.env.VALKEY_URL = process.env.OV_TEST_VALKEY_URL;
+        process.env.VALKEY_PREFIX = `ov:community-test:${process.pid}:${Math.random().toString(36).slice(2, 10)}:`;
+    }
     Object.assign(process.env, opts.env || {});
     for (const k of Object.keys(require.cache)) if (k.includes('/server/')) delete require.cache[k];
     const { createApp } = require('../../server/app');
     const appOpts = { ...(opts.appOpts || {}) };
-    if (opts.authority === 'community') {
-        appOpts.db = require('../../server/db').openDb(':memory:');
-        appOpts.pasteLimits = opts.pasteLimits;
-    }
-    const app = createApp(appOpts);
+    appOpts.db = appOpts.db || await require('./db').testDb();
+    if (opts.authority === 'community') appOpts.pasteLimits = opts.pasteLimits;
+    const app = await createApp(appOpts);
     const server = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -61,14 +64,18 @@ async function boot(opts = {}) {
     }
     return {
         app, base, get, jar, live: liveSrv, network: netSrv, media: mediaSrv, db: appOpts.db || null,
-        close: async () => { await new Promise((r) => server.close(r)); await liveSrv.close(); await netSrv.close(); await mediaSrv.close(); },
+        close: async () => {
+            await new Promise((r) => server.close(r)); await liveSrv.close(); await netSrv.close(); await mediaSrv.close();
+            if (app.locals.valkey) await app.locals.valkey.close().catch(() => {});
+            await appOpts.db.close().catch(() => {});
+        },
     };
 }
 
 let failures = 0;
 async function check(name, fn) {
     try { await fn(); console.log('  ✓', name); }
-    catch (e) { failures++; console.log('  ✗', name, '\n     ', (e.stack || String(e)).split('\n').slice(0, 4).join('\n      ')); }
+    catch (e) { failures++; console.log("  ✗", name, "\n     ", (e.stack || String(e)).split("\n").slice(0, process.env.DEBUG ? 40 : 4).join("\n      ")); }
 }
 function done() { console.log(failures ? `\n${failures} failed` : '\nall passed'); process.exit(failures ? 1 : 0); }
 

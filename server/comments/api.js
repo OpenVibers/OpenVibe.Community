@@ -41,15 +41,15 @@ function createCommentsApi({ service, viewers, anonWriteLimiter, resolveLimiter,
 
     // Opening a thread writes a row the first time: a person opens at most one a second.
     router.post('/threads/resolve', serviceCap(WRITE), limits('community.thread.resolve', { minute: 60, hour: 1200 }), resolveLimiter || passAnon, jsonBody,
-        run((req) => service.resolve(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
-    router.get('/threads/:id', read, run((req) => service.get(req.viewer, req.params.id, req.query)));
+        run(async (req) => await service.resolve(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
+    router.get('/threads/:id', read, run(async (req) => await service.get(req.viewer, req.params.id, req.query)));
     router.post('/threads/:id/comments', serviceCap(WRITE), limits('community.comment.create', { minute: 20, hour: 300 }), anonWriteLimiter || passAnon, jsonBody,
-        run((req) => service.add(req.viewer, req.params.id, req.body || {}), 201));
-    router.put('/threads/:id/visibility', serviceCap(MOD), moderate, jsonBody, run((req) => service.setVisibility(req.viewer, req.params.id, req.body || {})));
-    router.get('/:commentId', read, run((req) => service.getComment(req.viewer, req.params.commentId)));
-    router.patch('/:commentId', serviceCap(WRITE), limits('community.comment.edit', { minute: 30, hour: 300 }), jsonBody, run((req) => service.edit(req.viewer, req.params.commentId, req.body || {})));
-    router.delete('/:commentId', serviceAnyCap([WRITE, MOD]), moderate, run((req) => service.remove(req.viewer, req.params.commentId)));
-    router.post('/:commentId/votes', serviceCap(WRITE), limits('community.comment.vote', { minute: 120, hour: 1200 }), jsonBody, run((req) => service.vote(req.viewer, req.params.commentId, req.body || {})));
+        run(async (req) => await service.add(req.viewer, req.params.id, req.body || {}), 201));
+    router.put('/threads/:id/visibility', serviceCap(MOD), moderate, jsonBody, run(async (req) => await service.setVisibility(req.viewer, req.params.id, req.body || {})));
+    router.get('/:commentId', read, run(async (req) => await service.getComment(req.viewer, req.params.commentId)));
+    router.patch('/:commentId', serviceCap(WRITE), limits('community.comment.edit', { minute: 30, hour: 300 }), jsonBody, run(async (req) => await service.edit(req.viewer, req.params.commentId, req.body || {})));
+    router.delete('/:commentId', serviceAnyCap([WRITE, MOD]), moderate, run(async (req) => await service.remove(req.viewer, req.params.commentId)));
+    router.post('/:commentId/votes', serviceCap(WRITE), limits('community.comment.vote', { minute: 120, hour: 1200 }), jsonBody, run(async (req) => await service.vote(req.viewer, req.params.commentId, req.body || {})));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

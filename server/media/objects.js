@@ -31,7 +31,7 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         const h = { Accept: 'application/json', ...headers, ...(await tokens.authHeaders()) };
         if (json !== undefined) h['Content-Type'] = 'application/json';
         const res = await fetchImpl(`${base}${path}`, { method, headers: h, body: json !== undefined ? JSON.stringify(json) : body, signal: AbortSignal.timeout(60_000) });
-        if (res.status === 401 && !retried) { tokens.invalidate(); return call(method, path, { json, body, headers }, true); }
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await call(method, path, { json, body, headers }, true); }
         const data = await res.json().catch(() => null);
         if (!res.ok) {
             const err = new Error(`Media ${method} ${path || '/'} ${res.status}: ${(data && (data.detail || data.error)) || 'failed'}`);

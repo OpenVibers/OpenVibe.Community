@@ -26,15 +26,19 @@ function probe(url, fetchImpl) {
     };
 }
 
-function createCommunityReadiness({ db, auth, config, relay = null, release = null, fetchImpl = globalThis.fetch }) {
+function createCommunityReadiness({ db, auth, config, relay = null, release = null, fetchImpl = globalThis.fetch, valkey = null }) {
     const checks = [
         {
             name: 'db', required: true,
-            check: () => {
-                const n = db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'").get().n;
-                return n > 0 || 'database has no tables';
+            // A real round trip that names the store (postgresql / pglite), and a migrated schema.
+            check: async () => {
+                const r = await db.ready();
+                if (!r.ok) return r.error;
+                const n = (await db.prepare('SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = current_schema()').get()).n;
+                return n > 0 ? { ok: true, detail: r.detail } : 'database has no tables (migrations did not run)';
             },
         },
+        { name: 'valkey', required: false, check: async () => (valkey ? valkey.ready() : { skipped: 'VALKEY_URL not set: per-actor limits count in this process only' }) },
         {
             name: 'network_jwks', required: false,
             check: () => {
@@ -54,11 +58,11 @@ function createCommunityReadiness({ db, auth, config, relay = null, release = nu
         service: 'community',
         release,
         checks,
-        details: (body) => {
+        details: async (body) => {
             const out = { pastes_authority: config.pastesAuthority };
             if (relay && relay.enabled && body.checks.db.status === 'ok') {
                 // The queue by status (failed = dead letters), and whether the Events worker and the inbound gateway run.
-                const st = relay.status();
+                const st = await relay.status();
                 const brief = (x) => (x.enabled ? { enabled: true, state: x.state || (x.running ? 'running' : 'stopped'), last_error: x.last_error || null, ...(x.lag != null ? { lag: x.lag } : {}) } : { enabled: false, reason: x.reason });
                 out.discord_relay = { enabled: true, deliveries: st.deliveries, creates_from: st.creates_from, events_worker: brief(st.events_worker), inbound: brief(st.inbound), inbound_failures: st.inbound_failures };
             }

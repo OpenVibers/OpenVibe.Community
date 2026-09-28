@@ -16,7 +16,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
 (async () => {
     const t = await boot({ authority: 'community', appOpts: { forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 } } });
     // These pages are the feed style (render/forum.js): General is a forum board by default, so it becomes a feed with votes here.
-    t.db.prepare("UPDATE spaces SET style = 'feed', votes = 1 WHERE slug = 'general'").run();
+    await t.db.prepare("UPDATE spaces SET style = 'feed', votes = 1 WHERE slug = 'general'").run();
     const net = t.network;
     const alex = net.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex' });
     const sam = net.addUser({ network_user_id: 9, username: 'sam', display_name: 'Sam' });
@@ -130,8 +130,8 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     });
 
     await check('space page: hot/new/top tabs as links, server pagination with rel=prev/next and canonical', async () => {
-        const space = forumStore.getSpace(t.db, 'showcase');
-        for (let i = 1; i <= 27; i++) forumStore.createThread(t.db, { space_id: space.id, title: `Showcase item ${i}`, author_subject: alex.subject_id, body_markdown: `item ${i}` });
+        const space = await forumStore.getSpace(t.db, 'showcase');
+        for (let i = 1; i <= 27; i++) await forumStore.createThread(t.db, { space_id: space.id, title: `Showcase item ${i}`, author_subject: alex.subject_id, body_markdown: `item ${i}` });
         const p1 = await t.get('/s/showcase?sort=new');
         assert.strictEqual(p1.status, 200);
         has(p1.text, '<link rel="canonical" href="https://openvibe.community/s/showcase?sort=new">');
@@ -149,9 +149,9 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     });
 
     await check('members and staff spaces: sign-in redirect, noindex for members, 404 for non-staff; never in feeds or sitemap', async () => {
-        t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members'), ('mods', 'Mods', 'staff')").run();
-        const ins = forumStore.getSpace(t.db, 'insiders');
-        forumStore.createThread(t.db, { space_id: ins.id, title: 'Members only chat', author_subject: alex.subject_id, body_markdown: 'psst' });
+        await t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members'), ('mods', 'Mods', 'staff')").run();
+        const ins = await forumStore.getSpace(t.db, 'insiders');
+        await forumStore.createThread(t.db, { space_id: ins.id, title: 'Members only chat', author_subject: alex.subject_id, body_markdown: 'psst' });
         const anon = await t.get('/s/insiders');
         assert.strictEqual(anon.status, 303);
         assert.strictEqual(anon.headers.get('location'), '/auth/login?next=%2Fs%2Finsiders');
@@ -171,8 +171,8 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     });
 
     await check('AI threads are labelled as AI on the page and in JSON-LD (never a person)', async () => {
-        const space = forumStore.getSpace(t.db, 'feedback');
-        forumStore.createThread(t.db, { space_id: space.id, title: 'Weekly summary', origin: 'ai', body_markdown: 'What people asked for.' });
+        const space = await forumStore.getSpace(t.db, 'feedback');
+        await forumStore.createThread(t.db, { space_id: space.id, title: 'Weekly summary', origin: 'ai', body_markdown: 'What people asked for.' });
         const r = await t.get('/s/feedback/t/weekly-summary');
         has(r.text, 'OpenVibe AI');
         has(r.text, '<span class="badge badge-ai"');

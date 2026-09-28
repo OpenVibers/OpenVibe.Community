@@ -80,7 +80,7 @@ const { actor, serviceItself } = require('../server/actor-limits');
         }
         const r = await post(20);
         assert.deepStrictEqual([r.status, r.json().code, r.headers.get('retry-after')], [429, 'rate_limited', '60']);
-        const stored = t.db.prepare("SELECT COUNT(*) AS n FROM comments c JOIN comment_threads th ON th.id = c.thread_id WHERE th.ref_service = 'live' AND th.ref_type = 'stream' AND th.ref_id = '42'").get().n;
+        const stored = (await t.db.prepare("SELECT COUNT(*) AS n FROM comments c JOIN comment_threads th ON th.id = c.thread_id WHERE th.ref_service = 'live' AND th.ref_type = 'stream' AND th.ref_id = '42'").get()).n;
         assert.strictEqual(stored, 20, 'nothing stored');
         assert.strictEqual((await call(`/api/v1/comments/threads/${thread.access_id || thread.id}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'hi' } })).status, 201, 'another person still comments');
     });

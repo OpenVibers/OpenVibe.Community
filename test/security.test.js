@@ -58,7 +58,7 @@ const { boot, check, done } = require('./helpers/app');
     await check('an app token naming a victim in X-OV-Subject cannot edit their forum post or post as them', async () => {
         const r = await call(`/api/v1/posts/${alexPostId}`, { method: 'PUT', token: appToken(), headers: { 'x-ov-subject': alex.subject_id }, json: { body: 'defaced' } });
         assert.notStrictEqual(r.status, 200, `post edited by a third-party app: ${r.text}`);
-        const post = t.db.prepare('SELECT body_markdown FROM posts WHERE id = ?').get(alexPostId);
+        const post = await t.db.prepare('SELECT body_markdown FROM posts WHERE id = ?').get(alexPostId);
         assert.strictEqual(post.body_markdown, 'original words');
         const p = await call('/api/pastes', { method: 'POST', token: appToken(), headers: { 'x-ov-subject': alex.subject_id }, json: { content: 'written as alex' } });
         assert.strictEqual(p.status, 403, p.text);
@@ -167,14 +167,14 @@ const { boot, check, done } = require('./helpers/app');
         const pub = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'public words' } });
         assert.match(pub.json().slug, SHORT, 'public pastes are listed anyway: short slug');
         // A paste made before this change (short slug, unlisted) still opens by its slug.
-        t.db.prepare("INSERT INTO pastes (slug, type, title, content, language, visibility) VALUES ('calm-otter-42', 'paste', 'old', 'old unlisted words', 'text', 'unlisted')").run();
+        await t.db.prepare("INSERT INTO pastes (slug, type, title, content, language, visibility) VALUES ('calm-otter-42', 'paste', 'old', 'old unlisted words', 'text', 'unlisted')").run();
         const old = await call('/api/pastes/calm-otter-42');
         assert.strictEqual(old.status, 200, old.text);
         assert.strictEqual(old.json().paste.content, 'old unlisted words');
         assert.strictEqual((await call('/p/calm-otter-42/raw')).status, 200);
         // The secret part is really random.
         const { generateSlug } = require('../server/pastes/store');
-        const many = new Set(Array.from({ length: 2000 }, () => generateSlug(t.db, { secret: true }).split('-')[2]));
+        const many = new Set(Array.from({ length: 2000 }, async () => (await generateSlug(t.db, { secret: true })).split('-')[2]));
         assert.strictEqual(many.size, 2000);
     });
 

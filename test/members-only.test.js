@@ -181,7 +181,7 @@ function startVip() {
     await check('nothing gated leaks: Pulse, sitemap, feeds, space feed, JSON-LD', async () => {
         const pulse = (await call('/api/v1/pulse')).text;
         assert.ok(!pulse.includes('Backstage with Cora') && !pulse.includes('Members lounge') && !pulse.includes('member reply'));
-        assert.strictEqual(t.db.prepare("SELECT COUNT(*) AS c FROM pulse_items WHERE source_type = 'thread' AND source_id IN (?, ?)").get(String(secret.id), String(showcaseThread.id)).c, 0);
+        assert.strictEqual((await t.db.prepare("SELECT COUNT(*) AS c FROM pulse_items WHERE source_type = 'thread' AND source_id IN (?, ?)").get(String(secret.id), String(showcaseThread.id))).c, 0);
         const sitemap = (await call('/sitemap.xml')).text;
         assert.ok(!sitemap.includes(secret.slug) && !sitemap.includes('/s/showcase'), 'no gated thread or space in the sitemap');
         const feed = (await call('/s/feed.xml')).text;
@@ -195,7 +195,7 @@ function startVip() {
         await call(`/api/v1/spaces/general/threads/${later.slug}/members-only`, { method: 'PUT', who: cora, json: { owner: true } });
         assert.ok(!(await call('/api/v1/pulse')).text.includes('Soon private'));
         // Pulse's read-time check alone hides an item nothing removed.
-        t.db.prepare("INSERT INTO pulse_items (source_service, source_type, source_id, title, url, origin, visibility, occurred_at) VALUES ('community', 'thread', ?, 'stale gated item', 'https://openvibe.community/x', 'user', 'public', datetime('now'))").run(String(secret.id));
+        await t.db.prepare("INSERT INTO pulse_items (source_service, source_type, source_id, title, url, origin, visibility, occurred_at) VALUES ('community', 'thread', ?, 'stale gated item', 'https://openvibe.community/x', 'user', 'public', datetime('now'))").run(String(secret.id));
         assert.ok(!(await call('/api/v1/pulse')).text.includes('stale gated item'));
     });
 

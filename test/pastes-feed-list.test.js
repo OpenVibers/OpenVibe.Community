@@ -7,35 +7,36 @@
  */
 const assert = require('assert');
 const { ids } = require('openvibe-contracts');
-const { openDb } = require('../server/db');
+const { testDb } = require('./helpers/db');
 const store = require('../server/pastes/store');
 const { createPasteService } = require('../server/pastes/service');
 const { check, done } = require('./helpers/app');
 
-const db = openDb(':memory:');
-const svc = createPasteService({ db, config: { oauth: { clientSecret: 'test' } }, limits: { cooldownSeconds: 0 } });
-const alice = ids.newId('user');
-const viewer = { kind: 'anonymous', subject: null, staff: false, origin: 'user' };
-const daysAgo = (n) => new Date(Date.now() - n * 86400_000).toISOString().replace('T', ' ').slice(0, 19);
+let db, svc, alice, viewer, daysAgo, add, slugs;
 
-const add = (slug, { origin = 'user', visibility = 'public', views = 0, likes = 0, pinned = 0, age = 1, burn = 0, iso = false } = {}) => {
-    const row = store.insertPaste(db, { slug, owner_subject: origin === 'ai' ? null : alice, origin, type: 'paste', title: slug, content: slug, language: 'text', visibility, pinned, burn_after_read: burn });
-    const at = iso ? new Date(Date.now() - age * 86400_000).toISOString() : daysAgo(age);
-    db.prepare('UPDATE pastes SET views = ?, likes = ?, created_at = ? WHERE id = ?').run(views, likes, at, row.id);
-};
-add('person-new', { age: 1, views: 4 });
-add('person-liked', { age: 2, views: 1, likes: 3 });          // score 16
-add('person-pinned-old', { age: 30, views: 2, pinned: 1 });
-add('person-private', { age: 1, views: 99, visibility: 'private' });
-add('person-unlisted', { age: 1, views: 99, visibility: 'unlisted' });
-add('person-burn', { age: 1, views: 99, burn: 1 });
-add('person-imported-iso', { age: 3, views: 5, iso: true });
-add('ai-moment', { origin: 'ai', age: 1, views: 7 });
-add('ai-old', { origin: 'ai', age: 20, views: 50 });
-
-const slugs = async (q) => (await svc.list(viewer, q)).pastes.map((p) => p.slug);
+          // score 16
 
 (async () => {
+    db = await testDb();
+    svc = createPasteService({ db, config: { oauth: { clientSecret: 'test' } }, limits: { cooldownSeconds: 0 } });
+    alice = ids.newId('user');
+    viewer = { kind: 'anonymous', subject: null, staff: false, origin: 'user' };
+    daysAgo = (n) => new Date(Date.now() - n * 86400_000).toISOString().replace('T', ' ').slice(0, 19);
+    add = async (slug, { origin = 'user', visibility = 'public', views = 0, likes = 0, pinned = 0, age = 1, burn = 0, iso = false } = {}) => {
+        const row = await store.insertPaste(db, { slug, owner_subject: origin === 'ai' ? null : alice, origin, type: 'paste', title: slug, content: slug, language: 'text', visibility, pinned, burn_after_read: burn });
+        const at = iso ? new Date(Date.now() - age * 86400_000).toISOString() : daysAgo(age);
+        await db.prepare('UPDATE pastes SET views = ?, likes = ?, created_at = ? WHERE id = ?').run(views, likes, at, row.id);
+    };
+    await add('person-new', { age: 1, views: 4 });
+    await add('person-liked', { age: 2, views: 1, likes: 3 });
+    await add('person-pinned-old', { age: 30, views: 2, pinned: 1 });
+    await add('person-private', { age: 1, views: 99, visibility: 'private' });
+    await add('person-unlisted', { age: 1, views: 99, visibility: 'unlisted' });
+    await add('person-burn', { age: 1, views: 99, burn: 1 });
+    await add('person-imported-iso', { age: 3, views: 5, iso: true });
+    await add('ai-moment', { origin: 'ai', age: 1, views: 7 });
+    await add('ai-old', { origin: 'ai', age: 20, views: 50 });
+    slugs = async (q) => (await svc.list(viewer, q)).pastes.map((p) => p.slug);
     await check('origin=user and origin=ai split the public list; hidden pastes are in neither', async () => {
         const people = await slugs({ origin: 'user', pinned_first: '0' });
         assert.deepStrictEqual(people, ['person-new', 'person-liked', 'person-imported-iso', 'person-pinned-old']);

@@ -48,25 +48,17 @@ function createSearchDocuments({ db }) {
     let lastScan = null;
     let timers = [];
 
-    db.exec(`CREATE TABLE IF NOT EXISTS search_doc_pushes (
-        type TEXT NOT NULL,
-        id TEXT NOT NULL,
-        hash TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        deleted INTEGER NOT NULL DEFAULT 0,
-        pushed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (type, id)
-    )`);
+    // search_doc_pushes is in migrations/0001_initial.sql.
     const enabled = () => !!events.status().enabled;
 
     /** The document for one thread, `{ deleted: true }` when Search must not hold it. */
-    function threadDocument(threadId) {
-        const t = db.prepare(`SELECT t.*, s.slug AS space_slug, s.name AS space_name, s.visibility AS space_visibility,
+    async function threadDocument(threadId) {
+        const t = await db.prepare(`SELECT t.*, s.slug AS space_slug, s.name AS space_name, s.visibility AS space_visibility,
                                      s.members_only_owner AS space_members_only, c.slug AS category_slug
                               FROM threads t JOIN spaces s ON s.id = t.space_id LEFT JOIN categories c ON c.id = t.category_id
                               WHERE t.id = ?`).get(threadId);
         if (!t || t.deleted_at || t.space_visibility !== 'public' || t.space_members_only || t.members_only_owner) return { deleted: true };
-        const posts = db.prepare('SELECT body_markdown, is_opening FROM posts WHERE thread_id = ? AND deleted_at IS NULL ORDER BY is_opening DESC, id ASC').all(t.id);
+        const posts = await db.prepare('SELECT body_markdown, is_opening FROM posts WHERE thread_id = ? AND deleted_at IS NULL ORDER BY is_opening DESC, id ASC').all(t.id);
         const opening = posts.find((p) => p.is_opening);
         const facets = { space: t.space_slug, kind: t.kind || 'discussion', replies: Number(t.reply_count) || 0, score: Number(t.score) || 0 };
         if (t.status) facets.status = String(t.status).slice(0, 200);
@@ -111,55 +103,55 @@ function createSearchDocuments({ db }) {
     }
 
     /** Send one document or tombstone when it changed. → 'sent' | 'tombstone' | 'unchanged' | 'skipped' */
-    function send(type, id, doc) {
+    async function send(type, id, doc) {
         if (!enabled()) return 'skipped';
-        const prev = db.prepare('SELECT hash, revision, deleted FROM search_doc_pushes WHERE type = ? AND id = ?').get(type, id);
+        const prev = await db.prepare('SELECT hash, revision, deleted FROM search_doc_pushes WHERE type = ? AND id = ?').get(type, id);
         if (doc.deleted && (!prev || prev.deleted)) { stats.unchanged++; return 'unchanged'; }   // never sent, or already gone
         const hash = doc.deleted ? 'deleted' : hashOf(doc);
         if (prev && prev.hash === hash) { stats.unchanged++; return 'unchanged'; }
         const revision = (prev ? prev.revision : 0) + 1;
-        db.transaction(() => {
-            if (doc.deleted) events.record('community.index_document.deleted', { type, id, revision }, { type, id, revision });
-            else events.record('community.index_document.upserted', { type, id, revision }, { ...doc, revision });
-            db.prepare(`INSERT INTO search_doc_pushes (type, id, hash, revision, deleted, pushed_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        await db.tx(async () => {
+            if (doc.deleted) await events.record('community.index_document.deleted', { type, id, revision }, { type, id, revision });
+            else await events.record('community.index_document.upserted', { type, id, revision }, { ...doc, revision });
+            await db.prepare(`INSERT INTO search_doc_pushes (type, id, hash, revision, deleted, pushed_at) VALUES (?, ?, ?, ?, ?, ov_now())
                         ON CONFLICT(type, id) DO UPDATE SET hash = excluded.hash, revision = excluded.revision, deleted = excluded.deleted, pushed_at = excluded.pushed_at`)
                 .run(type, id, hash, revision, doc.deleted ? 1 : 0);
-        })();
+        });
         if (doc.deleted) { stats.tombstones++; return 'tombstone'; }
         stats.sent++;
         return 'sent';
     }
 
-    const publishThread = (threadId) => send('thread', String(threadId), threadDocument(threadId));
-    function publishPaste(row) {
+    const publishThread = async (threadId) => await send('thread', String(threadId), await threadDocument(threadId));
+    async function publishPaste(row) {
         if (!row || !SLUG_RE.test(String(row.slug || ''))) return 'skipped';
-        return send('paste', pasteDocId(row), pasteDocument(row));
+        return await send('paste', pasteDocId(row), pasteDocument(row));
     }
-    const guard = (fn) => { try { fn(); } catch (err) { stats.lastError = err.message; } };
+    const guard = async (fn) => { try { await fn(); } catch (err) { stats.lastError = err.message; } };
 
-    function scan({ now = Date.now() } = {}) {
+    async function scan({ now = Date.now() } = {}) {
         if (!enabled()) return 0;
         const from = lastScan || sqlTime(now - 10 * 60 * 1000);
         const to = sqlTime(now);
-        const threads = db.prepare('SELECT id FROM threads').all();
-        for (const t of threads) guard(() => publishThread(t.id));
-        const pastes = db.prepare('SELECT * FROM pastes WHERE (updated_at >= @from AND updated_at < @to) OR (deleted_at >= @from AND deleted_at < @to) OR (created_at >= @from AND created_at < @to)').all({ from, to });
-        for (const p of pastes) guard(() => publishPaste(p));
+        const threads = await db.prepare('SELECT id FROM threads').all();
+        for (const t of threads) await guard(async () => await publishThread(t.id));
+        const pastes = await db.prepare('SELECT * FROM pastes WHERE (updated_at >= @from AND updated_at < @to) OR (deleted_at >= @from AND deleted_at < @to) OR (created_at >= @from AND created_at < @to)').all({ from, to });
+        for (const p of pastes) await guard(async () => await publishPaste(p));
         lastScan = to;
         stats.lastScanAt = new Date(now).toISOString();
         return threads.length + pastes.length;
     }
 
-    function refresh() {
+    async function refresh() {
         if (!enabled()) return 0;
-        const rows = db.prepare('SELECT * FROM pastes').all();
+        const rows = await db.prepare('SELECT * FROM pastes').all();
         const seen = new Set();
-        for (const p of rows) { seen.add(pasteDocId(p)); guard(() => publishPaste(p)); }
-        for (const r of db.prepare("SELECT id FROM search_doc_pushes WHERE type = 'paste' AND deleted = 0").all()) {
+        for (const p of rows) { seen.add(pasteDocId(p)); await guard(async () => await publishPaste(p)); }
+        for (const r of await db.prepare("SELECT id FROM search_doc_pushes WHERE type = 'paste' AND deleted = 0").all()) {
             if (seen.has(r.id)) continue;
             // An id Search could never accept (sent before paste_<id> existed): nothing to remove there.
-            if (!DOC_ID_RE.test(r.id)) db.prepare("DELETE FROM search_doc_pushes WHERE type = 'paste' AND id = ?").run(r.id);
-            else guard(() => send('paste', r.id, { deleted: true }));
+            if (!DOC_ID_RE.test(r.id)) await db.prepare("DELETE FROM search_doc_pushes WHERE type = 'paste' AND id = ?").run(r.id);
+            else await guard(async () => await send('paste', r.id, { deleted: true }));
         }
         return rows.length;
     }
@@ -167,12 +159,12 @@ function createSearchDocuments({ db }) {
     function start() {
         if (timers.length || !enabled() || process.env.COMMUNITY_SEARCH_DOCUMENTS === 'off') return false;
         const every = (ms, fn, first) => {
-            const t0 = setTimeout(() => guard(fn), first); if (t0.unref) t0.unref();
-            const t = setInterval(() => guard(fn), ms); if (t.unref) t.unref();
+            const t0 = setTimeout(async () => await guard(fn), first); if (t0.unref) t0.unref();
+            const t = setInterval(async () => await guard(fn), ms); if (t.unref) t.unref();
             timers.push(t0, t);
         };
-        every(SCAN_MS, () => scan(), 45 * 1000);
-        every(REFRESH_MS, () => refresh(), 2 * 60 * 1000);
+        every(SCAN_MS, async () => await scan(), 45 * 1000);
+        every(REFRESH_MS, async () => await refresh(), 2 * 60 * 1000);
         return true;
     }
     function stop() { for (const t of timers) { clearTimeout(t); clearInterval(t); } timers = []; }

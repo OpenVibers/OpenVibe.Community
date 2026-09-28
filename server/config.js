@@ -60,8 +60,13 @@ module.exports = {
     //   'live'      — proxy to OpenVibe.Live (which stores in Media). The default until cutover.
     //   'community' — this site's own database is the authority (server/pastes/api.js).
     pastesAuthority: process.env.PASTES_AUTHORITY === 'community' ? 'community' : 'live',
-    // SQLite file for Community's own data: comments, the forum, Pulse, the relay's bookkeeping,
-    // and pastes once authority=community.
+    // PostgreSQL (ADR-035) for Community's own data: comments, the forum, Pulse, the relay's bookkeeping, and pastes
+    // once authority=community. DATABASE_URL serves (PgBouncer); DATABASE_DIRECT_URL migrates (owner). Without them,
+    // development uses an embedded PGlite database in data/pglite.
+    db: { url: process.env.DATABASE_URL || '', directUrl: process.env.DATABASE_DIRECT_URL || '' },
+    // Valkey (ADR-035): per-actor limit counters shared across processes; without it they count in this process.
+    valkey: { url: process.env.VALKEY_URL || '', prefix: process.env.VALKEY_PREFIX || 'ov:community:' },
+    // The SQLite file of releases before PostgreSQL: read once by scripts/migrate-to-postgres.js.
     dbPath: process.env.COMMUNITY_DB_PATH || './data/community.db',
 
     // Browser origins allowed to call the embeddable APIs (/api/v1/comments, /api/v1/pulse)

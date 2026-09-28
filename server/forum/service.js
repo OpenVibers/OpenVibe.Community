@@ -107,13 +107,13 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     // Views: one per viewer (person, or address) per thread per 30 minutes; memory only.
     const viewSeen = new Map();
     const threadsPerDay = limits.threadsPerDay != null ? limits.threadsPerDay : THREADS_PER_DAY;
-    const hook = (fn) => { try { fn(); } catch (err) { console.warn('[Forum] side effect failed:', err.message); } };
+    const hook = async (fn) => { try { await fn(); } catch (err) { console.warn('[Forum] side effect failed:', err.message); } };
 
     const moderator = (v) => discussionModerator(v);
     const person = (v) => !!(v && v.subject);
 
     // ── a space's chat room (OpenVibe.Chat) ──────────────────
-    const chatRoomRow = (spaceId) => (spaceId == null ? null : db.prepare('SELECT * FROM space_chat_rooms WHERE space_id = ?').get(spaceId) || null);
+    const chatRoomRow = async (spaceId) => (spaceId == null ? null : await db.prepare('SELECT * FROM space_chat_rooms WHERE space_id = ?').get(spaceId) || null);
     const shapeChatRoom = (r) => (r ? {
         slug: r.room_slug, name: r.room_name, kind: r.room_kind, visibility: r.room_visibility,
         url: chatRooms ? chatRooms.roomUrl(r.room_slug) : `https://openvibe.chat/r/${encodeURIComponent(r.room_slug)}`,
@@ -173,27 +173,27 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     }
 
     /** The space, or 404 (staff spaces look missing) / 401 (members-only, signed out). */
-    function spaceFor(v, slug) {
-        const space = /^[a-z0-9-]{1,40}$/.test(String(slug)) ? store.getSpace(db, slug) : null;
+    async function spaceFor(v, slug) {
+        const space = /^[a-z0-9-]{1,40}$/.test(String(slug)) ? await store.getSpace(db, slug) : null;
         if (!space || (space.visibility === 'staff' && !moderator(v))) fail(404, 'space.not_found', 'No such space');
         if (!canRead(v, space)) fail(401, 'auth.required', 'Sign in to read this space');
         return space;
     }
 
-    function threadFor(v, spaceSlug, threadSlug) {
-        const space = spaceFor(v, spaceSlug);
-        const thread = store.getThreadBySlug(db, space.id, threadSlug);
+    async function threadFor(v, spaceSlug, threadSlug) {
+        const space = await spaceFor(v, spaceSlug);
+        const thread = await store.getThreadBySlug(db, space.id, threadSlug);
         if (!thread) fail(404, 'thread.not_found', 'No such thread');
         return { space, thread };
     }
 
-    function postFor(v, postId) {
-        const post = /^\d{1,15}$/.test(String(postId)) ? store.getPost(db, Number(postId)) : null;
-        const thread = post ? store.getThread(db, post.thread_id) : null;
-        const space = thread ? store.getSpaceById(db, thread.space_id) : null;
+    async function postFor(v, postId) {
+        const post = /^\d{1,15}$/.test(String(postId)) ? await store.getPost(db, Number(postId)) : null;
+        const thread = post ? await store.getThread(db, post.thread_id) : null;
+        const space = thread ? await store.getSpaceById(db, thread.space_id) : null;
         if (!post || !thread || !space || post.deleted_at) fail(404, 'post.not_found', 'No such post');
         // A post in a staff space looks exactly like a missing one (not space.not_found, which would confirm it).
-        try { spaceFor(v, space.slug); } catch (err) { if (err.status === 404) fail(404, 'post.not_found', 'No such post'); throw err; }
+        try { await spaceFor(v, space.slug); } catch (err) { if (err.status === 404) fail(404, 'post.not_found', 'No such post'); throw err; }
         return { post, thread, space };
     }
 
@@ -221,13 +221,13 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     const shapeCategory = (c) => (c ? { slug: c.slug, name: c.name, description: c.description || null, position: c.position, thread_count: c.thread_count != null ? c.thread_count : undefined } : null);
 
-    function shapeThread(t, space, v, projections, votes) {
+    async function shapeThread(t, space, v, projections, votes) {
         const mo = t.members_only_owner || null;
         const p = mo && projections ? projections.get(mo) : null;
         return {
             id: t.id, space: space.slug, slug: t.slug, title: t.title, url: threadUrl(space, t),
             kind: t.kind || 'discussion', status: t.status || null,
-            category: t.category_id ? shapeCategory(store.getCategoryById(db, t.category_id)) : null,
+            category: t.category_id ? shapeCategory(await store.getCategoryById(db, t.category_id)) : null,
             members_only: mo ? { owner: mo, owner_username: p && p.username ? p.username : null, join_url: vip ? vip.joinUrl(mo, p && p.username) : null } : null,
             author: authors.author(t.author_subject, t.origin, projections), origin: t.origin,
             pinned: !!t.pinned, locked: !!t.locked, score: t.score, reply_count: t.reply_count, views: t.views || 0,
@@ -241,43 +241,43 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     const shapeAttachment = (a) => ({ media_id: a.media_id, url: a.url, filename: a.filename || null, mime: a.mime, size_bytes: a.size_bytes });
     /** post id → [attachment], in order. */
-    function attachmentsOf(postIds) {
+    async function attachmentsOf(postIds) {
         const out = new Map();
         if (!postIds.length) return out;
-        const rows = db.prepare(`SELECT * FROM attachments WHERE post_id IN (${postIds.map(() => '?').join(', ')}) ORDER BY post_id, position`).all(...postIds);
+        const rows = await db.prepare(`SELECT * FROM attachments WHERE post_id IN (${postIds.map(() => '?').join(', ')}) ORDER BY post_id, position`).all(...postIds);
         for (const r of rows) { if (!out.has(r.post_id)) out.set(r.post_id, []); out.get(r.post_id).push(shapeAttachment(r)); }
         return out;
     }
 
     /** The attachments a write names: the writer's own uploads, not yet on a post, at most ATTACH_MAX. → rows */
-    function claimable(w, ids) {
+    async function claimable(w, ids) {
         if (ids === undefined || ids === null) return [];
         const list = Array.isArray(ids) ? ids.map(String) : [String(ids)];
         if (list.length > ATTACH_MAX) fail(400, 'attachments.too_many', `At most ${ATTACH_MAX} images per post`);
         if (!w.author && list.length) fail(403, 'attachments.person_only', 'Only people attach images');
-        const rows = list.map((id) => (MED_ID.test(id) ? db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(id) : null));
+        const rows = (await Promise.all(list.map(async (id) => (MED_ID.test(id) ? await db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(id) : null))));
         if (rows.some((r) => !r || r.owner_subject !== w.author || r.post_id != null)) fail(400, 'attachments.invalid', 'Attach images you uploaded for this post');
         return rows;
     }
-    function claimPastes(refs) {
+    async function claimPastes(refs) {
         const slugs = parsePasteRefs(refs);
         if (slugs.length > PASTE_MAX) fail(400, 'pastes.too_many', `At most ${PASTE_MAX} pastes per post`);
-        return slugs.map((slug) => {
-            const r = db.prepare('SELECT id, slug, visibility, burn_after_read, deleted_at FROM pastes WHERE slug = ?').get(slug);
+        return (await Promise.all(slugs.map(async (slug) => {
+            const r = await db.prepare('SELECT id, slug, visibility, burn_after_read, deleted_at FROM pastes WHERE slug = ?').get(slug);
             if (!r || r.deleted_at) fail(404, 'pastes.not_found', `No paste ${slug}`);
             if (r.visibility === 'private' || r.burn_after_read) fail(400, 'pastes.not_shareable', `Paste ${slug} is private or burns after reading: it cannot be attached`);
             return r;
-        });
+        })));
     }
-    function attachPastes(rows, postId) {
-        const ins = db.prepare('INSERT OR IGNORE INTO post_pastes (post_id, paste_id, position) VALUES (?, ?, ?)');
-        rows.forEach((r, i) => ins.run(postId, r.id, i));
+    async function attachPastes(rows, postId) {
+        const ins = db.prepare('INSERT INTO post_pastes (post_id, paste_id, position) VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
+        for (const [i, r] of rows.entries()) await ins.run(postId, r.id, i);
     }
     /** post id → [paste card], live shareable pastes only (a paste made private or deleted drops out). */
-    function pastesOf(postIds) {
+    async function pastesOf(postIds) {
         const out = new Map();
         if (!postIds.length) return out;
-        const rows = db.prepare(`SELECT pp.post_id, p.slug, p.title, p.language, p.type, p.screenshot_url, p.visibility, p.content
+        const rows = await db.prepare(`SELECT pp.post_id, p.slug, p.title, p.language, p.type, p.screenshot_url, p.visibility, p.content
                                  FROM post_pastes pp JOIN pastes p ON p.id = pp.paste_id
                                  WHERE pp.post_id IN (${postIds.map(() => '?').join(', ')}) AND p.deleted_at IS NULL AND p.visibility != 'private' AND p.burn_after_read = 0
                                  ORDER BY pp.post_id, pp.position`).all(...postIds);
@@ -290,9 +290,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         return out;
     }
 
-    function attach(rows, postId) {
+    async function attach(rows, postId) {
         const set = db.prepare('UPDATE attachments SET post_id = ?, position = ? WHERE media_id = ? AND post_id IS NULL');
-        rows.forEach((r, i) => set.run(postId, i, r.media_id));
+        for (const [i, r] of rows.entries()) await set.run(postId, i, r.media_id);
     }
 
     function shapePost(p, v, projections, attachments = null, pastes = null) {
@@ -313,11 +313,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     async function shapeThreads(rows, spaceOf, v) {
         const projections = await authors.projectionsFor([...rows.map((r) => r.author_subject), ...rows.map((r) => r.members_only_owner), ...rows.map((r) => r.last_author_subject)]);
-        const votes = myVotes(db, 'thread', rows.map((r) => r.id), v && v.subject);
-        return rows.map((r) => shapeThread(r, spaceOf(r), v, projections, votes));
+        const votes = await myVotes(db, 'thread', rows.map((r) => r.id), v && v.subject);
+        return (await Promise.all(rows.map(async (r) => await shapeThread(r, spaceOf(r), v, projections, votes))));
     }
 
-    function shapeSpace(s, mo = null) {
+    async function shapeSpace(s, mo = null) {
         return {
             slug: s.slug, name: s.name, description: s.description, visibility: s.visibility, url: `/s/${s.slug}`,
             thread_kind: s.thread_kind || 'discussion', statuses: STATUSES[s.thread_kind] || [],
@@ -328,7 +328,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             members_only: s.members_only_owner ? (mo || { owner: s.members_only_owner, owner_username: null, join_url: vip ? vip.joinUrl(s.members_only_owner) : null }) : null,
             thread_count: s.thread_count != null ? s.thread_count : undefined,
             last_activity_at: s.last_activity_at !== undefined ? isoTime(s.last_activity_at) : undefined,
-            chat_room: shapeChatRoom(chatRoomRow(s.id)),
+            chat_room: shapeChatRoom(await chatRoomRow(s.id)),
         };
     }
 
@@ -336,21 +336,21 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
      * Newly gated threads leave Pulse at once, and Discord: what the relay had not sent yet is skipped and
      * what it had sent is deleted there (reads and sends re-check as well).
      */
-    function hideGated(threadIds) {
+    async function hideGated(threadIds) {
         if (!threadIds.length) return;
-        if (pulse) hook(() => { for (const id of threadIds) { pulse.threadGone(id); for (const p of db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(id)) pulse.postGone(p.id); } });
-        if (relay) hook(() => relay.hideThreads(threadIds, 'made members-only'));
+        if (pulse) await hook(async () => { for (const id of threadIds) { await pulse.threadGone(id); for (const p of await db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(id)) await pulse.postGone(p.id); } });
+        if (relay) await hook(async () => await relay.hideThreads(threadIds, 'made members-only'));
     }
 
-    function removeThread(v, thread) {
+    async function removeThread(v, thread) {
         const mine = person(v) && thread.author_subject === v.subject;
         if (!mine && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator deletes a thread');
-        db.transaction(() => {
-            store.softDeleteThread(db, thread.id);
-            if (!mine) events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
-        })();
-        if (pulse) hook(() => { pulse.threadGone(thread.id); for (const p of db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(thread.id)) pulse.postGone(p.id); });
-        if (relay) hook(() => relay.enqueueDelete(thread.id, null, mine ? 'deleted by its author' : 'deleted by a moderator'));
+        await db.tx(async () => {
+            await store.softDeleteThread(db, thread.id);
+            if (!mine) await events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+        });
+        if (pulse) await hook(async () => { await pulse.threadGone(thread.id); for (const p of await db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(thread.id)) await pulse.postGone(p.id); });
+        if (relay) await hook(async () => await relay.enqueueDelete(thread.id, null, mine ? 'deleted by its author' : 'deleted by a moderator'));
         return { ok: true, id: thread.id, deleted: 'thread' };
     }
 
@@ -358,33 +358,33 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
      * Where a thread came from and where else it was crossposted, as far as the viewer may see.
      * → { from: { space, title, url } | null, to: [{ space, title, url }], targets: [{ slug, name }] (spaces the viewer may crosspost to) }
      */
-    function crosspostInfo(v, thread) {
+    async function crosspostInfo(v, thread) {
         const visible = (sp) => sp && !sp.members_only_owner && canRead(v, sp) && (sp.visibility !== 'staff' || moderator(v));
         let from = null;
         if (thread.crosspost_of) {
-            const t = store.getThread(db, thread.crosspost_of);
-            const sp = t ? store.getSpaceById(db, t.space_id) : null;
+            const t = await store.getThread(db, thread.crosspost_of);
+            const sp = t ? await store.getSpaceById(db, t.space_id) : null;
             if (t && visible(sp) && !t.members_only_owner) from = { space: sp.name, title: t.title, url: `/s/${sp.slug}/t/${t.slug}` };
         }
-        const to = db.prepare('SELECT t.slug, t.title, s.slug AS space_slug FROM threads t JOIN spaces s ON s.id = t.space_id WHERE t.crosspost_of = ? AND t.deleted_at IS NULL ORDER BY t.id').all(thread.id)
-            .map((r) => ({ r, sp: store.getSpace(db, r.space_slug) })).filter(({ sp }) => visible(sp))
+        const to = (await Promise.all((await db.prepare('SELECT t.slug, t.title, s.slug AS space_slug FROM threads t JOIN spaces s ON s.id = t.space_id WHERE t.crosspost_of = ? AND t.deleted_at IS NULL ORDER BY t.id').all(thread.id))
+            .map(async (r) => ({ r, sp: await store.getSpace(db, r.space_slug) })))).filter(({ sp }) => visible(sp))
             .map(({ r, sp }) => ({ space: sp.name, title: r.title, url: `/s/${sp.slug}/t/${r.slug}` }));
         const targets = person(v) && !thread.members_only_owner
-            ? store.listSpaces(db, moderator(v) ? ['public', 'members', 'staff'] : ['public', 'members']).filter((sp) => sp.id !== thread.space_id && !sp.members_only_owner && (sp.thread_kind !== 'roadmap' || moderator(v)))
+            ? (await store.listSpaces(db, moderator(v) ? ['public', 'members', 'staff'] : ['public', 'members'])).filter((sp) => sp.id !== thread.space_id && !sp.members_only_owner && (sp.thread_kind !== 'roadmap' || moderator(v)))
                 .map((sp) => ({ slug: sp.slug, name: sp.name }))
             : [];
         return { from, to, targets };
     }
 
     /** Where a space sits on the board index (breadcrumbs). → { group, parent } */
-    function placeOf(space) {
-        const g = space.group_id ? db.prepare('SELECT slug, name FROM space_groups WHERE id = ?').get(space.group_id) : null;
-        const p = space.parent_id ? db.prepare('SELECT slug, name FROM spaces WHERE id = ?').get(space.parent_id) : null;
+    async function placeOf(space) {
+        const g = space.group_id ? await db.prepare('SELECT slug, name FROM space_groups WHERE id = ?').get(space.group_id) : null;
+        const p = space.parent_id ? await db.prepare('SELECT slug, name FROM spaces WHERE id = ?').get(space.parent_id) : null;
         return { group: g || null, parent: p || null };
     }
 
     /** Validated space fields from a settings body (only what was sent). */
-    function spaceFields(body, space) {
+    async function spaceFields(body, space) {
         const f = {};
         if (body.name !== undefined) { const n = cleanTitle(body.name); if (n.length < 2 || n.length > 60) fail(400, 'space.invalid_name', 'Space names are 2 to 60 characters'); f.name = n; }
         if (body.description !== undefined) f.description = body.description == null ? null : cleanTitle(body.description).slice(0, 300) || null;
@@ -393,12 +393,12 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         if (body.position !== undefined) f.position = Number.isInteger(Number(body.position)) ? Number(body.position) : 0;
         if (body.kind !== undefined) { if (!['discussion', 'request', 'roadmap'].includes(body.kind)) fail(400, 'space.invalid_kind', 'kind is discussion, request or roadmap'); f.thread_kind = body.kind; }
         if (body.group !== undefined) {
-            const g = body.group ? db.prepare('SELECT id FROM space_groups WHERE slug = ?').get(String(body.group)) : null;
+            const g = body.group ? await db.prepare('SELECT id FROM space_groups WHERE slug = ?').get(String(body.group)) : null;
             if (body.group && !g) fail(404, 'group.not_found', 'No such group on the board index');
             f.group_id = g ? g.id : null;
         }
         if (body.parent !== undefined) {
-            const p = body.parent ? store.getSpace(db, String(body.parent)) : null;
+            const p = body.parent ? await store.getSpace(db, String(body.parent)) : null;
             if (body.parent && !p) fail(404, 'space.not_found', 'No such parent space');
             if (p && space && (p.id === space.id || p.parent_id === space.id)) fail(400, 'space.invalid_parent', 'A space cannot sit under itself or its own child');
             if (p && p.parent_id) fail(400, 'space.invalid_parent', 'Child boards go one level deep');
@@ -415,11 +415,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
         isModerator: moderator,
         /** The board index's groups (for the settings and new-space forms). */
-        groups: () => store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name })),
+        groups: async () => (await store.listGroups(db)).map((g) => ({ slug: g.slug, name: g.name })),
 
         /** A shareable paste's title (the new-topic form's "Discuss in a space"), or null. */
-        pasteTitle(slug) {
-            const r = db.prepare("SELECT title FROM pastes WHERE slug = ? AND deleted_at IS NULL AND visibility != 'private' AND burn_after_read = 0").get(String(slug));
+        async pasteTitle(slug) {
+            const r = await db.prepare("SELECT title FROM pastes WHERE slug = ? AND deleted_at IS NULL AND visibility != 'private' AND burn_after_read = 0").get(String(slug));
             return r ? r.title : null;
         },
 
@@ -431,11 +431,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const vis = ['public'];
             if (person(v) || moderator(v)) vis.push('members');
             if (moderator(v)) vis.push('staff');
-            const rows = store.listSpaces(db, vis);
-            const last = store.lastPosts(db, rows.filter((r) => !r.members_only_owner).map((r) => r.id));
+            const rows = await store.listSpaces(db, vis);
+            const last = await store.lastPosts(db, rows.filter((r) => !r.members_only_owner).map((r) => r.id));
             const projections = await authors.projectionsFor([...rows.map((r) => r.members_only_owner), ...[...last.values()].map((l) => l.author_subject)]);
             const shaped = await Promise.all(rows.map(async (r) => {
-                const sp = shapeSpace(r, await membersOnly(r.members_only_owner, projections));
+                const sp = await shapeSpace(r, await membersOnly(r.members_only_owner, projections));
                 const l = last.get(r.id);
                 sp.last_post = l ? { id: l.post_id, thread: { slug: l.thread_slug, title: l.thread_title, url: `/s/${r.slug}/t/${l.thread_slug}` }, author: authors.author(l.author_subject, l.origin, projections), created_at: isoTime(l.created_at) } : null;
                 return sp;
@@ -444,7 +444,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const bySlug = new Map(shaped.map((sp) => [sp.slug, { ...sp, children: [] }]));
             for (const sp of bySlug.values()) if (sp.parent && bySlug.has(sp.parent.slug)) bySlug.get(sp.parent.slug).children.push(sp);
             const top = [...bySlug.values()].filter((sp) => !(sp.parent && bySlug.has(sp.parent.slug)));
-            const groups = store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name, description: g.description || null, spaces: top.filter((sp) => sp.group && sp.group.slug === g.slug) }))
+            const groups = (await store.listGroups(db)).map((g) => ({ slug: g.slug, name: g.name, description: g.description || null, spaces: top.filter((sp) => sp.group && sp.group.slug === g.slug) }))
                 .filter((g) => g.spaces.length);
             const other = top.filter((sp) => !sp.group);
             if (other.length) groups.push({ slug: null, name: 'More spaces', description: null, spaces: other });
@@ -452,15 +452,15 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         },
 
         /** The board index's groups — moderators create or change one { name, description?, position? }. */
-        putGroup(v, slug, body = {}) {
+        async putGroup(v, slug, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage the board index');
             if (!CATEGORY_SLUG.test(String(slug || ''))) fail(400, 'group.invalid_slug', 'A group slug is 1 to 40 lowercase letters, digits and dashes');
             const name = cleanTitle(body.name);
             if (name.length < 2 || name.length > 60) fail(400, 'group.invalid_name', 'Group names are 2 to 60 characters');
-            db.prepare(`INSERT INTO space_groups (slug, name, description, position) VALUES (?, ?, ?, ?)
+            await db.prepare(`INSERT INTO space_groups (slug, name, description, position) VALUES (?, ?, ?, ?)
                         ON CONFLICT (slug) DO UPDATE SET name = excluded.name, description = excluded.description, position = excluded.position`)
                 .run(slug, name, body.description == null ? null : cleanTitle(body.description).slice(0, 200) || null, Number.isInteger(Number(body.position)) ? Number(body.position) : 0);
-            return { group: db.prepare('SELECT slug, name, description, position FROM space_groups WHERE slug = ?').get(slug) };
+            return { group: await db.prepare('SELECT slug, name, description, position FROM space_groups WHERE slug = ?').get(slug) };
         },
 
         /**
@@ -469,11 +469,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          */
         async updateSpaceSettings(v, spaceSlug, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators change a space');
-            const space = spaceFor(v, spaceSlug);
-            const fields = spaceFields(body, space);
-            const next = store.updateSpace(db, space.id, fields);
-            const row = store.listSpaces(db, ['public', 'members', 'staff']).find((r) => r.id === next.id) || next;
-            return { space: shapeSpace(row, await membersOnly(row.members_only_owner)) };
+            const space = await spaceFor(v, spaceSlug);
+            const fields = await spaceFields(body, space);
+            const next = await store.updateSpace(db, space.id, fields);
+            const row = (await store.listSpaces(db, ['public', 'members', 'staff'])).find((r) => r.id === next.id) || next;
+            return { space: await shapeSpace(row, await membersOnly(row.members_only_owner)) };
         },
 
         /** A new space — moderators. { slug, name, description?, style?, votes?, reactions?, group?, parent?, visibility?, kind? } */
@@ -481,21 +481,21 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators create spaces');
             const slug = String(body.slug || '').trim().toLowerCase();
             if (!SPACE_SLUG.test(slug) || ['new-space', 'discuss', 'feed', 'new'].includes(slug)) fail(400, 'space.invalid_slug', 'A space slug is 2 to 40 lowercase letters, digits and dashes (not new-space, discuss, feed or new)');
-            if (store.getSpace(db, slug)) fail(409, 'space.slug_taken', 'That address is taken');
+            if (await store.getSpace(db, slug)) fail(409, 'space.slug_taken', 'That address is taken');
             const visibility = ['public', 'members', 'staff'].includes(body.visibility) ? body.visibility : 'public';
-            const fields = spaceFields({ ...body, name: body.name }, null);
+            const fields = await spaceFields({ ...body, name: body.name }, null);
             if (!fields.name) fail(400, 'space.invalid_name', 'Name the space');
             const style = fields.style || 'feed';
-            store.createSpace(db, { slug, visibility, created_by: v.subject || v.service || 'staff', style, votes: fields.votes != null ? fields.votes : (style === 'forum' ? 0 : 1),
+            await store.createSpace(db, { slug, visibility, created_by: v.subject || v.service || 'staff', style, votes: fields.votes != null ? fields.votes : (style === 'forum' ? 0 : 1),
                 reactions: fields.reactions != null ? fields.reactions : 1, name: fields.name, description: fields.description || null, group_id: fields.group_id || null,
                 parent_id: fields.parent_id || null, position: fields.position || 0, thread_kind: fields.thread_kind || 'discussion' });
-            const row = store.listSpaces(db, ['public', 'members', 'staff']).find((r) => r.slug === slug);
-            return { space: shapeSpace(row) };
+            const row = (await store.listSpaces(db, ['public', 'members', 'staff'])).find((r) => r.slug === slug);
+            return { space: await shapeSpace(row) };
         },
 
         async space(v, slug) {
-            const s = spaceFor(v, slug);
-            return { space: shapeSpace(s, await membersOnly(s.members_only_owner)) };
+            const s = await spaceFor(v, slug);
+            return { space: await shapeSpace(s, await membersOnly(s.members_only_owner)) };
         },
 
         /**
@@ -504,34 +504,34 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          * another room replaces it (Chat is told the space let go of the old one). → { chat_room, created }
          */
         async attachChatRoom(v, spaceSlug, body = {}) {
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             if (!person(v) && !moderator(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account');
             if (!canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the space\'s owner or staff attach a chat room');
             if (!v || v.kind !== 'user' || !v.token) fail(403, 'chat_room.person_only', 'Attach a chat room while signed in with your own account');
             if (!chatRooms) fail(503, 'chat_room.unavailable', 'Chat rooms cannot be attached right now');
             const slug = chatRooms.parseRoomRef(body.room);
             if (!slug) fail(400, 'chat_room.invalid', 'Name the room by its address (night-owls) or its link (https://openvibe.chat/r/night-owls)');
-            const before = chatRoomRow(space.id);
+            const before = await chatRoomRow(space.id);
             const out = await chatRooms.attach({ token: v.token, room: slug, space: space.slug, title: space.name });
             const same = !!before && before.room_slug === out.room.slug;
-            db.prepare(`INSERT INTO space_chat_rooms (space_id, room_id, room_slug, room_name, room_kind, room_visibility, attached_by) VALUES (?, ?, ?, ?, ?, ?, ?)
+            await db.prepare(`INSERT INTO space_chat_rooms (space_id, room_id, room_slug, room_name, room_kind, room_visibility, attached_by) VALUES (?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (space_id) DO UPDATE SET room_id = excluded.room_id, room_slug = excluded.room_slug, room_name = excluded.room_name,
                             room_kind = excluded.room_kind, room_visibility = excluded.room_visibility,
                             attached_by = CASE WHEN space_chat_rooms.room_slug = excluded.room_slug THEN space_chat_rooms.attached_by ELSE excluded.attached_by END,
-                            attached_at = CASE WHEN space_chat_rooms.room_slug = excluded.room_slug THEN space_chat_rooms.attached_at ELSE CURRENT_TIMESTAMP END`)
+                            attached_at = CASE WHEN space_chat_rooms.room_slug = excluded.room_slug THEN space_chat_rooms.attached_at ELSE ov_now() END`)
                 .run(space.id, out.room.id, out.room.slug, out.room.name, out.room.kind, out.room.visibility, v.subject || null);
             if (before && !same) await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug });
-            return { space: { slug: space.slug, name: space.name, url: `/s/${space.slug}` }, chat_room: shapeChatRoom(chatRoomRow(space.id)), created: !same };
+            return { space: { slug: space.slug, name: space.name, url: `/s/${space.slug}` }, chat_room: shapeChatRoom(await chatRoomRow(space.id)), created: !same };
         },
 
         /** Detach the space's chat room — the space's owner or staff (moderator services too). Idempotent. → { detached, chat } */
         async detachChatRoom(v, spaceSlug) {
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             if (!person(v) && !moderator(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account');
             if (!canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the space\'s owner or staff detach its chat room');
-            const before = chatRoomRow(space.id);
+            const before = await chatRoomRow(space.id);
             if (!before) return { detached: false, chat: null };
-            db.prepare('DELETE FROM space_chat_rooms WHERE space_id = ?').run(space.id);
+            await db.prepare('DELETE FROM space_chat_rooms WHERE space_id = ?').run(space.id);
             // Chat's side of the link goes too when the person may remove it there (best effort: the space no longer shows it either way).
             const chat = chatRooms && v.kind === 'user' && v.token ? await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug }) : 'unavailable';
             return { detached: true, chat };
@@ -539,27 +539,27 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
         /** A page of threads. ?sort=hot|new|top&page=&category=<slug>&status=<status> */
         async listThreads(v, spaceSlug, q = {}) {
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             await requireMembership(v, space);
             const forumStyle = space.style === 'forum';
             let sort = store.SORTS.includes(q.sort) ? q.sort : (forumStyle ? 'active' : 'hot');
             if (sort === 'top' && space.votes === 0) sort = forumStyle ? 'active' : 'hot';
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
             const perPage = Math.min(Math.max(parseInt(q.limit, 10) || THREADS_PER_PAGE, 1), 100);
-            const category = q.category ? store.getCategory(db, space.id, q.category) : null;
+            const category = q.category ? await store.getCategory(db, space.id, q.category) : null;
             if (q.category && !category) fail(404, 'category.not_found', 'No such category in this space');
             const statuses = STATUSES[space.thread_kind] || [];
             if (q.status && !statuses.includes(q.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'Threads in this space have no status');
-            const { rows, total } = store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
+            const { rows, total } = await store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
             const index = await this.listSpaces(v);
             const self = index.spaces.find((x) => x.slug === space.slug) || {};
             return {
-                space: { ...shapeSpace(space, await membersOnly(space.members_only_owner)), group: self.group || null, parent: self.parent || null },
+                space: { ...await shapeSpace(space, await membersOnly(space.members_only_owner)), group: self.group || null, parent: self.parent || null },
                 sort, page, per_page: perPage, total, pages: Math.max(Math.ceil(total / perPage), 1),
-                categories: store.listCategories(db, space.id).map(shapeCategory), category: category ? category.slug : null, status: q.status || null,
+                categories: (await store.listCategories(db, space.id)).map(shapeCategory), category: category ? category.slug : null, status: q.status || null,
                 viewer: { can_start: space.thread_kind !== 'roadmap' || moderator(v), can_moderate: moderator(v), signed_in: person(v), can_manage_chat_room: canManageChatRoom(v, space) },
                 children: index.spaces.filter((c) => c.parent && c.parent.slug === space.slug),
-                groups: moderator(v) ? store.listGroups(db).map((g) => ({ slug: g.slug, name: g.name })) : undefined,
+                groups: moderator(v) ? (await store.listGroups(db)).map((g) => ({ slug: g.slug, name: g.name })) : undefined,
                 threads: await shapeThreads(rows, () => space, v),
             };
         },
@@ -571,7 +571,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          */
         async uploadAttachment(v, spaceSlug, file) {
             if (!media || !media.configured) fail(503, 'attachments.unavailable', 'Images cannot be attached right now');
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             if (!person(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account to attach images');
             mayPostIn(v, space);
             await requireMembership(v, space);
@@ -588,7 +588,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 fail(err.status === 413 || err.status === 415 ? err.status : 502, 'attachments.upload_failed', 'The image could not be stored. Try again.');
             }
             uploadLimiter.record(`s:${v.subject}`);
-            db.prepare('INSERT INTO attachments (media_id, owner_subject, filename, mime, size_bytes, url) VALUES (?, ?, ?, ?, ?, ?)')
+            await db.prepare('INSERT INTO attachments (media_id, owner_subject, filename, mime, size_bytes, url) VALUES (?, ?, ?, ?, ?, ?)')
                 .run(stored.id, v.subject, filename, mime, buffer.length, stored.url);
             return { attachment: shapeAttachment({ media_id: stored.id, url: stored.url, filename, mime, size_bytes: buffer.length }) };
         },
@@ -600,7 +600,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          */
         async react(v, postId, body = {}) {
             if (!person(v)) fail(401, 'auth.required', 'Sign in to rate posts');
-            const { post, thread, space } = postFor(v, postId);
+            const { post, thread, space } = await postFor(v, postId);
             if (space.reactions === 0) fail(403, 'space.reactions_off', 'Ratings are off in this space');
             await requireMembership(v, space, thread);
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
@@ -608,9 +608,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const reaction = body.reaction == null || body.reaction === '' ? null : String(body.reaction);
             if (reaction && !reactions.BY_KEY.has(reaction)) fail(400, 'reaction.invalid', `reaction is one of ${reactions.REACTIONS.map((r) => r.key).join(', ')}`);
             reactLimiter.check(`s:${v.subject}`);
-            const mine = reactions.setReaction(db, post.id, v.subject, reaction);
+            const mine = await reactions.setReaction(db, post.id, v.subject, reaction);
             reactLimiter.record(`s:${v.subject}`);
-            const list = reactions.reactionsFor(db, [post.id], v.subject).get(post.id) || [];
+            const list = (await reactions.reactionsFor(db, [post.id], v.subject)).get(post.id) || [];
             return { post_id: post.id, mine, reactions: list.map((e) => ({ key: e.key, emoji: e.emoji, label: e.label, count: e.count, mine: e.mine })) };
         },
 
@@ -619,32 +619,32 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          * quotes its opening; both show the link. Not members-only threads; not into roadmap spaces (staff excepted).
          */
         async crosspost(v, spaceSlug, threadSlug, body = {}) {
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             const w = writer(v);
             if (!w.author) fail(403, 'crosspost.person_only', 'Only people crosspost');
             await requireMembership(v, space, thread);
             if (thread.members_only_owner || space.members_only_owner) fail(403, 'crosspost.members_only', 'Members-only threads stay where they are');
-            const target = spaceFor(v, String(body.to || ''));
+            const target = await spaceFor(v, String(body.to || ''));
             if (target.id === space.id) fail(400, 'crosspost.same_space', 'Pick another space');
             mayPostIn(v, target);
             await requireMembership(v, target);
             const kind = target.thread_kind || 'discussion';
             if (kind === 'roadmap' && !moderator(v)) fail(403, 'space.staff_threads', 'Roadmap items are added by staff');
-            if (store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay && threadsPerDay > 0) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
-            const opening = db.prepare('SELECT body_markdown FROM posts WHERE thread_id = ? AND is_opening = 1').get(thread.id);
+            if (await store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay && threadsPerDay > 0) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
+            const opening = await db.prepare('SELECT body_markdown FROM posts WHERE thread_id = ? AND is_opening = 1').get(thread.id);
             const excerpt = markdownToText(opening ? opening.body_markdown : '', 400).split('\n').map((l) => `> ${l}`).join('\n');
             const text = `Crossposted from **${space.name}**: [${thread.title.replace(/[[\]]/g, '')}](/s/${space.slug}/t/${thread.slug})${excerpt.trim() !== '>' ? `\n\n${excerpt}` : ''}`;
-            const { thread: created } = store.createThread(db, { space_id: target.id, title: thread.title, author_subject: w.author, origin: 'user', body_markdown: text,
+            const { thread: created } = await store.createThread(db, { space_id: target.id, title: thread.title, author_subject: w.author, origin: 'user', body_markdown: text,
                 kind, status: FIRST_STATUS[kind] || null, crosspost_of: thread.id });
-            if (pulse) hook(() => pulse.threadCreated(created, target));
-            if (relay) hook(() => relay.enqueueThread(created, target));
+            if (pulse) await hook(async () => await pulse.threadCreated(created, target));
+            if (relay) await hook(async () => await relay.enqueueThread(created, target));
             const projections = await authors.projectionsFor([created.author_subject]);
-            return { thread: shapeThread(created, target, v, projections, null) };
+            return { thread: await shapeThread(created, target, v, projections, null) };
         },
 
         /** Quote a post into a reply: "**name** wrote:" and the post as a Markdown quote. → { markdown } */
         async quote(v, postId) {
-            const { post, thread, space } = postFor(v, postId);
+            const { post, thread, space } = await postFor(v, postId);
             await requireMembership(v, space, thread);
             const projections = await authors.projectionsFor([post.author_subject]);
             const a = authors.author(post.author_subject, post.origin, projections, post.relay_author);
@@ -654,85 +654,85 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         },
 
         /** A page view of a thread (the forum's Views): once per viewer per 30 minutes. */
-        recordView(threadId, viewerKey) {
+        async recordView(threadId, viewerKey) {
             const key = `${threadId}|${viewerKey || '?'}`;
             const now = Date.now();
             const seen = viewSeen.get(key);
             if (seen && now - seen < 30 * 60 * 1000) return false;
             if (viewSeen.size > 50000) viewSeen.clear();
             viewSeen.set(key, now);
-            store.bumpViews(db, threadId);
+            await store.bumpViews(db, threadId);
             return true;
         },
 
         /** The categories of a space. */
-        categories(v, spaceSlug) {
-            const space = spaceFor(v, spaceSlug);
-            return { space: space.slug, categories: store.listCategories(db, space.id).map(shapeCategory) };
+        async categories(v, spaceSlug) {
+            const space = await spaceFor(v, spaceSlug);
+            return { space: space.slug, categories: (await store.listCategories(db, space.id)).map(shapeCategory) };
         },
 
         /** Create or change a category { slug, name, description?, position? } — moderators. */
-        putCategory(v, spaceSlug, slug, body = {}) {
+        async putCategory(v, spaceSlug, slug, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage categories');
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             if (!CATEGORY_SLUG.test(String(slug || ''))) fail(400, 'category.invalid_slug', 'A category slug is 1 to 40 lowercase letters, digits and dashes');
             const name = cleanTitle(body.name);
             if (name.length < 2 || name.length > 40) fail(400, 'category.invalid_name', 'Category names are 2 to 40 characters');
             const description = body.description == null ? null : cleanTitle(body.description).slice(0, 200) || null;
             const position = Number.isInteger(Number(body.position)) ? Number(body.position) : 0;
-            return { category: shapeCategory(store.upsertCategory(db, space.id, { slug, name, description, position })) };
+            return { category: shapeCategory(await store.upsertCategory(db, space.id, { slug, name, description, position })) };
         },
 
         /** Delete a category — moderators. Its threads stay, without a category. */
-        deleteCategory(v, spaceSlug, slug) {
+        async deleteCategory(v, spaceSlug, slug) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage categories');
-            const space = spaceFor(v, spaceSlug);
-            if (!store.deleteCategory(db, space.id, slug)) fail(404, 'category.not_found', 'No such category in this space');
+            const space = await spaceFor(v, spaceSlug);
+            if (!await store.deleteCategory(db, space.id, slug)) fail(404, 'category.not_found', 'No such category in this space');
             return { ok: true };
         },
 
         /** Move a thread to a category { category: slug | null } — its author or a moderator. */
         async setThreadCategory(v, spaceSlug, threadSlug, body = {}) {
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             if (!(person(v) && thread.author_subject === v.subject) && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator changes the category');
             await requireMembership(v, space, thread);
-            const category = body.category ? store.getCategory(db, space.id, body.category) : null;
+            const category = body.category ? await store.getCategory(db, space.id, body.category) : null;
             if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
-            const next = store.setThreadCategory(db, thread.id, category ? category.id : null);
+            const next = await store.setThreadCategory(db, thread.id, category ? category.id : null);
             const projections = await authors.projectionsFor([next.author_subject]);
-            return { thread: shapeThread(next, space, v, projections, null) };
+            return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
         /** A request's or roadmap item's status { status } — moderators. */
         async setThreadStatus(v, spaceSlug, threadSlug, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators change a status');
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             const statuses = STATUSES[thread.kind] || [];
             if (!statuses.includes(body.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'This thread has no status');
-            const next = store.setThreadStatus(db, thread.id, body.status);
+            const next = await store.setThreadStatus(db, thread.id, body.status);
             const projections = await authors.projectionsFor([next.author_subject]);
-            return { thread: shapeThread(next, space, v, projections, null) };
+            return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
         /** A thread with a page of its posts. ?page= */
         async getThread(v, spaceSlug, threadSlug, q = {}) {
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             await requireMembership(v, space, thread);
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
-            const { rows, total } = store.listPosts(db, thread.id, { limit: POSTS_PER_PAGE, offset: (page - 1) * POSTS_PER_PAGE });
+            const { rows, total } = await store.listPosts(db, thread.id, { limit: POSTS_PER_PAGE, offset: (page - 1) * POSTS_PER_PAGE });
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner, space.members_only_owner, ...rows.map((p) => p.author_subject)]);
-            const votes = myVotes(db, 'thread', [thread.id], v && v.subject);
+            const votes = await myVotes(db, 'thread', [thread.id], v && v.subject);
             const ids = rows.map((p) => p.id);
-            const att = attachmentsOf(ids);
-            const pasted = pastesOf(ids);
-            const rated = space.reactions !== 0 ? reactions.reactionsFor(db, ids, person(v) ? v.subject : null) : new Map();
+            const att = await attachmentsOf(ids);
+            const pasted = await pastesOf(ids);
+            const rated = space.reactions !== 0 ? await reactions.reactionsFor(db, ids, person(v) ? v.subject : null) : new Map();
             const authorSubjects = rows.map((p) => p.author_subject);
-            const stats = store.authorStats(db, authorSubjects);
-            const received = space.reactions !== 0 ? reactions.receivedBy(db, authorSubjects) : new Map();
+            const stats = await store.authorStats(db, authorSubjects);
+            const received = space.reactions !== 0 ? await reactions.receivedBy(db, authorSubjects) : new Map();
             const raterProjections = await authors.projectionsFor([...rated.values()].flatMap((l) => l.flatMap((e) => e.raters)));
             return {
-                space: { ...shapeSpace(space, await membersOnly(space.members_only_owner, projections)), ...placeOf(space) },
-                thread: shapeThread(thread, space, v, projections, votes),
+                space: { ...await shapeSpace(space, await membersOnly(space.members_only_owner, projections)), ...await placeOf(space) },
+                thread: await shapeThread(thread, space, v, projections, votes),
                 posts: rows.map((p) => {
                     const sp = shapePost(p, v, projections, att, pasted);
                     const st = p.author_subject ? stats.get(p.author_subject) : null;
@@ -743,8 +743,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                     return sp;
                 }),
                 reactions: space.reactions !== 0 ? reactions.REACTIONS : [],
-                crosspost: crosspostInfo(v, thread),
-                categories: store.listCategories(db, space.id).map(shapeCategory),
+                crosspost: await crosspostInfo(v, thread),
+                categories: (await store.listCategories(db, space.id)).map(shapeCategory),
                 attachments: { enabled: !!(media && media.configured), max: ATTACH_MAX, max_bytes: ATTACH_BYTES },
                 page, per_page: POSTS_PER_PAGE, pages: Math.max(Math.ceil(total / POSTS_PER_PAGE), 1), total,
                 viewer: {
@@ -763,101 +763,101 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          * the author's own VIP members; { owner } names the creator (moderators, or the author themselves).
          */
         async createThread(v, spaceSlug, body = {}) {
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             const w = writer(v);
             mayPostIn(v, space);
             await requireMembership(v, space);
             const gate = gateOwner(v, body.members_only, w.author);
             const kind = space.thread_kind || 'discussion';
             if (kind === 'roadmap' && !moderator(v)) fail(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
-            const category = body.category ? store.getCategory(db, space.id, body.category) : null;
+            const category = body.category ? await store.getCategory(db, space.id, body.category) : null;
             if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
             const title = cleanTitle(body.title);
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
-            const images = claimable(w, body.attachments);
-            const pasteRows = claimPastes(body.pastes);
+            const images = await claimable(w, body.attachments);
+            const pasteRows = await claimPastes(body.pastes);
             if (w.key) {
                 threadLimiter.check(w.key, title);
-                if (threadsPerDay > 0 && store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
+                if (threadsPerDay > 0 && await store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
             }
-            const { thread, post } = store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate,
+            const { thread, post } = await store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate,
                 kind, status: FIRST_STATUS[kind] || null, category_id: category ? category.id : null });
             threadLimiter.record(w.key, title);
-            attach(images, post.id);
-            attachPastes(pasteRows, post.id);
-            if (pulse) hook(() => pulse.threadCreated(thread, space));
-            if (relay) hook(() => relay.enqueueThread(thread, space));
+            await attach(images, post.id);
+            await attachPastes(pasteRows, post.id);
+            if (pulse) await hook(async () => await pulse.threadCreated(thread, space));
+            if (relay) await hook(async () => await relay.enqueueThread(thread, space));
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner]);
-            return { thread: shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, attachmentsOf([post.id]), pastesOf([post.id])) };
+            return { thread: await shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, await attachmentsOf([post.id]), await pastesOf([post.id])) };
         },
 
         /** Reply { body } → { post } */
         async reply(v, spaceSlug, threadSlug, body = {}) {
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             const w = writer(v);
             mayPostIn(v, space);
             await requireMembership(v, space, thread);
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
             // Platform blocks: nobody replies in a thread whose author blocked them.
-            blocks.refuseIfBlocked(db, [thread.author_subject], w.author, 'reply in this thread');
+            await blocks.refuseIfBlocked(db, [thread.author_subject], w.author, 'reply in this thread');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
-            const images = claimable(w, body.attachments);
-            const pasteRows = claimPastes(body.pastes);
+            const images = await claimable(w, body.attachments);
+            const pasteRows = await claimPastes(body.pastes);
             postLimiter.check(w.key, text);
-            const post = store.addPost(db, { thread_id: thread.id, author_subject: w.author, origin: w.origin, body_markdown: text });
+            const post = await store.addPost(db, { thread_id: thread.id, author_subject: w.author, origin: w.origin, body_markdown: text });
             postLimiter.record(w.key, text);
-            attach(images, post.id);
-            attachPastes(pasteRows, post.id);
-            if (pulse) hook(() => pulse.postCreated(post, thread, space));
-            if (relay) hook(() => relay.enqueuePost(post, thread, space));
+            await attach(images, post.id);
+            await attachPastes(pasteRows, post.id);
+            if (pulse) await hook(async () => await pulse.postCreated(post, thread, space));
+            if (relay) await hook(async () => await relay.enqueuePost(post, thread, space));
             const projections = await authors.projectionsFor([post.author_subject]);
             // Where the new post lands: its page in the thread (posts are numbered in id order).
-            const position = db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id).c;
+            const position = (await db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id)).c;
             const page = Math.max(Math.ceil(position / POSTS_PER_PAGE), 1);
-            return { post: shapePost(post, v, projections, attachmentsOf([post.id]), pastesOf([post.id])), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
+            return { post: shapePost(post, v, projections, await attachmentsOf([post.id]), await pastesOf([post.id])), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
         },
 
         /** Edit { body } — the author (not on a locked thread) or a moderator. */
         async editPost(v, postId, body = {}) {
-            const { post, thread, space } = postFor(v, postId);
+            const { post, thread, space } = await postFor(v, postId);
             await requireMembership(v, space, thread);
             const mine = person(v) && post.author_subject === v.subject;
             if (!mine && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator edits a post');
             if (thread.locked && !moderator(v)) fail(403, 'thread.locked', 'This thread is locked');
-            const next = store.editPost(db, post.id, cleanBody(body.body != null ? body.body : body.body_markdown), v.subject || v.service || null);
-            if (relay && next && next.revision !== post.revision) hook(() => relay.enqueueEdit(next));
+            const next = await store.editPost(db, post.id, cleanBody(body.body != null ? body.body : body.body_markdown), v.subject || v.service || null);
+            if (relay && next && next.revision !== post.revision) await hook(async () => await relay.enqueueEdit(next));
             const projections = await authors.projectionsFor([next.author_subject]);
             return { post: shapePost(next, v, projections) };
         },
 
         /** Edit history — the author or a moderator. */
         async postVersions(v, postId) {
-            const { post, thread, space } = postFor(v, postId);
+            const { post, thread, space } = await postFor(v, postId);
             await requireMembership(v, space, thread);
             if (!(person(v) && post.author_subject === v.subject) && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator sees the history');
-            const list = store.listPostVersions(db, post.id).map((r) => ({ ...r, created_at: isoTime(r.created_at) }));
+            const list = (await store.listPostVersions(db, post.id)).map((r) => ({ ...r, created_at: isoTime(r.created_at) }));
             return { revision: post.revision, versions: list.length ? list : [{ revision: post.revision, body_markdown: post.body_markdown, edited_by: post.author_subject, created_at: isoTime(post.created_at) }] };
         },
 
         /** Delete a post — the author or a moderator. Deleting the opening post deletes the thread. */
-        deletePost(v, postId) {
-            const { post, thread } = postFor(v, postId);
+        async deletePost(v, postId) {
+            const { post, thread } = await postFor(v, postId);
             if (!(person(v) && post.author_subject === v.subject) && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator deletes a post');
-            if (post.is_opening) return removeThread(v, thread);
-            db.transaction(() => {
-                store.softDeletePost(db, post.id);
-                if (!(person(v) && post.author_subject === v.subject)) events.moderationAction(v, 'post.deleted', { type: 'post', id: String(post.id), owner_subject: post.author_subject || null }, { details: { thread: String(thread.id) } });
-            })();
-            if (pulse) hook(() => pulse.postGone(post.id));
-            if (relay) hook(() => relay.enqueueDelete(thread.id, post.id, person(v) && post.author_subject === v.subject ? 'deleted by its author' : 'deleted by a moderator'));
+            if (post.is_opening) return await removeThread(v, thread);
+            await db.tx(async () => {
+                await store.softDeletePost(db, post.id);
+                if (!(person(v) && post.author_subject === v.subject)) await events.moderationAction(v, 'post.deleted', { type: 'post', id: String(post.id), owner_subject: post.author_subject || null }, { details: { thread: String(thread.id) } });
+            });
+            if (pulse) await hook(async () => await pulse.postGone(post.id));
+            if (relay) await hook(async () => await relay.enqueueDelete(thread.id, post.id, person(v) && post.author_subject === v.subject ? 'deleted by its author' : 'deleted by a moderator'));
             return { ok: true, id: post.id };
         },
 
         /** Delete a thread — its author or a moderator. */
-        deleteThread(v, spaceSlug, threadSlug) {
-            const { thread } = threadFor(v, spaceSlug, threadSlug);
-            return removeThread(v, thread);
+        async deleteThread(v, spaceSlug, threadSlug) {
+            const { thread } = await threadFor(v, spaceSlug, threadSlug);
+            return await removeThread(v, thread);
         },
 
         /** Vote { value: 1 | -1 | 0 } → { score, upvotes, downvotes, my_vote } */
@@ -865,12 +865,12 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const value = parseVote(body.value);
             if (value === null) fail(400, 'vote.invalid', 'value must be 1, -1 or 0');
             if (!person(v)) fail(401, 'auth.required', 'Sign in to vote');
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             if (space.votes === 0) fail(403, 'space.votes_off', 'Votes are off in this space');
             await requireMembership(v, space, thread);
             if (thread.locked) fail(403, 'thread.locked', 'This thread is locked');
             voteLimiter.check(`s:${v.subject}`);
-            const out = applyVote(db, 'thread', thread.id, v.subject, value);
+            const out = await applyVote(db, 'thread', thread.id, v.subject, value);
             voteLimiter.record(`s:${v.subject}`);
             return { thread_id: thread.id, ...out };
         },
@@ -878,18 +878,18 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         /** Pin / lock { pinned?, locked? } — moderators. */
         async moderateThread(v, spaceSlug, threadSlug, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators pin or lock threads');
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             const flags = {};
             if (body.pinned !== undefined) flags.pinned = !!body.pinned;
             if (body.locked !== undefined) flags.locked = !!body.locked;
             if (!Object.keys(flags).length) fail(400, 'thread.nothing_to_change', 'Send pinned and/or locked');
-            const next = db.transaction(() => {
-                const r = store.setThreadFlags(db, thread.id, flags);
-                if (flags.locked !== undefined && !!thread.locked !== flags.locked) events.moderationAction(v, flags.locked ? 'thread.locked' : 'thread.unlocked', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+            const next = await db.tx(async () => {
+                const r = await store.setThreadFlags(db, thread.id, flags);
+                if (flags.locked !== undefined && !!thread.locked !== flags.locked) await events.moderationAction(v, flags.locked ? 'thread.locked' : 'thread.unlocked', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
                 return r;
-            })();
+            });
             const projections = await authors.projectionsFor([next.author_subject]);
-            return { thread: shapeThread(next, space, v, projections, null) };
+            return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
         /**
@@ -898,39 +898,39 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          * Pulse and cancels pending Discord relay deliveries.
          */
         async setThreadMembersOnly(v, spaceSlug, threadSlug, body = {}) {
-            const { space, thread } = threadFor(v, spaceSlug, threadSlug);
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
             const mine = person(v) && thread.author_subject === v.subject;
             if (!mine && !moderator(v)) fail(403, 'thread.not_yours', 'Only the author or a moderator makes a thread members-only');
             await requireMembership(v, space, null);
             const requested = body.members_only !== undefined ? body.members_only : body.owner;
             const owner = gateOwner(v, requested === undefined ? null : requested, thread.author_subject);
             if (!owner && thread.members_only_owner && !moderator(v) && thread.members_only_owner !== v.subject) fail(403, 'members_only.not_yours', 'Only the creator it is gated to, or a moderator, opens it again');
-            const next = store.setThreadMembersOnly(db, thread.id, owner);
-            if (owner) hideGated([thread.id]);
+            const next = await store.setThreadMembersOnly(db, thread.id, owner);
+            if (owner) await hideGated([thread.id]);
             const projections = await authors.projectionsFor([next.author_subject, next.members_only_owner]);
-            return { thread: shapeThread(next, space, v, projections, null) };
+            return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
         /** Members-only for a whole space { owner: 'usr_…' | null } — moderators. */
         async setSpaceMembersOnly(v, spaceSlug, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators make a space members-only');
-            const space = spaceFor(v, spaceSlug);
+            const space = await spaceFor(v, spaceSlug);
             const requested = body.members_only !== undefined ? body.members_only : body.owner;
             const owner = gateOwner(v, requested === undefined ? null : requested, null);
-            const next = store.setSpaceMembersOnly(db, space.id, owner);
-            if (owner) hideGated(db.prepare('SELECT id FROM threads WHERE space_id = ?').all(space.id).map((r) => r.id));
-            return { space: shapeSpace(next, await membersOnly(next.members_only_owner)) };
+            const next = await store.setSpaceMembersOnly(db, space.id, owner);
+            if (owner) await hideGated((await db.prepare('SELECT id FROM threads WHERE space_id = ?').all(space.id)).map((r) => r.id));
+            return { space: await shapeSpace(next, await membersOnly(next.members_only_owner)) };
         },
 
         /** Latest threads in public spaces, with their opening post (sitemap, feeds). */
-        recentPublic({ limit = 50, space = null } = {}) {
-            const rows = store.recentThreads(db, { visibilities: ['public'], limit, spaceSlug: space });
+        async recentPublic({ limit = 50, space = null } = {}) {
+            const rows = await store.recentThreads(db, { visibilities: ['public'], limit, spaceSlug: space });
             const opening = db.prepare('SELECT body_markdown FROM posts WHERE thread_id = ? AND is_opening = 1');
-            return rows.map((t) => ({ ...t, opening: (opening.get(t.id) || {}).body_markdown || '' }));
+            return (await Promise.all(rows.map(async (t) => ({ ...t, opening: (await opening.get(t.id) || {}).body_markdown || '' }))));
         },
 
         /** Public, open spaces (sitemap, feeds): members-only spaces are left out. */
-        publicSpaces() { return store.listSpaces(db, ['public']).filter((s) => !s.members_only_owner).map((s) => shapeSpace(s)); },
+        async publicSpaces() { return (await Promise.all((await store.listSpaces(db, ['public'])).filter((s) => !s.members_only_owner).map(async (s) => await shapeSpace(s)))); },
     };
 }
 

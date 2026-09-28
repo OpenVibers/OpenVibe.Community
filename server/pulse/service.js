@@ -33,18 +33,18 @@ function createPulse({ db, network = null, config = {} } = {}) {
     const base = (config.baseUrl || '').replace(/\/$/, '');
 
     /** Record one of Community's own items; never lets a Pulse problem fail the write that caused it. */
-    function recordLocal(type, id, { title, path, actor = null, origin = 'user', at = null }) {
+    async function recordLocal(type, id, { title, path, actor = null, origin = 'user', at = null }) {
         try {
             const o = ORIGINS.includes(origin) ? origin : 'user';
-            store.upsertItem(db, {
+            await store.upsertItem(db, {
                 source_service: 'community', source_type: type, source_id: String(id),
                 title: String(title || 'Untitled').slice(0, 300), url: `${base}${path}`,
                 actor_subject: o === 'user' ? actor : null, origin: o, occurred_at: at || sqlTime(),
             });
         } catch (err) { console.warn('[Pulse] record failed:', err.message); }
     }
-    function forgetLocal(type, id) {
-        try { store.removeItem(db, 'community', type, id); } catch (err) { console.warn('[Pulse] remove failed:', err.message); }
+    async function forgetLocal(type, id) {
+        try { await store.removeItem(db, 'community', type, id); } catch (err) { console.warn('[Pulse] remove failed:', err.message); }
     }
 
     function shape(i, projections) {
@@ -66,31 +66,31 @@ function createPulse({ db, network = null, config = {} } = {}) {
         ORIGINS,
 
         // ── hooks for Community's own writes ─────────────────
-        pasteCreated(p) {
+        async pasteCreated(p) {
             if (!p || p.visibility !== 'public' || p.origin !== 'user' || Number(p.burn_after_read) || Number(p.is_nsfw)) return;
-            recordLocal('paste', p.slug, { title: p.title, path: `/p/${encodeURIComponent(p.slug)}`, actor: p.owner_subject, origin: 'user', at: p.created_at });
+            await recordLocal('paste', p.slug, { title: p.title, path: `/p/${encodeURIComponent(p.slug)}`, actor: p.owner_subject, origin: 'user', at: p.created_at });
         },
-        pasteChanged(p) {
+        async pasteChanged(p) {
             if (!p) return;
-            if (p.deleted_at || p.visibility !== 'public' || Number(p.is_nsfw)) forgetLocal('paste', p.slug);
+            if (p.deleted_at || p.visibility !== 'public' || Number(p.is_nsfw)) await forgetLocal('paste', p.slug);
         },
-        pasteGone(slug) { forgetLocal('paste', slug); },
-        threadCreated(thread, space) {
+        async pasteGone(slug) { await forgetLocal('paste', slug); },
+        async threadCreated(thread, space) {
             if (!thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return;
-            recordLocal('thread', thread.id, {
+            await recordLocal('thread', thread.id, {
                 title: thread.title, path: `/s/${space.slug}/t/${thread.slug}`,
                 actor: thread.author_subject, origin: thread.origin === 'ai' ? 'ai' : (thread.origin === 'system' ? 'system' : 'user'), at: thread.created_at,
             });
         },
-        postCreated(post, thread, space) {
+        async postCreated(post, thread, space) {
             if (!post || !thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner || post.is_opening) return;
-            recordLocal('post', post.id, {
+            await recordLocal('post', post.id, {
                 title: `Re: ${thread.title}`, path: `/s/${space.slug}/t/${thread.slug}#post-${post.id}`,
                 actor: post.author_subject, origin: post.origin === 'ai' ? 'ai' : 'user', at: post.created_at,
             });
         },
-        threadGone(id) { forgetLocal('thread', id); },
-        postGone(id) { forgetLocal('post', id); },
+        async threadGone(id) { await forgetLocal('thread', id); },
+        async postGone(id) { await forgetLocal('post', id); },
 
         /** POST /api/v1/pulse/items (a service with community.pulse.write). → { item, created } */
         async ingest(v, body = {}) {
@@ -110,7 +110,7 @@ function createPulse({ db, network = null, config = {} } = {}) {
             if (v.origin === 'ai') origin = 'ai'; // X-OV-Origin: ai wins over a body that says otherwise
             const when = body.occurred_at == null ? new Date() : new Date(body.occurred_at);
             if (Number.isNaN(when.getTime()) || when.getTime() > Date.now() + FUTURE_SKEW_MS || when.getUTCFullYear() < 2000) fail(400, 'pulse.invalid_time', 'occurred_at must be an ISO time, not in the future');
-            const out = store.upsertItem(db, {
+            const out = await store.upsertItem(db, {
                 source_service: ref.service, source_type: ref.type, source_id: ref.id,
                 title, url: parsed.toString(),
                 actor_subject: origin === 'user' ? (v.subject || null) : null,
@@ -121,9 +121,9 @@ function createPulse({ db, network = null, config = {} } = {}) {
         },
 
         /** DELETE /api/v1/pulse/items/:service/:type/:id — a service retracting its own item. */
-        retract(v, service, type, id) {
+        async retract(v, service, type, id) {
             if (service !== serviceNameOf(v.service)) fail(403, 'pulse.foreign_ref', 'A service retracts only its own items');
-            return { removed: store.removeItem(db, service, type, id) };
+            return { removed: await store.removeItem(db, service, type, id) };
         },
 
         /** GET /api/v1/pulse ?origin=user|ai|system&after=<cursor>&limit= → { items, next_cursor } */
@@ -132,7 +132,7 @@ function createPulse({ db, network = null, config = {} } = {}) {
             if (origin && !ORIGINS.includes(origin)) fail(400, 'pulse.invalid_origin', `origin must be one of ${ORIGINS.join(', ')}`);
             const limit = Math.min(Math.max(parseInt(q.limit, 10) || PAGE, 1), 100);
             const before = decodeCursor(q.after, 2);
-            const { rows, hasMore } = store.listItems(db, { origin, before, limit });
+            const { rows, hasMore } = await store.listItems(db, { origin, before, limit });
             const projections = await authors.projectionsFor(rows.map((r) => r.actor_subject));
             const last = rows[rows.length - 1];
             return { items: rows.map((r) => shape(r, projections)), next_cursor: hasMore && last ? encodeCursor([last.occurred_at, last.id]) : null };

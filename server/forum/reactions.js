@@ -21,14 +21,14 @@ const BY_KEY = new Map(REACTIONS.map((r) => [r.key, r]));
 const ORDER = new Map(REACTIONS.map((r, i) => [r.key, i]));
 
 /** Set (or with null, remove) a person's rating of a post. → the rating now held, or null */
-function setReaction(db, postId, subject, reaction) {
-    const cur = db.prepare('SELECT reaction FROM post_reactions WHERE post_id = ? AND subject_id = ?').get(postId, subject);
+async function setReaction(db, postId, subject, reaction) {
+    const cur = await db.prepare('SELECT reaction FROM post_reactions WHERE post_id = ? AND subject_id = ?').get(postId, subject);
     if (!reaction || (cur && cur.reaction === reaction)) {
-        db.prepare('DELETE FROM post_reactions WHERE post_id = ? AND subject_id = ?').run(postId, subject);
+        await db.prepare('DELETE FROM post_reactions WHERE post_id = ? AND subject_id = ?').run(postId, subject);
         return null;
     }
-    db.prepare(`INSERT INTO post_reactions (post_id, subject_id, reaction) VALUES (?, ?, ?)
-                ON CONFLICT (post_id, subject_id) DO UPDATE SET reaction = excluded.reaction, created_at = CURRENT_TIMESTAMP`).run(postId, subject, reaction);
+    await db.prepare(`INSERT INTO post_reactions (post_id, subject_id, reaction) VALUES (?, ?, ?)
+                ON CONFLICT (post_id, subject_id) DO UPDATE SET reaction = excluded.reaction, created_at = ov_now()`).run(postId, subject, reaction);
     return reaction;
 }
 
@@ -38,10 +38,10 @@ const placeholders = (n) => Array.from({ length: n }, () => '?').join(', ');
  * Ratings of these posts. → Map postId → [{ key, emoji, label, group, count, raters: [subject…] (first 8), mine }]
  * in the fixed order, only ratings someone gave.
  */
-function reactionsFor(db, postIds, viewerSubject = null) {
+async function reactionsFor(db, postIds, viewerSubject = null) {
     const out = new Map();
     if (!postIds.length) return out;
-    const rows = db.prepare(`SELECT post_id, reaction, subject_id FROM post_reactions WHERE post_id IN (${placeholders(postIds.length)}) ORDER BY created_at, subject_id`).all(...postIds);
+    const rows = await db.prepare(`SELECT post_id, reaction, subject_id FROM post_reactions WHERE post_id IN (${placeholders(postIds.length)}) ORDER BY created_at, subject_id`).all(...postIds);
     for (const r of rows) {
         const def = BY_KEY.get(r.reaction);
         if (!def) continue;
@@ -57,11 +57,11 @@ function reactionsFor(db, postIds, viewerSubject = null) {
 }
 
 /** The ratings each author has received, most given first (top 3). → Map subject → [{ key, emoji, label, count }] */
-function receivedBy(db, subjects) {
+async function receivedBy(db, subjects) {
     const out = new Map();
     const list = [...new Set(subjects.filter(Boolean))];
     if (!list.length) return out;
-    const rows = db.prepare(`SELECT p.author_subject AS s, r.reaction, COUNT(*) AS n FROM post_reactions r JOIN posts p ON p.id = r.post_id
+    const rows = await db.prepare(`SELECT p.author_subject AS s, r.reaction, COUNT(*) AS n FROM post_reactions r JOIN posts p ON p.id = r.post_id
                              WHERE p.author_subject IN (${placeholders(list.length)}) AND p.deleted_at IS NULL GROUP BY p.author_subject, r.reaction`).all(...list);
     for (const r of rows) {
         const def = BY_KEY.get(r.reaction);

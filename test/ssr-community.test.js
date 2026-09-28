@@ -21,8 +21,8 @@ const { boot, check, done } = require('./helpers/app');
     const unl = (await svc.createText(asAlex, { title: 'secret notes', content: 'unlisted <script>alert(1)</script>', visibility: 'unlisted' })).slug;
     const priv = (await svc.createText(asAlex, { title: 'private thing', content: 'private', visibility: 'private' })).slug;
     const burn = (await svc.createText(asAlex, { title: 'burn me', content: 'once only', burn_after_read: true })).slug;
-    t.db.prepare('UPDATE pastes SET views = 900 WHERE slug = ?').run(nginx);
-    t.db.prepare("INSERT INTO pastes (slug, owner_subject, type, title, content, screenshot_url) VALUES ('fair-moon-23', ?, 'screenshot', 'Desktop shot', 'my desktop', 'https://openvibe.media/f/abc-desk.png')").run(alex.subject_id);
+    await t.db.prepare('UPDATE pastes SET views = 900 WHERE slug = ?').run(nginx);
+    await t.db.prepare("INSERT INTO pastes (slug, owner_subject, type, title, content, screenshot_url) VALUES ('fair-moon-23', ?, 'screenshot', 'Desktop shot', 'my desktop', 'https://openvibe.media/f/abc-desk.png')").run(alex.subject_id);
 
     await check('home: latest + most viewed come from the store; nothing hidden; Live is never asked', async () => {
         const r = await t.get('/');
@@ -42,7 +42,7 @@ const { boot, check, done } = require('./helpers/app');
         const ld = r.text.match(/<script type="application\/ld\+json">(.*?)<\/script>/g).map((s) => JSON.parse(s.replace(/<script[^>]*>|<\/script>/g, '')));
         assert.strictEqual(ld.find((o) => o['@type'] === 'Article').author.name, 'Alex');
         has(r.text, 'https://openvibe.media/avatars/alex.png');
-        assert.strictEqual(t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(js).views, 1);
+        assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(js)).views, 1);
         assert.ok(!r.text.includes(`data-delete="${js}"`), 'no delete button for visitors');
     });
 
@@ -68,12 +68,12 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('download reads the store without a view; screenshots use the stored Media URL', async () => {
-        const before = t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py).views;
+        const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py)).views;
         const dl = await t.get(`/p/${py}/download`);
         assert.strictEqual(dl.status, 200);
         assert.strictEqual(dl.headers.get('content-disposition'), `attachment; filename="${py}.py"`);
         assert.ok(dl.text.startsWith('def add'));
-        assert.strictEqual(t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py).views, before);
+        assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py)).views, before);
         const shot = await t.get('/p/fair-moon-23');
         has(shot.text, '<meta property="og:image" content="https://openvibe.media/f/abc-desk.png">');
         const dls = await t.get('/p/fair-moon-23/download');
@@ -104,7 +104,7 @@ const { boot, check, done } = require('./helpers/app');
         const post = await t.get('/new', { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded' }, cookies: [`ov_token=${token}`] });
         assert.strictEqual(post.status, 303);
         const slug = post.headers.get('location').replace('/p/', '');
-        const row = t.db.prepare('SELECT owner_subject, visibility FROM pastes WHERE slug = ?').get(slug);
+        const row = await t.db.prepare('SELECT owner_subject, visibility FROM pastes WHERE slug = ?').get(slug);
         assert.deepStrictEqual(row, { owner_subject: alex.subject_id, visibility: 'private' });
         const anonBody = new URLSearchParams({ content: 'hi' }).toString();
         const ip = '203.0.113.200';

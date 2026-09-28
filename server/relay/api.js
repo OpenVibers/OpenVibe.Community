@@ -54,44 +54,44 @@ function createRelayApi({ relay, db, viewers, inbound = null, limits }) {
         return out;
     }
 
-    router.get('/status', run(() => relay.status()));
-    router.get('/deliveries', run((req) => {
+    router.get('/status', run(async () => await relay.status()));
+    router.get('/deliveries', run(async (req) => {
         const status = DELIVERY_STATUSES.includes(req.query.status) ? req.query.status : null;
         const action = ['create', 'edit', 'delete'].includes(req.query.action) ? req.query.action : null;
-        return { enabled: relay.enabled, deliveries: relay.listDeliveries({ status, action, limit: intIn(req.query.limit, 50, 1, 200) }) };
+        return { enabled: relay.enabled, deliveries: await relay.listDeliveries({ status, action, limit: intIn(req.query.limit, 50, 1, 200) }) };
     }));
-    router.post('/deliveries/:id/retry', manage, run((req) => {
-        if (!relay.retry(idOf(req))) fail(404, 'relay.delivery_not_found', 'No such delivery waiting to be sent');
+    router.post('/deliveries/:id/retry', manage, run(async (req) => {
+        if (!await relay.retry(idOf(req))) fail(404, 'relay.delivery_not_found', 'No such delivery waiting to be sent');
         return { ok: true };
     }));
-    router.post('/deliveries/:id/drop', manage, run((req) => {
-        if (!relay.drop(idOf(req))) fail(404, 'relay.delivery_not_found', 'No such pending or failed delivery');
+    router.post('/deliveries/:id/drop', manage, run(async (req) => {
+        if (!await relay.drop(idOf(req))) fail(404, 'relay.delivery_not_found', 'No such pending or failed delivery');
         return { ok: true };
     }));
-    router.get('/inbound', run((req) => ({
-        enabled: !!inbound, failures: inbound ? inbound.listFailures({ all: req.query.all === '1', limit: intIn(req.query.limit, 50, 1, 200) }) : [],
+    router.get('/inbound', run(async (req) => ({
+        enabled: !!inbound, failures: inbound ? await inbound.listFailures({ all: req.query.all === '1', limit: intIn(req.query.limit, 50, 1, 200) }) : [],
     })));
-    router.post('/inbound/:id/dismiss', manage, run((req) => {
-        if (!inbound || !inbound.dismiss(idOf(req))) fail(404, 'relay.inbound_not_found', 'No such inbound failure to dismiss');
+    router.post('/inbound/:id/dismiss', manage, run(async (req) => {
+        if (!inbound || !await inbound.dismiss(idOf(req))) fail(404, 'relay.inbound_not_found', 'No such inbound failure to dismiss');
         return { ok: true };
     }));
-    router.get('/mappings', run(() => ({ enabled: relay.enabled, mappings: relay.listMappings() })));
-    router.post('/mappings', manage, jsonBody, run((req) => {
+    router.get('/mappings', run(async () => ({ enabled: relay.enabled, mappings: await relay.listMappings() })));
+    router.post('/mappings', manage, jsonBody, run(async (req) => {
         const b = req.body || {};
-        const space = forumStore.getSpace(db, String(b.space || ''));
+        const space = await forumStore.getSpace(db, String(b.space || ''));
         if (!space) fail(400, 'relay.invalid_space', 'Unknown space');
         const ref = String(b.webhook_url_ref || '');
         if (!relay.ENV_NAME.test(ref)) fail(400, 'relay.invalid_ref', 'webhook_url_ref is the NAME of an environment variable (A-Z, 0-9, _), never the URL');
         if (!relay.refAllowed(ref)) fail(400, 'relay.ref_not_allowed', 'webhook_url_ref must be an allowed webhook variable (DISCORD_RELAY_WEBHOOK_VARS, else DISCORD_WEBHOOK_*)');
         const ids = discordIds(b);
-        return { mapping: relay.addMapping({ space_id: space.id, webhook_url_ref: ref, enabled: b.enabled !== false, ...ids, inbound: b.inbound === undefined ? undefined : !!b.inbound }) };
+        return { mapping: await relay.addMapping({ space_id: space.id, webhook_url_ref: ref, enabled: b.enabled !== false, ...ids, inbound: b.inbound === undefined ? undefined : !!b.inbound }) };
     }, 201));
-    router.put('/mappings/:id', manage, jsonBody, run((req) => {
+    router.put('/mappings/:id', manage, jsonBody, run(async (req) => {
         const b = req.body || {};
         const fields = { ...discordIds(b) };
         if (b.enabled !== undefined) fields.enabled = !!b.enabled;
         if (b.inbound !== undefined) fields.inbound = !!b.inbound;
-        const m = relay.updateMapping(idOf(req), fields);
+        const m = await relay.updateMapping(idOf(req), fields);
         if (!m) fail(404, 'relay.mapping_not_found', 'No such mapping');
         return { mapping: m };
     }));

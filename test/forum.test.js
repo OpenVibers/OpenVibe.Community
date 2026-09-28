@@ -80,7 +80,7 @@ const forumStore = require('../server/forum/store');
         assert.strictEqual(r.json().thread.origin, 'ai');
         assert.strictEqual(r.json().thread.author.is_ai, true);
         assert.strictEqual(r.json().thread.author.subject, null);
-        assert.strictEqual(t.db.prepare('SELECT author_subject FROM threads WHERE id = ?').get(r.json().thread.id).author_subject, null);
+        assert.strictEqual((await t.db.prepare('SELECT author_subject FROM threads WHERE id = ?').get(r.json().thread.id)).author_subject, null);
     });
 
     await check('replies: reply_count and last activity move; locked threads refuse people, not moderators', async () => {
@@ -122,7 +122,7 @@ const forumStore = require('../server/forum/store');
         const vote = (value, cookie) => call('/api/v1/spaces/general/threads/hello-world/votes', { method: 'POST', cookie, json: { value } });
         const off = await vote(1, samJwt);
         assert.strictEqual(off.status, 403, 'General is a forum-style board: votes are off'); assert.strictEqual(off.json().code, 'space.votes_off');
-        t.db.prepare("UPDATE spaces SET votes = 1 WHERE slug = 'general'").run();
+        await t.db.prepare("UPDATE spaces SET votes = 1 WHERE slug = 'general'").run();
         assert.strictEqual((await vote(1, samJwt)).json().score, 1);
         assert.strictEqual((await vote(1, alexJwt)).json().score, 2);
         assert.strictEqual((await vote(-1, samJwt)).json().score, 0);
@@ -133,31 +133,31 @@ const forumStore = require('../server/forum/store');
     });
 
     await check('sorting: new, top, hot (deterministic formula at a fixed now), pinned first, pagination', async () => {
-        const space = forumStore.getSpace(t.db, 'showcase');
-        const mk = (title, score, hoursAgo) => {
-            const { thread } = forumStore.createThread(t.db, { space_id: space.id, title, author_subject: alex.subject_id, body_markdown: 'x' });
-            t.db.prepare("UPDATE threads SET score = ?, created_at = datetime('2026-09-22 12:00:00', ?), last_activity_at = datetime('2026-09-22 12:00:00', ?) WHERE id = ?")
+        const space = await forumStore.getSpace(t.db, 'showcase');
+        const mk = async (title, score, hoursAgo) => {
+            const { thread } = await forumStore.createThread(t.db, { space_id: space.id, title, author_subject: alex.subject_id, body_markdown: 'x' });
+            await t.db.prepare("UPDATE threads SET score = ?, created_at = datetime('2026-09-22 12:00:00', ?), last_activity_at = datetime('2026-09-22 12:00:00', ?) WHERE id = ?")
                 .run(score, `-${hoursAgo} hours`, `-${hoursAgo} hours`, thread.id);
             return thread;
         };
-        t.db.prepare('DELETE FROM threads WHERE space_id = ?').run(space.id);
-        mk('old popular', 50, 48);     // (51)/(50^1.5) ≈ 0.144
-        mk('fresh quiet', 0, 1);       // (1)/(3^1.5)   ≈ 0.192
-        mk('fresh liked', 5, 2);       // (6)/(4^1.5)   = 0.75
-        mk('ancient', 3, 500);
+        await t.db.prepare('DELETE FROM threads WHERE space_id = ?').run(space.id);
+        await mk('old popular', 50, 48);     // (51)/(50^1.5) ≈ 0.144
+        await mk('fresh quiet', 0, 1);       // (1)/(3^1.5)   ≈ 0.192
+        await mk('fresh liked', 5, 2);       // (6)/(4^1.5)   = 0.75
+        await mk('ancient', 3, 500);
         const now = new Date('2026-09-22T12:00:00Z');
         const titles = async (sort, extra = {}) => (await forum.listThreads(asAlex, 'showcase', { sort, now, ...extra })).threads.map((x) => x.title);
         assert.deepStrictEqual(await titles('hot'), ['fresh liked', 'fresh quiet', 'old popular', 'ancient']);
         assert.deepStrictEqual(await titles('hot'), await titles('hot'), 'same inputs, same order');
         assert.deepStrictEqual(await titles('new'), ['fresh quiet', 'fresh liked', 'old popular', 'ancient']);
         assert.deepStrictEqual(await titles('top'), ['old popular', 'fresh liked', 'ancient', 'fresh quiet']);
-        const ancient = t.db.prepare("SELECT id FROM threads WHERE title = 'ancient'").get().id;
-        t.db.prepare('UPDATE threads SET pinned = 1 WHERE id = ?').run(ancient);
+        const ancient = (await t.db.prepare("SELECT id FROM threads WHERE title = 'ancient'").get()).id;
+        await t.db.prepare('UPDATE threads SET pinned = 1 WHERE id = ?').run(ancient);
         assert.strictEqual((await titles('hot'))[0], 'ancient');
         const p1 = await forum.listThreads(asAlex, 'showcase', { sort: 'new', now, limit: 3 });
         const p2 = await forum.listThreads(asAlex, 'showcase', { sort: 'new', now, limit: 3, page: 2 });
         assert.deepStrictEqual([p1.pages, p1.total, p1.threads.length, p2.threads.length], [2, 4, 3, 1]);
-        const hot = t.db.prepare('SELECT ov_hot(5, 2) AS h').get().h;
+        const hot = (await t.db.prepare('SELECT ov_hot(5, 2) AS h').get()).h;
         assert.ok(Math.abs(hot - 6 / Math.pow(4, 1.5)) < 1e-12, 'ov_hot = (score + 1) / (hours + 2)^1.5');
     });
 
@@ -180,7 +180,7 @@ const forumStore = require('../server/forum/store');
     });
 
     await check('members and staff spaces: sign-in for members, invisible for non-staff', async () => {
-        t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members'), ('mods', 'Mods', 'staff')").run();
+        await t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members'), ('mods', 'Mods', 'staff')").run();
         assert.strictEqual((await call('/api/v1/spaces/insiders/threads')).status, 401);
         assert.strictEqual((await call('/api/v1/spaces/insiders/threads', { cookie: samJwt })).status, 200);
         assert.strictEqual((await call('/api/v1/spaces/mods/threads', { cookie: samJwt })).status, 404);

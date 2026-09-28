@@ -60,8 +60,8 @@ async function request(apiPath, { method = 'GET', query, body, token, ip, timeou
 
 // ── Pastes ───────────────────────────────────────────────────
 /** Public listing: { pastes, total, limit, offset }. */
-function listPastes(query, ctx = {}) {
-    return request('/pastes', { query, token: ctx.token, ip: ctx.ip });
+async function listPastes(query, ctx = {}) {
+    return await request('/pastes', { query, token: ctx.token, ip: ctx.ip });
 }
 
 /** One paste (counts a view unless noView). Throws LiveApiError(404) when unknown/private. */
@@ -73,13 +73,13 @@ async function getPaste(slug, ctx = {}) {
 }
 
 /** A user's pastes ({ pastes, total, username }); the owner also gets unlisted/private ones. */
-function listByUser(username, query, ctx = {}) {
-    return request(`/pastes/by-user/${encodeURIComponent(username)}`, { query, token: ctx.token, ip: ctx.ip });
+async function listByUser(username, query, ctx = {}) {
+    return await request(`/pastes/by-user/${encodeURIComponent(username)}`, { query, token: ctx.token, ip: ctx.ip });
 }
 
 /** Create a text paste on the visitor's behalf (no-JS form fallback). */
-function createPaste(body, ctx = {}) {
-    return request('/pastes', { method: 'POST', body, token: ctx.token, ip: ctx.ip, timeoutMs: 20_000 });
+async function createPaste(body, ctx = {}) {
+    return await request('/pastes', { method: 'POST', body, token: ctx.token, ip: ctx.ip, timeoutMs: 20_000 });
 }
 
 // ── Public URL builders (OpenVibe.Media serves the bytes) ────

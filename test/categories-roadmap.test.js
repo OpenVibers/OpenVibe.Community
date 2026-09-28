@@ -100,18 +100,18 @@ const { syncRoadmap, syncFromFile } = require('../server/forum/roadmap');
             { key: 'nostatus', title: 'No status', summary: 'y' },
         ];
         const quiet = { warn() {} };
-        assert.deepStrictEqual(syncRoadmap(db, items, { log: quiet }), { created: 1, updated: 0, unchanged: 0, skipped: 2 });
+        assert.deepStrictEqual(await syncRoadmap(db, items, { log: quiet }), { created: 1, updated: 0, unchanged: 0, skipped: 2 });
         let th = (await call('/api/v1/spaces/roadmap/threads?category=features')).json().threads.find((x) => x.title === 'Calls in Chat');
         assert.strictEqual(th.author.display_name, 'OpenVibe'); assert.strictEqual(th.origin, 'system');
-        assert.deepStrictEqual(syncRoadmap(db, items.slice(0, 1), { log: quiet }), { created: 0, updated: 0, unchanged: 1, skipped: 0 });
+        assert.deepStrictEqual(await syncRoadmap(db, items.slice(0, 1), { log: quiet }), { created: 0, updated: 0, unchanged: 1, skipped: 0 });
         const next = [{ ...items[0], status: 'in_progress', title: 'Voice and video calls in Chat', summary: 'Calls move to Chat. Started.' }];
-        assert.deepStrictEqual(syncRoadmap(db, next, { log: quiet }), { created: 0, updated: 1, unchanged: 0, skipped: 0 });
+        assert.deepStrictEqual(await syncRoadmap(db, next, { log: quiet }), { created: 0, updated: 1, unchanged: 0, skipped: 0 });
         const page = (await call(`/api/v1/spaces/roadmap/threads/${th.slug}`)).json();
         assert.strictEqual(page.thread.title, 'Voice and video calls in Chat'); assert.strictEqual(page.thread.status, 'in_progress');
         assert.strictEqual(page.posts[0].body_markdown, 'Calls move to Chat. Started.'); assert.strictEqual(page.posts[0].revision, 2, 'the summary edit keeps the history');
-        const file = syncFromFile(db, { log: quiet });
+        const file = await syncFromFile(db, { log: quiet });
         assert.ok(file && file.created >= 10 && file.skipped === 0, JSON.stringify(file));
-        assert.deepStrictEqual(syncFromFile(db, { log: quiet }).updated, 0, 'the shipped file syncs to a fixed point');
+        assert.deepStrictEqual((await syncFromFile(db, { log: quiet })).updated, 0, 'the shipped file syncs to a fixed point');
     });
 
     await check('pages: chips, badges, staff forms; no New thread button on the roadmap for people', async () => {

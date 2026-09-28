@@ -42,7 +42,7 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
             signal: AbortSignal.timeout(8000),
         });
         // A token the Network no longer accepts (rotated key, revoked client): fetch a new one once.
-        if (res.status === 401 && !retried) { tokens.invalidate(); return post(body, true); }
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await post(body, true); }
         const data = await res.json().catch(() => null);
         if (!res.ok || !data || typeof data.results !== 'object') {
             const err = new Error(`resolve-batch ${res.status}: ${(data && (data.detail || data.error)) || 'bad response'}`);
@@ -65,9 +65,9 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
     }
 
     /** Store a Network projection in the cache. */
-    function remember(p) {
+    async function remember(p) {
         if (!p || !p.subject || !p.subject.id) return;
-        store.upsertProjection(db, {
+        await store.upsertProjection(db, {
             subject_id: p.subject.id, username: p.username || null, display_name: p.display_name || p.username || null,
             avatar_url: absAvatar(p.avatar_url), profile_color: p.profile_color || null,
         });
@@ -76,14 +76,14 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
     /** Subject ids → projections (and cache them). */
     async function resolveSubjects(subjectIds) {
         const map = await resolveChunks(subjectIds, (chunk) => ({ subject_ids: chunk }));
-        for (const p of map.values()) remember(p);
+        for (const p of map.values()) await remember(p);
         return map;
     }
 
     /** Legacy ids of one system ('live' | 'network') → projections. Used by the importer. */
     async function resolveLegacy(system, ids, { cache = true } = {}) {
         const map = await resolveChunks(ids, (chunk) => ({ system, type: 'user', ids: chunk }));
-        if (cache) for (const p of map.values()) remember(p);
+        if (cache) for (const p of map.values()) await remember(p);
         return map;
     }
 
@@ -93,19 +93,19 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
      */
     async function subjectForNetworkUser(networkUserId) {
         if (networkUserId == null || networkUserId === '') return null;
-        const hit = store.mapGet(db, 'network', 'user', networkUserId);
+        const hit = await store.mapGet(db, 'network', 'user', networkUserId);
         if (hit && hit.target_type === 'subject') return hit.target_id;
         const map = await resolveLegacy('network', [networkUserId]);
         const p = map.get(String(networkUserId));
         if (!p || !p.subject || p.subject.type !== 'user') return null;
-        store.mapSet(db, 'network', 'user', networkUserId, 'subject', p.subject.id);
+        await store.mapSet(db, 'network', 'user', networkUserId, 'subject', p.subject.id);
         return p.subject.id;
     }
 
     /** What a verified user JWT says about its holder is a fresh projection too. */
-    function rememberClaims(subjectId, claims) {
+    async function rememberClaims(subjectId, claims) {
         if (!subjectId || !claims) return;
-        store.upsertProjection(db, {
+        await store.upsertProjection(db, {
             subject_id: subjectId, username: claims.username || null, display_name: claims.display_name || claims.username || null,
             avatar_url: absAvatar(claims.avatar_url), profile_color: claims.profile_color || null,
         });
@@ -133,7 +133,7 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
     async function projections(subjectIds) {
         const ids = [...new Set((subjectIds || []).filter((s) => typeof s === 'string' && /^(usr|gst)_/.test(s)))];
         if (!ids.length) return new Map();
-        let map = store.getProjections(db, ids);
+        let map = await store.getProjections(db, ids);
         const missing = ids.filter((id) => !map.has(id));
         const stale = ids.filter((id) => map.has(id) && Date.now() - Date.parse(String(map.get(id).refreshed_at).replace(' ', 'T') + 'Z') > PROJECTION_TTL_MS);
         if (stale.length) refreshLater(stale);
@@ -144,7 +144,7 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
             const lookup = resolveSubjects(missing).catch((err) => console.warn('[Identity] resolve-batch failed:', err.message));
             await Promise.race([lookup, wait]);
             clearTimeout(timer);
-            map = store.getProjections(db, ids);
+            map = await store.getProjections(db, ids);
         }
         return map;
     }

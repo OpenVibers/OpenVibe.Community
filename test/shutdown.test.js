@@ -24,7 +24,7 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer(); 
     const child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
         cwd: path.join(__dirname, '..'),
         env: {
-            ...process.env, PORT: String(port), HOST: '127.0.0.1', NODE_ENV: 'test', COMMUNITY_DB_PATH: path.join(dir, 'community.db'),
+            ...process.env, PORT: String(port), HOST: '127.0.0.1', NODE_ENV: 'test', COMMUNITY_PGLITE_DIR: path.join(dir, 'pglite'), DATABASE_URL: '', DATABASE_DIRECT_URL: '', VALKEY_URL: '',
             EVENTS_URL: 'http://127.0.0.1:9', OV_NETWORK_INTERNAL_URL: 'http://127.0.0.1:9', OV_NETWORK_URL: 'http://127.0.0.1:9',
             OV_OAUTH_CLIENT_SECRET: 'test-secret-not-real', COMMUNITY_EVENTS_SECRET: 'e'.repeat(40), DISCORD_RELAY_ENABLED: '1',
             DISCORD_RELAY_INBOUND: 'on', DISCORD_BOT_TOKEN: 'not-a-real-bot-token', DISCORD_GATEWAY_URL: 'ws://127.0.0.1:9/?v=10&encoding=json',

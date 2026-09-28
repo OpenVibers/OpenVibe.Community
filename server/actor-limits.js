@@ -24,7 +24,7 @@
  * (/internal/events: Events pushes at its own pace, and a 429 would only make it retry and fall behind;
  * they also carry token cutoffs and account deletions). Pages keep their per-address form limits.
  */
-const { createActorLimiter, defaultActor } = require('openvibe-sdk/limits');
+const { createActorLimiter, createValkeyLimitStore, defaultActor } = require('openvibe-sdk/limits');
 const config = require('./config');
 
 const FIRST_PARTY = /^svc:/;
@@ -54,7 +54,7 @@ function serviceItself(req) {
  * limits(name, own) middleware for one app, plus limits.reads(name): the defaults on every GET/HEAD of
  * a router (its writes set their own limits per route). opts.limits and opts.now are for tests.
  */
-function createActorLimits({ limits = null, now = () => Date.now(), registry = null, log = console } = {}) {
+function createActorLimits({ limits = null, now = () => Date.now(), registry = null, log = console, valkey = null } = {}) {
     const refused = registry
         ? registry.counter({ name: 'community_rate_limited_total', help: 'Requests refused 429 by a per-actor limit, by limit name and window', labelNames: ['limit', 'window'] })
         : null;
@@ -62,6 +62,8 @@ function createActorLimits({ limits = null, now = () => Date.now(), registry = n
         limits: limits || { minute: config.limits.minute, hour: config.limits.hour },
         actor,
         now,
+        // Shared across processes on Valkey (ADR-035) when VALKEY_URL is set; in-process otherwise.
+        ...(valkey ? { store: createValkeyLimitStore(valkey) } : {}),
         onLimited(e) {
             // The actor is a subject id, a principal or an address, never a token.
             log.warn(`[Limits] ${e.name}: ${e.actor} refused, over ${e.limit} per ${e.window}`);

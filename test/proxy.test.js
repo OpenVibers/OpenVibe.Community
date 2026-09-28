@@ -70,12 +70,14 @@ const { boot, check, done } = require('./helpers/app');
     await check('an unreachable Live answers 502 JSON instead of hanging', async () => {
         const { createApp } = require('../server/app');
         const http = require('http');
-        const app = createApp({ liveUrl: 'http://127.0.0.1:1' });
+        const db = await require('./helpers/db').testDb();
+        const app = await createApp({ liveUrl: 'http://127.0.0.1:1', db });
         const srv = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
         const res = await fetch(`http://127.0.0.1:${srv.address().port}/api/pastes`);
         assert.strictEqual(res.status, 502);
         assert.deepStrictEqual(await res.json(), { error: 'Could not reach the paste service' });
         await new Promise((r) => srv.close(r));
+        await db.close();
     });
 
     await t.close();

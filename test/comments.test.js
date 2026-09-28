@@ -60,7 +60,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(b.json().created, false);
         const other = await resolve({ service: 'live', type: 'channel', id: '123' });
         assert.notStrictEqual(other.json().thread.id, vod.id);
-        assert.strictEqual(t.db.prepare("SELECT COUNT(*) AS c FROM comment_threads WHERE ref_service = 'live' AND ref_type = 'stream' AND ref_id = '123'").get().c, 1);
+        assert.strictEqual((await t.db.prepare("SELECT COUNT(*) AS c FROM comment_threads WHERE ref_service = 'live' AND ref_type = 'stream' AND ref_id = '123'").get()).c, 1);
     });
 
     await check('resolve: browsers only for allowlisted types; services with comment.write for any; labels only from services', async () => {
@@ -109,7 +109,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(c.anon_name, null);
         assert.strictEqual(c.origin, 'user');
         assert.strictEqual(c.can_delete, true);
-        assert.strictEqual(t.db.prepare('SELECT comment_count FROM comment_threads WHERE access_id = ?').get(vod.id).comment_count, 1);
+        assert.strictEqual((await t.db.prepare('SELECT comment_count FROM comment_threads WHERE access_id = ?').get(vod.id)).comment_count, 1);
         assert.strictEqual((await post(vod.id, { message: '   ' }, { cookie: alexJwt })).status, 400);
         assert.strictEqual((await post(vod.id, { message: 'x'.repeat(5001) }, { cookie: alexJwt })).status, 400);
         assert.strictEqual((await post(99999, { message: 'hi' }, { cookie: alexJwt })).status, 404);
@@ -194,20 +194,20 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual((await vote(-1, { token: svc([WRITE]), headers: { 'x-ov-subject': sam.subject_id } })).json().score, 0);
         const page = (await call(`/api/v1/comments/threads/${vod.id}?limit=100`, { cookie: alexJwt })).json();
         assert.strictEqual(page.comments.find((x) => x.id === c.id).my_vote, 1);
-        assert.strictEqual(t.db.prepare('SELECT COUNT(*) AS n FROM comment_votes WHERE comment_id = ?').get(c.id).n, 2);
+        assert.strictEqual((await t.db.prepare('SELECT COUNT(*) AS n FROM comment_votes WHERE comment_id = ?').get(c.id)).n, 2);
     });
 
     await check('delete: author or staff; others 403; tombstone keeps replies; counts follow', async () => {
         const top = (await post(vod.id, { message: 'to be deleted' }, { cookie: alexJwt })).json().comment;
         await post(vod.id, { message: 'a reply that stays', parent_id: top.id }, { cookie: samJwt });
-        const before = t.db.prepare('SELECT comment_count FROM comment_threads WHERE access_id = ?').get(vod.id).comment_count;
+        const before = (await t.db.prepare('SELECT comment_count FROM comment_threads WHERE access_id = ?').get(vod.id)).comment_count;
         assert.strictEqual((await call(`/api/v1/comments/${top.id}`, { method: 'DELETE', cookie: samJwt })).status, 403);
         assert.strictEqual((await call(`/api/v1/comments/${top.id}`, { method: 'DELETE' })).status, 401);
         assert.strictEqual((await call(`/api/v1/comments/${top.id}`, { method: 'DELETE', token: svc([WRITE]), headers: { 'x-ov-subject': sam.subject_id } })).status, 403);
         const ok = await call(`/api/v1/comments/${top.id}`, { method: 'DELETE', cookie: alexJwt });
         assert.strictEqual(ok.status, 200, ok.text);
-        assert.strictEqual(t.db.prepare('SELECT comment_count FROM comment_threads WHERE access_id = ?').get(vod.id).comment_count, before - 1);
-        assert.strictEqual(t.db.prepare('SELECT message FROM comments WHERE id = ?').get(top.id).message, '', 'scrubbed');
+        assert.strictEqual((await t.db.prepare('SELECT comment_count FROM comment_threads WHERE access_id = ?').get(vod.id)).comment_count, before - 1);
+        assert.strictEqual((await t.db.prepare('SELECT message FROM comments WHERE id = ?').get(top.id)).message, '', 'scrubbed');
         const page = (await call(`/api/v1/comments/threads/${vod.id}?limit=100`)).json();
         const tomb = page.comments.find((c) => c.id === top.id);
         assert.ok(tomb && tomb.deleted && tomb.message === null && tomb.author === null);
@@ -264,7 +264,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(c.author.is_ai, true);
         assert.strictEqual(c.display_name, 'OpenVibe AI');
         assert.strictEqual(c.anon_name, null);
-        assert.strictEqual(t.db.prepare('SELECT author_subject FROM comments WHERE id = ?').get(c.id).author_subject, null);
+        assert.strictEqual((await t.db.prepare('SELECT author_subject FROM comments WHERE id = ?').get(c.id)).author_subject, null);
         assert.strictEqual((await call(`/api/v1/comments/threads/${vod.id}`, { token: svc(['community.pulse.write']) })).status, 403, 'reads need a comment capability');
     });
 
@@ -289,7 +289,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual((await call(`/api/v1/comments/threads/${th.access_id}`, { token: svcW })).status, 200, 'and by access id');
 
         // Browsers walking ids 1..N find nothing, signed in or not, staff included.
-        const max = t.db.prepare('SELECT MAX(id) AS m FROM comment_threads').get().m;
+        const max = (await t.db.prepare('SELECT MAX(id) AS m FROM comment_threads').get()).m;
         for (let id = 1; id <= max; id++) {
             for (const who of [{}, { cookie: samJwt }, { token: alexJwt }, { cookie: adminJwt }]) {
                 const r = await call(`/api/v1/comments/threads/${id}`, who);
@@ -314,32 +314,8 @@ const { checkCapability } = require('../server/identity/capabilities');
         const again = await resolve({ service: 'live', type: 'stream', id: '123' }, { cookie: samJwt });
         assert.strictEqual(again.json().thread.id, vod.id, 'browser resolve hands out the access id');
         assert.match(vod.id, /^cth_/);
-        const all = t.db.prepare('SELECT access_id FROM comment_threads').all().map((r) => r.access_id);
+        const all = (await t.db.prepare('SELECT access_id FROM comment_threads').all()).map((r) => r.access_id);
         assert.ok(all.every(Boolean) && new Set(all).size === all.length, 'every thread has its own');
-    });
-
-    await check('threads made before access ids get one on boot (migration is idempotent)', async () => {
-        const fs = require('fs'), os = require('os'), path = require('path');
-        const Database = require('better-sqlite3');
-        const { openDb } = require('../server/db');
-        const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ov-community-mig-')), 'old.db');
-        const old = new Database(file);
-        old.exec(`CREATE TABLE comment_threads (id INTEGER PRIMARY KEY AUTOINCREMENT, ref_service TEXT NOT NULL, ref_type TEXT NOT NULL, ref_id TEXT NOT NULL, ref_label TEXT,
-            visibility TEXT NOT NULL DEFAULT 'public' CHECK(visibility IN ('public', 'hidden', 'locked')), comment_count INTEGER NOT NULL DEFAULT 0, created_by TEXT,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (ref_service, ref_type, ref_id))`);
-        for (let i = 0; i < 5; i++) old.prepare("INSERT INTO comment_threads (ref_service, ref_type, ref_id) VALUES ('live', 'vod', ?)").run(String(i));
-        old.close();
-        const db = openDb(file);
-        const rows = db.prepare('SELECT id, access_id FROM comment_threads').all();
-        assert.strictEqual(rows.length, 5);
-        for (const r of rows) assert.match(r.access_id, /^cth_[A-Za-z0-9_-]{22}$/);
-        assert.strictEqual(new Set(rows.map((r) => r.access_id)).size, 5);
-        db.close();
-        const db2 = openDb(file);
-        assert.deepStrictEqual(db2.prepare('SELECT id, access_id FROM comment_threads').all(), rows, 'a second boot changes nothing');
-        assert.throws(() => db2.prepare('UPDATE comment_threads SET access_id = ? WHERE id = ?').run(rows[0].access_id, rows[1].id), /UNIQUE/);
-        db2.close();
-        fs.rmSync(path.dirname(file), { recursive: true, force: true });
     });
 
     await check('CORS: OpenVibe origins get Bearer-only CORS headers; others none; preflight answers 204', async () => {
@@ -420,7 +396,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.ok(ok.json().comment.edited_at, 'edited_at set');
         const byBrowser = await patch({ message: 'typo here!' }, { cookie: alexJwt });
         assert.strictEqual(byBrowser.status, 200, 'the author from a browser too');
-        assert.strictEqual(t.db.prepare('SELECT message FROM comments WHERE id = ?').get(c.id).message, 'typo here!');
+        assert.strictEqual((await t.db.prepare('SELECT message FROM comments WHERE id = ?').get(c.id)).message, 'typo here!');
         await callL(`/api/v1/comments/${c.id}`, { method: 'DELETE', ...asLive(alex.subject_id) });
         assert.strictEqual((await patch({ message: 'back from the dead' }, asLive(alex.subject_id))).status, 404);
     });
@@ -462,25 +438,6 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual((await callL(`/c/${liveVod.access_id}`)).status, 404, 'hidden threads are missing');
         await callL(`/api/v1/comments/threads/${liveVod.id}/visibility`, { method: 'PUT', json: { visibility: 'public' }, token: svcLive });
         assert.strictEqual((await callL(`/c/${liveVod.access_id}`)).status, 200);
-    });
-
-    await check('comments.edited_at is added to databases made before it (idempotent)', async () => {
-        const fs = require('fs'), os = require('os'), path = require('path');
-        const Database = require('better-sqlite3');
-        const { openDb } = require('../server/db');
-        const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ov-community-edit-')), 'old.db');
-        const old = new Database(file);
-        old.exec(`CREATE TABLE comments (id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id INTEGER NOT NULL, parent_id INTEGER, author_subject TEXT, anon_name TEXT,
-            origin TEXT NOT NULL DEFAULT 'user', message TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0, upvotes INTEGER NOT NULL DEFAULT 0, downvotes INTEGER NOT NULL DEFAULT 0,
-            reply_count INTEGER NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, deleted_at DATETIME, deleted_by TEXT)`);
-        old.prepare("INSERT INTO comments (thread_id, message) VALUES (1, 'kept')").run();
-        old.close();
-        const db = openDb(file);
-        assert.ok(db.prepare('PRAGMA table_info(comments)').all().some((c) => c.name === 'edited_at'));
-        assert.strictEqual(db.prepare('SELECT message, edited_at FROM comments').get().message, 'kept');
-        db.close();
-        openDb(file).close();
-        fs.rmSync(path.dirname(file), { recursive: true, force: true });
     });
 
     await t.close();

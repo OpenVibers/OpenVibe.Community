@@ -76,8 +76,8 @@ function startStubChat() {
     const samJwt = net.sign({ id: 9, subject_id: sam.subject_id, username: 'sam', display_name: 'Sam', role: 'user' });
     const bossJwt = net.sign({ id: 1, subject_id: bossSubject, username: 'boss', display_name: 'Boss', role: 'admin' });
     // Alex owns the Showcase space (its creator) and the rooms night-owls and secret; Sam owns sams-room; Boss (staff) owns staff-room.
-    t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'showcase'").run(alex.subject_id);
-    t.db.prepare("UPDATE spaces SET members_only_owner = ? WHERE slug = 'off-topic'").run(sam.subject_id);
+    await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'showcase'").run(alex.subject_id);
+    await t.db.prepare("UPDATE spaces SET members_only_owner = ? WHERE slug = 'off-topic'").run(sam.subject_id);
     chat.addRoom('night-owls', { name: 'Night Owls', owner: alex.subject_id });
     chat.addRoom('secret', { name: 'Secret', owner: sam.subject_id, visibility: 'private', members: [sam.subject_id] });
     chat.addRoom('stage', { name: 'Stage', kind: 'call', owner: sam.subject_id });
@@ -85,7 +85,7 @@ function startStubChat() {
     chat.addRoom('staff-room', { name: 'Staff Room', owner: bossSubject });
     const api = (method, path, jwt, body) => t.get(`/api/v1/spaces${path}`, { method, headers: { ...(jwt ? { authorization: `Bearer ${jwt}` } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
     const form = (jwt, path, fields, origin = 'https://openvibe.community') => t.get(path, { method: 'POST', cookies: [`ov_token=${jwt}`], headers: { 'content-type': 'application/x-www-form-urlencoded', origin }, body: new URLSearchParams(fields).toString() });
-    const rows = () => t.db.prepare('SELECT * FROM space_chat_rooms ORDER BY space_id').all();
+    const rows = async () => await t.db.prepare('SELECT * FROM space_chat_rooms ORDER BY space_id').all();
 
     await check('only the space\'s owner or staff attach, and only as themselves', async () => {
         const before = chat.calls.length;
@@ -98,7 +98,7 @@ function startStubChat() {
         r = await api('PUT', '/showcase/chat-room', alexJwt, { room: '../../admin' });
         assert.deepStrictEqual([r.status, r.json().code], [400, 'chat_room.invalid']);
         assert.strictEqual(chat.calls.length, before, 'Chat was not asked for any of these');
-        assert.deepStrictEqual(rows(), []);
+        assert.deepStrictEqual(await rows(), []);
     });
 
     await check('the owner attaches by link; Chat is asked with their own token; again is a no-op', async () => {
@@ -109,8 +109,8 @@ function startStubChat() {
         assert.deepStrictEqual([call.method, call.url, call.auth, call.body], ['POST', '/api/chat/rooms/night-owls/attachments', `Bearer ${alexJwt}`, { service: 'community', resource: 'showcase', title: 'Showcase' }]);
         r = await api('PUT', '/showcase/chat-room', alexJwt, { room: 'night-owls' });
         assert.deepStrictEqual([r.status, r.json().created], [200, false]);
-        assert.strictEqual(rows().length, 1);
-        assert.strictEqual(rows()[0].attached_by, alex.subject_id);
+        assert.strictEqual((await rows()).length, 1);
+        assert.strictEqual((await rows())[0].attached_by, alex.subject_id);
         assert.strictEqual(chat.attachments.size, 1);
         assert.strictEqual((await api('GET', '/showcase')).json().space.chat_room.slug, 'night-owls', 'the space says which room');
     });
@@ -131,7 +131,7 @@ function startStubChat() {
         const page = await t.get(f.headers.get('location').replace(/#.*$/, ''), { cookies: [`ov_token=${alexJwt}`] });
         assert.match(page.text, /<p class="alert alert-error" role="alert">OpenVibe.Chat did not answer/);
         chat.state.down = false;
-        assert.strictEqual(rows()[0].room_slug, 'night-owls');
+        assert.strictEqual((await rows())[0].room_slug, 'night-owls');
     });
 
     await check('the space page links the room; its owner gets the forms; others only the link', async () => {
@@ -160,13 +160,13 @@ function startStubChat() {
         assert.deepStrictEqual([r.status, r.json().created, r.json().chat_room.slug], [201, true, 'staff-room']);
         assert.ok(chat.calls.some((c) => c.method === 'DELETE' && c.url === '/api/chat/rooms/night-owls/attachments/community/showcase'));
         assert.strictEqual(chat.attachments.has('night-owls|showcase'), true, 'Chat keeps the old side when the caller may not remove it');
-        assert.strictEqual(rows().find((x) => x.room_slug === 'staff-room' && x.attached_by === bossSubject) !== undefined, true);
+        assert.strictEqual((await rows()).find((x) => x.room_slug === 'staff-room' && x.attached_by === bossSubject) !== undefined, true);
         // The owner puts theirs back and detaches it without JavaScript: both sides go.
         r = await api('PUT', '/showcase/chat-room', alexJwt, { room: 'night-owls' });
         assert.strictEqual(r.status, 201);
         const f = await form(alexJwt, '/s/showcase/chat-room/detach', {});
         assert.deepStrictEqual([f.status, f.headers.get('location')], [303, '/s/showcase#chat-room']);
-        assert.ok(!rows().some((x) => x.room_slug === 'night-owls'));
+        assert.ok(!(await rows()).some((x) => x.room_slug === 'night-owls'));
         assert.strictEqual(chat.attachments.has('night-owls|showcase'), false, 'Chat\'s side went too');
         r = await api('DELETE', '/showcase/chat-room', alexJwt);
         assert.deepStrictEqual([r.status, r.json().detached], [200, false], 'detaching twice is fine');

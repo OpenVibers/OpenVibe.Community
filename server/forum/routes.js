@@ -78,7 +78,7 @@ function createForumRoutes({ forum, viewers, config }) {
         try {
             if (!req.user) return login(res, '/s/new-space');
             if (!forum.isModerator(req.viewer)) throw new ApiError(403, 'capability.denied', 'Only moderators create spaces');
-            html(res, boardPages.newSpacePage({ groups: forum.groups() }));
+            html(res, boardPages.newSpacePage({ groups: await forum.groups() }));
         } catch (err) { failPage(req, res, err, next); }
     }));
     router.post('/s/new-space', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
@@ -90,7 +90,7 @@ function createForumRoutes({ forum, viewers, config }) {
             res.redirect(303, `/s/${out.space.slug}`);
         } catch (err) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 403) return failPage(req, res, err, next);
-            html(res, boardPages.newSpacePage({ groups: forum.groups(), error: err.message, values }), err.status);
+            html(res, boardPages.newSpacePage({ groups: await forum.groups(), error: err.message, values }), err.status);
         }
     }));
 
@@ -103,14 +103,14 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.get('/s/feed.xml', (_req, res) => {
-        res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(seo.threadFeed({ threads: forum.recentPublic({ limit: 30 }) }));
+    router.get('/s/feed.xml', async (_req, res) => {
+        res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(seo.threadFeed({ threads: await forum.recentPublic({ limit: 30 }) }));
     });
 
-    router.get('/s/:space/feed.xml', (req, res) => {
-        const space = forum.publicSpaces().find((s) => s.slug === req.params.space);
+    router.get('/s/:space/feed.xml', async (req, res) => {
+        const space = (await forum.publicSpaces()).find((s) => s.slug === req.params.space);
         if (!space) return res.status(404).type('text/plain').send('Not found');
-        res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(seo.threadFeed({ space, threads: forum.recentPublic({ limit: 30, space: space.slug }) }));
+        res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(seo.threadFeed({ space, threads: await forum.recentPublic({ limit: 30, space: space.slug }) }));
     });
 
     router.get('/s/:space', withViewer, wrap(async (req, res, next) => {
@@ -130,7 +130,7 @@ function createForumRoutes({ forum, viewers, config }) {
             if (!probe.viewer.can_start) throw new ApiError(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
             const { space } = await forum.space(req.viewer, req.params.space);
             const paste = /^[A-Za-z0-9_-]{3,80}$/.test(String(req.query.paste || '')) ? String(req.query.paste) : '';
-            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled(), values: paste ? { pastes: paste, title: forum.pasteTitle(paste) || '' } : {} }));
+            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled(), values: paste ? { pastes: paste, title: await forum.pasteTitle(paste) || '' } : {} }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
@@ -149,7 +149,7 @@ function createForumRoutes({ forum, viewers, config }) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);
             try {
                 const { space } = await forum.space(req.viewer, req.params.space);
-                const { categories } = forum.categories(req.viewer, req.params.space);
+                const { categories } = await forum.categories(req.viewer, req.params.space);
                 html(res, forumPages.newThreadPage({ space, user: req.user, values, error: err.message, categories, attachments: forum.attachmentsEnabled() }), err.status);
             } catch (e) { failPage(req, res, e, next); }
         }
@@ -158,7 +158,7 @@ function createForumRoutes({ forum, viewers, config }) {
     async function renderThread(req, res, { status = 200, error = null, draft = '' } = {}) {
         const out = await forum.getThread(req.viewer, req.params.space, req.params.slug, { page: req.query.page });
         if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
-        if (status === 200 && forum.recordView(out.thread.id, req.user && req.user.subject_id ? `s:${req.user.subject_id}` : `ip:${req.ip}`)) out.thread.views += 1;
+        if (status === 200 && await forum.recordView(out.thread.id, req.user && req.user.subject_id ? `s:${req.user.subject_id}` : `ip:${req.ip}`)) out.thread.views += 1;
         // Quote (no JS): ?quote=<post id> fills the reply box with the quoted post.
         if (!draft && /^\d{1,15}$/.test(String(req.query.quote || '')) && out.viewer.can_reply) {
             try { draft = (await forum.quote(req.viewer, req.query.quote)).markdown; } catch { /* a post that is gone: an empty box */ }
@@ -280,9 +280,9 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.post('/s/:space/t/:slug/delete', withViewer, sameOrigin, form, (req, res, next) => {
+    router.post('/s/:space/t/:slug/delete', withViewer, sameOrigin, form, async (req, res, next) => {
         try {
-            forum.deleteThread(req.viewer, req.params.space, req.params.slug);
+            await forum.deleteThread(req.viewer, req.params.space, req.params.slug);
             seo.resetCaches();
             res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
         } catch (err) { failPage(req, res, err, next); }

@@ -23,12 +23,12 @@ function raw(base, path, headers = {}) {
         assert.strictEqual(b.status, 'ready');
         assert.strictEqual(b.service, 'community');
         assert.strictEqual(b.pastes_authority, 'live');
-        assert.deepStrictEqual(Object.keys(b.checks), ['db', 'network_jwks', 'live']);
+        assert.deepStrictEqual(Object.keys(b.checks), ['db', 'valkey', 'network_jwks', 'live']);
         assert.strictEqual(b.checks.db.required, true);
         assert.strictEqual(b.checks.network_jwks.required, false);
         assert.strictEqual(b.checks.live.required, false);
-        for (const c of Object.values(b.checks)) {
-            assert.strictEqual(c.status, 'ok');
+        for (const [name, c] of Object.entries(b.checks)) {
+            assert.strictEqual(c.status, name === 'valkey' && !process.env.VALKEY_URL ? 'skipped' : 'ok', name);   // Valkey under test:pg only
             assert.strictEqual(typeof c.latency_ms, 'number');
             assert.ok(Date.parse(c.checked_at));
         }

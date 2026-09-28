@@ -61,8 +61,8 @@ const SECRET = `whsec_${'cd'.repeat(32)}`;
         const bad = block(alex.subject_id, sam.subject_id, false, 9); bad.payload.blocked = 'sam';
         assert.strictEqual((await deliver(bad)).json.outcome, 'ignored:payload');
         const blocks = require('../server/identity/blocks');
-        assert.ok(blocks.hasBlocked(t.db, alex.subject_id, sam.subject_id));
-        assert.ok(!blocks.hasBlocked(t.db, sam.subject_id, alex.subject_id), 'one direction');
+        assert.ok(await blocks.hasBlocked(t.db, alex.subject_id, sam.subject_id));
+        assert.ok(!await blocks.hasBlocked(t.db, sam.subject_id, alex.subject_id), 'one direction');
     });
 
     await check('forum: no reply in a thread whose author blocked you (API problem and no-JS form); others reply', async () => {

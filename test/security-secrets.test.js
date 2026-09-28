@@ -143,7 +143,7 @@ function formsOf(value) {
             assert.strictEqual(r.status, 200, `a delivery signed with ${secret === EVENTS_SECRETS[0] ? 'the current' : 'the previous'} secret: ${r.text}`);
         }
         const visitor = `ip:${crypto.createHmac('sha256', ENV.VIEW_HASH_SECRET).update('203.0.113.9').digest('hex').slice(0, 32)}`;
-        assert.ok(t.db.prepare('SELECT 1 FROM paste_visits WHERE visitor = ?').get(visitor), 'anonymous views are keyed by an HMAC under VIEW_HASH_SECRET');
+        assert.ok(await t.db.prepare('SELECT 1 FROM paste_visits WHERE visitor = ?').get(visitor), 'anonymous views are keyed by an HMAC under VIEW_HASH_SECRET');
     });
 
     // What must never come back.
@@ -268,12 +268,12 @@ function formsOf(value) {
     });
 
     await check('the events outbox, the relay\'s recorded errors and the service\'s own tables hold no secret', async () => {
-        const outbox = t.db.prepare('SELECT envelope FROM event_outbox').all();
+        const outbox = await t.db.prepare('SELECT envelope FROM event_outbox').all();
         assert.ok(outbox.length >= 5, `events were queued (${outbox.length})`);
         const where = [];
-        for (const row of outbox) { const f = leaksIn(row.envelope); if (f.length) where.push(`outbox: ${f.join(', ')}`); }
+        for (const row of outbox) { const f = leaksIn(typeof row.envelope === 'string' ? row.envelope : JSON.stringify(row.envelope)); if (f.length) where.push(`outbox: ${f.join(', ')}`); }
         for (const table of ['relay_deliveries', 'relay_mappings', 'relay_inbound_failures', 'pastes', 'paste_comments', 'posts', 'threads', 'comments', 'comment_threads', 'pulse_items', 'search_doc_pushes']) {
-            for (const row of t.db.prepare(`SELECT * FROM ${table}`).all()) { const f = leaksIn(JSON.stringify(row)); if (f.length) where.push(`${table}: ${f.join(', ')}`); }
+            for (const row of await t.db.prepare(`SELECT * FROM ${table}`).all()) { const f = leaksIn(JSON.stringify(row)); if (f.length) where.push(`${table}: ${f.join(', ')}`); }
         }
         assert.deepStrictEqual(where, []);
     });

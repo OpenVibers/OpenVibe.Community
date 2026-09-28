@@ -14,8 +14,8 @@ function createAuthors({ db, network = null }) {
     async function projectionsFor(subjects) {
         const list = (subjects || []).filter(Boolean);
         if (!list.length) return new Map();
-        if (!network) return pasteStore.getProjections(db, list);
-        try { return await network.projections(list); } catch { return pasteStore.getProjections(db, list); }
+        if (!network) return await pasteStore.getProjections(db, list);
+        try { return await network.projections(list); } catch { return await pasteStore.getProjections(db, list); }
     }
 
     /**

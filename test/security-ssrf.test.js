@@ -168,7 +168,7 @@ function rawGet(base, rawPath) {
         assert.strictEqual((await send('POST', '/api/pastes/screenshot', { body: f })).status, 201);
         const cth = JSON.parse((await send('POST', '/api/v1/comments/threads/resolve', { json: { ref: { service: 'community', type: 'paste', id: JSON.parse(p.text).slug } } })).text).thread;
         await send('POST', `/api/v1/comments/threads/${cth.id}/comments`, { json: { message: `![x](${urls[2]}) ${urls[4]}` } });
-        t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'general'").run(u.subject_id);
+        await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'general'").run(u.subject_id);
         await send('PUT', '/api/v1/spaces/general/chat-room', { json: { room: urls[7] } });
         const map = await send('POST', '/api/v1/relay/mappings', { cookie: bossJwt, json: { space: 'general', webhook_url_ref: `${C}/hook` } });
         assert.strictEqual(map.status, 400, 'a mapping names a variable, never a URL');

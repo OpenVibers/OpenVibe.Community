@@ -17,16 +17,16 @@ const AUTHORSHIP = [
 ];
 // Per person per item: [table, item column, recompute(db, itemId)]
 const PER_ITEM = [
-    ['paste_likes', 'paste_id', (db, id) => db.prepare('UPDATE pastes SET likes = (SELECT COUNT(*) FROM paste_likes WHERE paste_id = ?) WHERE id = ?').run(id, id)],
-    ['comment_votes', 'comment_id', (db, id) => {
-        const a = db.prepare('SELECT COALESCE(SUM(value), 0) AS s, COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0) AS u, COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0) AS d FROM comment_votes WHERE comment_id = ?').get(id);
-        db.prepare('UPDATE comments SET score = ?, upvotes = ?, downvotes = ? WHERE id = ?').run(a.s, a.u, a.d, id);
+    ['paste_likes', 'paste_id', async (db, id) => await db.prepare('UPDATE pastes SET likes = (SELECT COUNT(*) FROM paste_likes WHERE paste_id = ?) WHERE id = ?').run(id, id)],
+    ['comment_votes', 'comment_id', async (db, id) => {
+        const a = await db.prepare('SELECT COALESCE(SUM(value), 0)::bigint AS s, COUNT(*) FILTER (WHERE value = 1) AS u, COUNT(*) FILTER (WHERE value = -1) AS d FROM comment_votes WHERE comment_id = ?').get(id);
+        await db.prepare('UPDATE comments SET score = ?, upvotes = ?, downvotes = ? WHERE id = ?').run(a.s, a.u, a.d, id);
     }],
-    ['thread_votes', 'thread_id', (db, id) => db.prepare('UPDATE threads SET score = (SELECT COALESCE(SUM(value), 0) FROM thread_votes WHERE thread_id = ?) WHERE id = ?').run(id, id)],
+    ['thread_votes', 'thread_id', async (db, id) => await db.prepare('UPDATE threads SET score = (SELECT COALESCE(SUM(value), 0)::bigint FROM thread_votes WHERE thread_id = ?) WHERE id = ?').run(id, id)],
     ['post_reactions', 'post_id', null],
 ];
 
-const hasColumn = (db, table, col) => { try { return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col); } catch { return false; } };
+const hasColumn = async (db, table, col) => !!await db.prepare('SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?').get(table, col);
 
 /** The payload, or 'ignored:<why>'. */
 function payloadOf(event) {
@@ -38,35 +38,35 @@ function payloadOf(event) {
 }
 
 /** Apply one merge → 'merge:applied' (with counts logged). */
-function apply(db, { from, into, merge_id: mergeId }, { log = console } = {}) {
-    const counts = db.transaction(() => {
+async function apply(db, { from, into, merge_id: mergeId }, { log = console } = {}) {
+    const counts = await db.tx(async () => {
         const c = { authored: 0, moved: 0, dropped: 0 };
         for (const [table, col] of AUTHORSHIP) {
-            if (hasColumn(db, table, col)) c.authored += db.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`).run(into, from).changes;
+            if (await hasColumn(db, table, col)) c.authored += (await db.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`).run(into, from)).changes;
         }
         for (const [table, item, recompute] of PER_ITEM) {
-            if (!hasColumn(db, table, 'subject_id')) continue;
-            for (const r of db.prepare(`SELECT ${item} AS i FROM ${table} WHERE subject_id = ?`).all(from)) {
-                const clash = db.prepare(`SELECT 1 FROM ${table} WHERE ${item} = ? AND subject_id = ?`).get(r.i, into);
-                if (clash) { db.prepare(`DELETE FROM ${table} WHERE ${item} = ? AND subject_id = ?`).run(r.i, from); c.dropped++; if (recompute) recompute(db, r.i); }
-                else { db.prepare(`UPDATE ${table} SET subject_id = ? WHERE ${item} = ? AND subject_id = ?`).run(into, r.i, from); c.moved++; }
+            if (!await hasColumn(db, table, 'subject_id')) continue;
+            for (const r of await db.prepare(`SELECT ${item} AS i FROM ${table} WHERE subject_id = ?`).all(from)) {
+                const clash = await db.prepare(`SELECT 1 FROM ${table} WHERE ${item} = ? AND subject_id = ?`).get(r.i, into);
+                if (clash) { await db.prepare(`DELETE FROM ${table} WHERE ${item} = ? AND subject_id = ?`).run(r.i, from); c.dropped++; if (recompute) recompute(db, r.i); }
+                else { await db.prepare(`UPDATE ${table} SET subject_id = ? WHERE ${item} = ? AND subject_id = ?`).run(into, r.i, from); c.moved++; }
             }
         }
-        if (hasColumn(db, 'game_progress', 'subject_id')) {
-            if (db.prepare('SELECT 1 FROM game_progress WHERE subject_id = ?').get(into)) db.prepare('DELETE FROM game_progress WHERE subject_id = ?').run(from);
-            else db.prepare('UPDATE game_progress SET subject_id = ? WHERE subject_id = ?').run(into, from);
+        if (await hasColumn(db, 'game_progress', 'subject_id')) {
+            if (await db.prepare('SELECT 1 FROM game_progress WHERE subject_id = ?').get(into)) await db.prepare('DELETE FROM game_progress WHERE subject_id = ?').run(from);
+            else await db.prepare('UPDATE game_progress SET subject_id = ? WHERE subject_id = ?').run(into, from);
         }
-        if (hasColumn(db, 'network_blocks', 'blocker_subject')) {
+        if (await hasColumn(db, 'network_blocks', 'blocker_subject')) {
             for (const [col, other] of [['blocker_subject', 'blocked_subject'], ['blocked_subject', 'blocker_subject']]) {
-                for (const b of db.prepare(`SELECT ${other} AS o FROM network_blocks WHERE ${col} = ?`).all(from)) {
-                    const clash = b.o === into || db.prepare(`SELECT 1 FROM network_blocks WHERE ${col} = ? AND ${other} = ?`).get(into, b.o);
-                    if (clash) db.prepare(`DELETE FROM network_blocks WHERE ${col} = ? AND ${other} = ?`).run(from, b.o);
-                    else db.prepare(`UPDATE network_blocks SET ${col} = ? WHERE ${col} = ? AND ${other} = ?`).run(into, from, b.o);
+                for (const b of await db.prepare(`SELECT ${other} AS o FROM network_blocks WHERE ${col} = ?`).all(from)) {
+                    const clash = b.o === into || await db.prepare(`SELECT 1 FROM network_blocks WHERE ${col} = ? AND ${other} = ?`).get(into, b.o);
+                    if (clash) await db.prepare(`DELETE FROM network_blocks WHERE ${col} = ? AND ${other} = ?`).run(from, b.o);
+                    else await db.prepare(`UPDATE network_blocks SET ${col} = ? WHERE ${col} = ? AND ${other} = ?`).run(into, from, b.o);
                 }
             }
         }
         return c;
-    })();
+    });
     log.log(`[Merge] ${mergeId}: ${JSON.stringify(counts)}`);
     return 'merge:applied';
 }

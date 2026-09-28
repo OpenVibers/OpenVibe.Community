@@ -35,7 +35,13 @@ const path = require('path');
         COMMUNITY_DB_PATH: process.env.N1_DB,
     });
     const { createApp } = require(path.join(dir, 'server', 'app'));
-    const app = createApp({
+    // A release on PostgreSQL (ADR-035; server/db.js initDb) gets a migrated test database of its own; a SQLite
+    // release opens COMMUNITY_DB_PATH itself.
+    const dbMod = require(path.join(dir, 'server', 'db'));
+    const pgDb = dbMod.initDb ? await require(path.join(dir, 'test', 'helpers', 'db')).testDb() : null;
+    if (pgDb) dbMod.setDb(pgDb);
+    const app = await createApp({
+        ...(pgDb ? { db: pgDb, valkey: null } : {}),
         pasteLimits: { cooldownSeconds: 0 },
         forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 },
         commentLimits: { comments: { cooldownSec: 0, perMinute: 1000 } },
@@ -58,6 +64,6 @@ const path = require('path');
     const commentThread = (await call('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref } })).thread;
     if (commentThread) await call(`/api/v1/comments/threads/${commentThread.id}/comments`, { method: 'POST', json: { body: 'A comment from N-1' } });
 
-    process.on('SIGTERM', () => { server.close(); try { require(path.join(dir, 'server', 'db')).closeDb(); } catch { /* */ } process.exit(0); });
+    process.on('SIGTERM', async () => { server.close(); try { if (pgDb) await pgDb.close(); else require(path.join(dir, 'server', 'db')).closeDb(); } catch { /* */ } process.exit(0); });
     process.stdout.write(`${JSON.stringify({ n1: { url, token, ids: { thread: thread && thread.id, thread_slug: thread && thread.slug, paste: paste && paste.slug, comment_thread: commentThread && commentThread.id, comment_access: commentThread && (commentThread.access_id || commentThread.id) } } })}\n`);
 })().catch((err) => { process.stderr.write(`${err.stack || err.message}\n`); process.exit(1); });

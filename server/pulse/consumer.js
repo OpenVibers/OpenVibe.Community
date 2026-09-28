@@ -17,7 +17,7 @@
  * that go down or stay put announce nothing; only the public fields are read.
  *
  * And revocation (WS-B task 4): network.user.token_valid_after (source network) moves the person's token
- * cutoff (openvibe-sdk createRevocationStore); the viewer resolver refuses their older tokens.
+ * cutoff (openvibe-sdk createPgRevocationStore); the viewer resolver refuses their older tokens.
  *
  * And VIP convergence: vip.membership.changed (source vip) drops the member's cached members-only
  * answers for that creator at once (the VIP gate's cache handleEvent) instead of waiting out its TTL.
@@ -32,7 +32,7 @@
  */
 const express = require('express');
 const { http, serviceAuth } = require('openvibe-contracts');
-const { parseDelivery, createInbox } = require('openvibe-sdk/events');
+const { parseDelivery, createPgInbox } = require('openvibe-sdk/events');
 const store = require('./store');
 const blocks = require('../identity/blocks');
 
@@ -88,25 +88,25 @@ function gameProgressOf(event) {
 }
 
 /** Record the level; a crossed milestone becomes a Pulse item. Inside the inbox claim. → outcome */
-function applyGameProgress(db, g) {
-    const prev = db.prepare('SELECT level FROM game_progress WHERE subject_id = ?').get(g.subject);
-    db.prepare(`INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, ?, ?)
-                ON CONFLICT(subject_id) DO UPDATE SET level = MAX(game_progress.level, excluded.level), updated_at = excluded.updated_at`).run(g.subject, g.level, g.at);
+async function applyGameProgress(db, g) {
+    const prev = await db.prepare('SELECT level FROM game_progress WHERE subject_id = ?').get(g.subject);
+    await db.prepare(`INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(subject_id) DO UPDATE SET level = GREATEST(game_progress.level, excluded.level), updated_at = excluded.updated_at`).run(g.subject, g.level, g.at);
     if (!prev) return 'games:baseline';
     const milestone = Math.floor(g.level / GAME_MILESTONE) * GAME_MILESTONE;
     if (milestone <= prev.level || milestone < GAME_MILESTONE) return 'games:no_milestone';
-    const r = store.upsertItem(db, { source_service: 'games', source_type: 'level', source_id: `${g.subject}:${milestone}`, title: `Reached level ${milestone} in Scraplandia`,
+    const r = await store.upsertItem(db, { source_service: 'games', source_type: 'level', source_id: `${g.subject}:${milestone}`, title: `Reached level ${milestone} in Scraplandia`,
         url: GAME_URL, actor_subject: g.subject, origin: 'user', occurred_at: g.at });
     return r.created ? 'pulse:created' : 'pulse:updated';
 }
 
 function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = null, accountSend = null, now = () => Date.now(), log = console } = {}) {
     const keys = (secrets || []).filter((s) => typeof s === 'string' && s.length >= 32);
-    const inbox = createInbox(db, { table: 'community_event_inbox', now });
-    inbox.ensureSchema();
+    // Receipts (community_event_inbox) are in migrations/0001_initial.sql.
+    const inbox = createPgInbox(db, { table: 'community_event_inbox', now });
     const stats = { received: 0, applied: 0, duplicates: 0, ignored: 0, refused: 0, failed: 0, last_at: null };
     const router = express.Router();
-    router.post('/', express.raw({ type: () => true, limit: '256kb' }), (req, res) => {
+    router.post('/', express.raw({ type: () => true, limit: '256kb' }), async (req, res) => {
         const ctx = http.requestContext(req.headers);
         const problem = (status, code, detail) => http.sendProblem(res, status, code, { detail, ctx });
         if (req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.headers['cf-connecting-ip']) return problem(403, 'community.internal_only', 'internal route');
@@ -120,7 +120,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
         stats.received++; stats.last_at = new Date(now()).toISOString();
         if (event.event_type === 'network.user.token_valid_after') {
             if (!revocations) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: 'ignored:no_store' }); }
-            const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: revocations.apply(event) }));
+            const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await revocations.apply(event) }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;
             return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
         }
@@ -128,7 +128,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
             const p = blocks.payloadOf(event);
             if (typeof p === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: p }); }
             try {
-                const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: blocks.apply(db, p, now()) }));
+                const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await blocks.apply(db, p, now()) }));
                 if (r.duplicate) stats.duplicates++; else stats.applied++;
                 return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
             } catch (err) {
@@ -156,7 +156,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
             const p = merge.payloadOf(event);
             if (typeof p === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: p }); }
             try {
-                const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: merge.apply(db, p, { log }) }));
+                const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await merge.apply(db, p, { log }) }));
                 if (r.duplicate) stats.duplicates++; else stats.applied++;
                 return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
             } catch (err) {
@@ -167,7 +167,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
         }
         if (event.event_type === 'vip.membership.changed') {
             if (event.source !== 'vip' || !vipCache) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: event.source !== 'vip' ? 'ignored:source' : 'ignored:no_gate' }); }
-            const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: vipCache.handleEvent(event) ? 'vip:invalidated' : 'vip:unchanged' }));
+            const r = await inbox.once(CONSUMER, event.event_id, () => ({ outcome: vipCache.handleEvent(event) ? 'vip:invalidated' : 'vip:unchanged' }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;
             return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
         }
@@ -175,7 +175,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
             const g = gameProgressOf(event);
             if (typeof g === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: g }); }
             try {
-                const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: applyGameProgress(db, g) }));
+                const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await applyGameProgress(db, g) }));
                 if (r.duplicate) stats.duplicates++; else stats.applied++;
                 return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
             } catch (err) {
@@ -187,7 +187,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
         const item = itemFor(event);
         if (typeof item === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: item }); }
         try {
-            const r = inbox.once(CONSUMER, event.event_id, () => ({ outcome: store.upsertItem(db, item).created ? 'pulse:created' : 'pulse:updated' }));
+            const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: (await store.upsertItem(db, item)).created ? 'pulse:created' : 'pulse:updated' }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;
             return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
         } catch (err) {

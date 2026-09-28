@@ -110,6 +110,8 @@ function createDiscordGateway({ token = '', url = DEFAULT_URL, WebSocketImpl = g
         sock.addEventListener('error', () => { /* a close event follows */ });
     }
 
+    let dispatching = Promise.resolve();
+    let pendingDispatches = 0;
     function onMessage(raw) {
         let p;
         try { p = JSON.parse(typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')); } catch { return; }
@@ -161,12 +163,13 @@ function createDiscordGateway({ token = '', url = DEFAULT_URL, WebSocketImpl = g
         }
         if (!DISPATCH.has(t)) return;
         state.dispatched++;
-        try {
-            const r = onDispatch(t, d || {}, { botUserId: state.bot_user_id });
-            if (r && typeof r.catch === 'function') r.catch((err) => console.warn(`[Relay] inbound ${t} failed:`, err.message));
-        } catch (err) {
-            console.warn(`[Relay] inbound ${t} failed:`, err.message);
-        }
+        // One at a time, in arrival order: a MESSAGE_UPDATE never overtakes its MESSAGE_CREATE (handling is async).
+        // Idle, the handler starts at once; otherwise the event waits behind the one in progress.
+        const ctx = { botUserId: state.bot_user_id };
+        const go = () => { try { return Promise.resolve(onDispatch(t, d || {}, ctx)); } catch (err) { return Promise.reject(err); } };
+        const run = pendingDispatches === 0 ? go() : dispatching.then(go);
+        pendingDispatches++;
+        dispatching = run.catch((err) => console.warn(`[Relay] inbound ${t} failed:`, err.message)).finally(() => { pendingDispatches--; });
     }
 
     function onClose(code, why) {

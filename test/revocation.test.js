@@ -9,23 +9,26 @@ const assert = require('assert');
 const http = require('http');
 const express = require('express');
 const { signDeliveryHeaders } = require('openvibe-sdk/events');
-const { createRevocationStore } = require('openvibe-sdk/auth');
-const { openDb } = require('../server/db');
+const { createPgRevocationStore } = require('openvibe-sdk/auth');
+const { testDb } = require('./helpers/db');
 const { createPulseConsumer, TOPICS } = require('../server/pulse/consumer');
 const { createViewerResolver } = require('../server/identity/viewer');
 
-const SECRET = `whsec_${'ab'.repeat(32)}`;
-const db = openDb(':memory:');
-const revocations = createRevocationStore(db, { table: 'token_revocations' });
-const app = express();
-app.use('/internal/events', createPulseConsumer({ db, secrets: [SECRET], revocations, log: { error() {}, log() {}, warn() {} } }).router);
-const ANN = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPQ', BEN = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR';
-const at = Date.now() - 5000;
-const evt = (over = {}) => ({ event_id: 'evt_01JAB2C3D4E5F6G7H8J9K0MN01', event_type: 'network.user.token_valid_after', version: 1, source: 'network', visibility: 'internal', timestamp: new Date().toISOString(),
-    subject: { type: 'user', id: ANN }, actor: { type: 'user', id: ANN },
-    payload: { subject: { type: 'user', id: ANN }, valid_after: new Date(at).toISOString(), reason: 'signed_out_everywhere' }, ...over });
+let SECRET, db, revocations, app, ANN, BEN, at, evt;
 
 (async () => {
+    SECRET = `whsec_${'ab'.repeat(32)}`;
+    db = await testDb();
+    revocations = createPgRevocationStore(db, { table: 'token_revocations' });
+    await revocations.load();
+    app = express();
+    app.use('/internal/events', createPulseConsumer({ db, secrets: [SECRET], revocations, log: { error() {}, log() {}, warn() {} } }).router);
+    ANN = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPQ';
+    BEN = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR';
+    at = Date.now() - 5000;
+    evt = (over = {}) => ({ event_id: 'evt_01JAB2C3D4E5F6G7H8J9K0MN01', event_type: 'network.user.token_valid_after', version: 1, source: 'network', visibility: 'internal', timestamp: new Date().toISOString(),
+        subject: { type: 'user', id: ANN }, actor: { type: 'user', id: ANN },
+        payload: { subject: { type: 'user', id: ANN }, valid_after: new Date(at).toISOString(), reason: 'signed_out_everywhere' }, ...over });
     assert.ok(TOPICS.includes('network.user.token_valid_after'), 'Community subscribes to it');
     const srv = await new Promise((r) => { const s = http.createServer(app).listen(0, '127.0.0.1', () => r(s)); });
     const post = (event) => {
@@ -35,7 +38,7 @@ const evt = (over = {}) => ({ event_id: 'evt_01JAB2C3D4E5F6G7H8J9K0MN01', event_
     const claimsOf = (subject, iatMs) => ({ sub: 7, subject_id: subject, username: 'someone', role: 'user', iat: Math.floor(iatMs / 1000), exp: Math.floor(Date.now() / 1000) + 3600 });
     let current = null;
     const viewers = createViewerResolver({ auth: { verify: async () => current }, config: { allowSandbox: false }, network: null, revocations });
-    const who = async (claims) => { current = claims; return viewers.resolve({ headers: { authorization: 'Bearer opaque' }, cookies: {} }); };
+    const who = async (claims) => { current = claims; return await viewers.resolve({ headers: { authorization: 'Bearer opaque' }, cookies: {} }); };
     try {
         assert.strictEqual((await who(claimsOf(ANN, at - 60000))).kind, 'user', 'before the event');
         let r = await post(evt());

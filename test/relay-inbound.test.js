@@ -15,7 +15,7 @@ const assert = require('assert');
 const { ids } = require('openvibe-contracts');
 const { boot, check, done } = require('./helpers/app');
 const { startWebhooks, createGateway } = require('./helpers/fake-discord');
-const { openDb } = require('../server/db');
+const { testDb } = require('./helpers/db');
 const forumStore = require('../server/forum/store');
 const { createDiscordRelay } = require('../server/relay/discord');
 const { createDiscordGateway, DEFAULT_URL, INTENTS } = require('../server/relay/discord-gateway');
@@ -43,7 +43,7 @@ function scriptedGateway() {
     gw.dispatch = (t, d) => gw.push(gw.last(), { op: 0, t, s: ++gw.seq, d });
     return gw;
 }
-const waitFor = async (fn, what, ms = 2000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return; await sleep(5); } assert.fail(`timed out waiting for ${what}`); };
+const waitFor = async (fn, what, ms = 2000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return; await sleep(5); } assert.fail(`timed out waiting for ${what}`); };
 const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op === op);
 
 (async () => {
@@ -74,6 +74,7 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
         gw.dispatch('MESSAGE_CREATE', { id: '1' });
         gw.dispatch('GUILD_CREATE', { id: '2' });   // not a message event: dropped here
         gw.dispatch('MESSAGE_DELETE', { id: '3' });
+        await new Promise((r) => setImmediate(r));   // handling is async: events queue in order
         assert.deepStrictEqual(seen, [['MESSAGE_CREATE', '1'], ['MESSAGE_DELETE', '3']]);
         const st = g.status();
         assert.deepStrictEqual([st.state, st.session, st.bot_user_id, st.events_handled], ['ready', true, BOT, 2]);
@@ -148,10 +149,10 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
 
     // ── inbound: what becomes a post ────────────────────────
     const hook = await startWebhooks();
-    const db = openDb(':memory:');
-    const general = forumStore.getSpace(db, 'general');
+    const db = await testDb();
+    const general = await forumStore.getSpace(db, 'general');
     const relay = createDiscordRelay({ db, config: { baseUrl: 'https://openvibe.community' }, env: { DISCORD_WEBHOOK_GENERAL: `${hook.url}/api/webhooks/1/general` }, enabled: true });
-    relay.addMapping({ space_id: general.id, webhook_url_ref: 'DISCORD_WEBHOOK_GENERAL', inbound: true });
+    await relay.addMapping({ space_id: general.id, webhook_url_ref: 'DISCORD_WEBHOOK_GENERAL', inbound: true });
     const CHANNEL = '2000000000000000001';   // the fake webhook 1's channel (learned on the first send)
     const inbound = createDiscordInbound({ db, perMinute: 3, maxChars: 200 });
     const forum = createForumService({ db, relay, limits: { threads: { cooldownSec: 0, perMinute: 100 }, posts: { cooldownSec: 0, perMinute: 100 }, threadsPerDay: 0 } });
@@ -160,38 +161,38 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
     const settle = async () => { await new Promise((r) => setImmediate(r)); await relay.drain(); await relay.drain(); };
     const { thread } = await forum.createThread(samV, 'general', { title: 'Talk to Discord', body: 'Say hi over there' });
     await settle();
-    const threadMsg = db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_type = 'thread' AND local_id = ?").get(thread.id).external_message_id;
-    const failures = () => db.prepare('SELECT * FROM relay_inbound_failures ORDER BY id').all();
+    const threadMsg = (await db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_type = 'thread' AND local_id = ?").get(thread.id)).external_message_id;
+    const failures = async () => await db.prepare('SELECT * FROM relay_inbound_failures ORDER BY id').all();
     const msg = (extra = {}) => ({ id: nextId(), channel_id: CHANNEL, guild_id: '6000000000000000001', type: 19, content: 'hello from Discord', author: { id: KIM, username: 'kim', global_name: 'Kim' }, message_reference: { message_id: threadMsg, channel_id: CHANNEL }, mentions: [], attachments: [], ...extra });
-    const postsOf = (tid) => db.prepare('SELECT * FROM posts WHERE thread_id = ? ORDER BY id').all(tid);
+    const postsOf = async (tid) => await db.prepare('SELECT * FROM posts WHERE thread_id = ? ORDER BY id').all(tid);
 
     await check('a Discord reply to a relayed message becomes a post: origin discord, nobody on the site, the Discord name, mapped', async () => {
         const m = msg({ content: 'Hi <@4000000000000000003> and <@&4000000000000000009> in <#4000000000000000010> @everyone <:wave:4000000000000000011> <t:1790000000:R>', mentions: [{ id: LEE, username: 'lee', global_name: 'Lee' }], member: { nick: 'Kim (mod)' } });
-        const r = inbound.handle('MESSAGE_CREATE', m, { botUserId: BOT });
+        const r = await inbound.handle('MESSAGE_CREATE', m, { botUserId: BOT });
         assert.strictEqual(r.status, 'applied', JSON.stringify(r));
-        const p = forumStore.getPost(db, r.post_id);
+        const p = await forumStore.getPost(db, r.post_id);
         assert.deepStrictEqual([p.thread_id, p.origin, p.author_subject, p.relay_author], [thread.id, 'discord', null, 'Kim (mod)']);
         assert.strictEqual(p.body_markdown, 'Hi @Lee and @role in #channel @\u200beveryone :wave: 2026-09-21 14:13 UTC');
-        const row = db.prepare('SELECT * FROM relay_message_map WHERE external_message_id = ?').get(m.id);
+        const row = await db.prepare('SELECT * FROM relay_message_map WHERE external_message_id = ?').get(m.id);
         assert.deepStrictEqual([row.direction, row.local_type, row.local_id, row.thread_id, row.external_channel_id], ['in', 'post', p.id, thread.id, CHANNEL]);
         const shown = (await forum.getThread(samV, 'general', thread.slug, {})).posts.find((x) => x.id === p.id);
         assert.deepStrictEqual([shown.author.display_name, shown.author.is_relay, shown.author.subject, shown.origin], ['Kim (mod)', true, null, 'discord']);
         // The same message again (a gateway replay) is not taken twice.
-        assert.deepStrictEqual(inbound.handle('MESSAGE_CREATE', m, { botUserId: BOT }), { status: 'ignored', reason: 'already relayed' });
+        assert.deepStrictEqual(await inbound.handle('MESSAGE_CREATE', m, { botUserId: BOT }), { status: 'ignored', reason: 'already relayed' });
     });
 
     await check('a message in a Discord thread started from a relayed message becomes a post in that thread', async () => {
-        const r = inbound.handle('MESSAGE_CREATE', msg({ channel_id: threadMsg, type: 0, message_reference: undefined, content: 'in the Discord thread' }));
+        const r = await inbound.handle('MESSAGE_CREATE', msg({ channel_id: threadMsg, type: 0, message_reference: undefined, content: 'in the Discord thread' }));
         assert.strictEqual(r.status, 'applied');
-        assert.strictEqual(forumStore.getPost(db, r.post_id).thread_id, thread.id);
+        assert.strictEqual((await forumStore.getPost(db, r.post_id)).thread_id, thread.id);
         // A reply to that Discord-origin post (mapped 'in') lands in the same thread too.
-        const inId = db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_id = ? AND direction = 'in'").get(r.post_id).external_message_id;
-        const r2 = inbound.handle('MESSAGE_CREATE', msg({ channel_id: threadMsg, message_reference: { message_id: inId }, content: 'reply to a reply', author: { id: LEE, username: 'lee' } }));
-        assert.strictEqual(forumStore.getPost(db, r2.post_id).relay_author, 'lee');
+        const inId = (await db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_id = ? AND direction = 'in'").get(r.post_id)).external_message_id;
+        const r2 = await inbound.handle('MESSAGE_CREATE', msg({ channel_id: threadMsg, message_reference: { message_id: inId }, content: 'reply to a reply', author: { id: LEE, username: 'lee' } }));
+        assert.strictEqual((await forumStore.getPost(db, r2.post_id)).relay_author, 'lee');
     });
 
     await check('everything else is ignored: webhooks (the relay\'s own), bots, the bot itself, system messages, non-replies, other channels, inbound off', async () => {
-        const n = postsOf(thread.id).length;
+        const n = (await postsOf(thread.id)).length;
         const cases = [
             [msg({ webhook_id: '1' }), /webhook message/],
             [msg({ author: { id: LEE, username: 'lee', bot: true } }), /bot or system/],
@@ -203,33 +204,33 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
             [msg({ type: 0, content: '', message_reference: { type: 1, message_id: threadMsg, channel_id: CHANNEL } }), /not a reply to a relayed message/],   // a forward
         ];
         for (const [m, re] of cases) {
-            const r = inbound.handle('MESSAGE_CREATE', m, { botUserId: BOT });
+            const r = await inbound.handle('MESSAGE_CREATE', m, { botUserId: BOT });
             assert.strictEqual(r.status, 'ignored', JSON.stringify(m));
             assert.match(r.reason, re);
         }
-        relay.updateMapping(1, { inbound: false });
-        assert.match(inbound.handle('MESSAGE_CREATE', msg()).reason, /inbound is off/);
-        relay.updateMapping(1, { inbound: true, discord_channel_id: '7000000000000000002' });
-        assert.match(inbound.handle('MESSAGE_CREATE', msg()).reason, /not a mapped channel/);
-        relay.updateMapping(1, { discord_channel_id: CHANNEL });
-        assert.strictEqual(postsOf(thread.id).length, n);
-        assert.strictEqual(failures().length, 0, 'ignoring is not a failure');
+        await relay.updateMapping(1, { inbound: false });
+        assert.match((await inbound.handle('MESSAGE_CREATE', msg())).reason, /inbound is off/);
+        await relay.updateMapping(1, { inbound: true, discord_channel_id: '7000000000000000002' });
+        assert.match((await inbound.handle('MESSAGE_CREATE', msg())).reason, /not a mapped channel/);
+        await relay.updateMapping(1, { discord_channel_id: CHANNEL });
+        assert.strictEqual((await postsOf(thread.id)).length, n);
+        assert.strictEqual((await failures()).length, 0, 'ignoring is not a failure');
     });
 
     await check('limits: a long message is cut, a fourth message a minute is refused, an empty one explains the intent; attachments are noted', async () => {
-        const long = inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000020', username: 'long' }, content: 'x'.repeat(500) }));
-        const body = forumStore.getPost(db, long.post_id).body_markdown;
+        const long = await inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000020', username: 'long' }, content: 'x'.repeat(500) }));
+        const body = (await forumStore.getPost(db, long.post_id)).body_markdown;
         assert.strictEqual(body.length, 200);
         assert.ok(body.endsWith('…'));
         const talker = { id: '4000000000000000021', username: 'talker' };
-        for (let i = 0; i < 3; i++) assert.strictEqual(inbound.handle('MESSAGE_CREATE', msg({ author: talker, content: `m${i}` })).status, 'applied');
-        const r = inbound.handle('MESSAGE_CREATE', msg({ author: talker, content: 'one too many' }));
+        for (let i = 0; i < 3; i++) assert.strictEqual((await inbound.handle('MESSAGE_CREATE', msg({ author: talker, content: `m${i}` }))).status, 'applied');
+        const r = await inbound.handle('MESSAGE_CREATE', msg({ author: talker, content: 'one too many' }));
         assert.deepStrictEqual([r.status, r.error], ['failed', 'rate limited']);
-        const empty = inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000022', username: 'quiet' }, content: '' }));
+        const empty = await inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000022', username: 'quiet' }, content: '' }));
         assert.match(empty.error, /MESSAGE CONTENT intent/);
-        const pic = inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000023', username: 'pics' }, content: '', attachments: [{ id: '1' }, { id: '2' }] }));
-        assert.strictEqual(forumStore.getPost(db, pic.post_id).body_markdown, '_(2 attachments on Discord)_');
-        const f = failures();
+        const pic = await inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000023', username: 'pics' }, content: '', attachments: [{ id: '1' }, { id: '2' }] }));
+        assert.strictEqual((await forumStore.getPost(db, pic.post_id)).body_markdown, '_(2 attachments on Discord)_');
+        const f = await failures();
         assert.deepStrictEqual(f.map((x) => x.error.slice(0, 12)), ['rate limited', 'the message ']);
         assert.deepStrictEqual([f[0].event, f[0].external_author_id, f[0].mapping_id], ['MESSAGE_CREATE', talker.id, 1]);
         assert.ok(!JSON.stringify(f).includes('one too many'), 'failures never keep the text');
@@ -239,50 +240,50 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
     await check('closed threads refuse replies from Discord and say why: locked, members-only, deleted', async () => {
         const t = (await forum.createThread(samV, 'general', { title: 'Soon closed', body: 'x' })).thread;
         await settle();
-        const anchor = db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_type = 'thread' AND local_id = ?").get(t.id).external_message_id;
+        const anchor = (await db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_type = 'thread' AND local_id = ?").get(t.id)).external_message_id;
         const to = (extra = {}) => msg({ author: { id: '4000000000000000030', username: 'late' }, message_reference: { message_id: anchor }, ...extra });
-        forumStore.setThreadFlags(db, t.id, { locked: true });
-        assert.strictEqual(inbound.handle('MESSAGE_CREATE', to()).error, 'the thread is locked');
-        forumStore.setThreadFlags(db, t.id, { locked: false });
-        forumStore.setThreadMembersOnly(db, t.id, sam);
-        assert.strictEqual(inbound.handle('MESSAGE_CREATE', to()).error, 'the thread is not public');
-        forumStore.setThreadMembersOnly(db, t.id, null);
-        forumStore.softDeleteThread(db, t.id);
-        assert.strictEqual(inbound.handle('MESSAGE_CREATE', to()).error, 'the thread was deleted');
-        assert.strictEqual(postsOf(t.id).length, 1, 'only the opening post');
+        await forumStore.setThreadFlags(db, t.id, { locked: true });
+        assert.strictEqual((await inbound.handle('MESSAGE_CREATE', to())).error, 'the thread is locked');
+        await forumStore.setThreadFlags(db, t.id, { locked: false });
+        await forumStore.setThreadMembersOnly(db, t.id, sam);
+        assert.strictEqual((await inbound.handle('MESSAGE_CREATE', to())).error, 'the thread is not public');
+        await forumStore.setThreadMembersOnly(db, t.id, null);
+        await forumStore.softDeleteThread(db, t.id);
+        assert.strictEqual((await inbound.handle('MESSAGE_CREATE', to())).error, 'the thread was deleted');
+        assert.strictEqual((await postsOf(t.id)).length, 1, 'only the opening post');
     });
 
     await check('edits and deletes on Discord follow through the map; a delete of the relay\'s own message leaves the thread', async () => {
         const m = msg({ author: { id: '4000000000000000040', username: 'editor' }, content: 'first words' });
-        const { post_id: pid } = inbound.handle('MESSAGE_CREATE', m);
-        const r = inbound.handle('MESSAGE_UPDATE', { id: m.id, channel_id: CHANNEL, content: 'second words <@4000000000000000003>', mentions: [{ id: LEE, username: 'lee' }], edited_timestamp: new Date().toISOString() });
+        const { post_id: pid } = await inbound.handle('MESSAGE_CREATE', m);
+        const r = await inbound.handle('MESSAGE_UPDATE', { id: m.id, channel_id: CHANNEL, content: 'second words <@4000000000000000003>', mentions: [{ id: LEE, username: 'lee' }], edited_timestamp: new Date().toISOString() });
         assert.strictEqual(r.status, 'applied');
-        const p = forumStore.getPost(db, pid);
+        const p = await forumStore.getPost(db, pid);
         assert.deepStrictEqual([p.body_markdown, p.revision], ['second words @lee', 2]);
-        assert.deepStrictEqual(forumStore.listPostVersions(db, pid).map((v) => v.edited_by), [null, 'discord']);
-        assert.match(inbound.handle('MESSAGE_UPDATE', { id: m.id, channel_id: CHANNEL, embeds: [] }).reason, /no text change/);
-        assert.match(inbound.handle('MESSAGE_UPDATE', { id: threadMsg, channel_id: CHANNEL, content: 'edited on Discord?' }).reason, /relay's own/);
-        const other = inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000041', username: 'bulk' }, content: 'bulk me' }));
-        const otherId = db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_id = ? AND direction = 'in'").get(other.post_id).external_message_id;
-        assert.strictEqual(inbound.handle('MESSAGE_DELETE', { id: m.id, channel_id: CHANNEL }).status, 'applied');
-        assert.ok(forumStore.getPost(db, pid).deleted_at, 'the post is deleted');
-        const bulk = inbound.handle('MESSAGE_DELETE_BULK', { ids: [otherId, '1234567890123456789'], channel_id: CHANNEL });
+        assert.deepStrictEqual((await forumStore.listPostVersions(db, pid)).map((v) => v.edited_by), [null, 'discord']);
+        assert.match((await inbound.handle('MESSAGE_UPDATE', { id: m.id, channel_id: CHANNEL, embeds: [] })).reason, /no text change/);
+        assert.match((await inbound.handle('MESSAGE_UPDATE', { id: threadMsg, channel_id: CHANNEL, content: 'edited on Discord?' })).reason, /relay's own/);
+        const other = await inbound.handle('MESSAGE_CREATE', msg({ author: { id: '4000000000000000041', username: 'bulk' }, content: 'bulk me' }));
+        const otherId = (await db.prepare("SELECT external_message_id FROM relay_message_map WHERE local_id = ? AND direction = 'in'").get(other.post_id)).external_message_id;
+        assert.strictEqual((await inbound.handle('MESSAGE_DELETE', { id: m.id, channel_id: CHANNEL })).status, 'applied');
+        assert.ok((await forumStore.getPost(db, pid)).deleted_at, 'the post is deleted');
+        const bulk = await inbound.handle('MESSAGE_DELETE_BULK', { ids: [otherId, '1234567890123456789'], channel_id: CHANNEL });
         assert.deepStrictEqual(bulk.map((x) => x.status), ['applied', 'ignored']);
-        assert.ok(forumStore.getPost(db, other.post_id).deleted_at);
+        assert.ok((await forumStore.getPost(db, other.post_id)).deleted_at);
         // A moderator on Discord removed the relay's announcement: the map knows, the thread stays, no edit goes there again.
-        assert.match(inbound.handle('MESSAGE_DELETE', { id: threadMsg, channel_id: CHANNEL }).note, /thread stays/);
-        assert.ok(forumStore.getThread(db, thread.id), 'the thread is still here');
-        assert.ok(db.prepare('SELECT external_deleted_at FROM relay_message_map WHERE external_message_id = ?').get(threadMsg).external_deleted_at);
-        assert.strictEqual(relay.enqueueEdit(forumStore.getPost(db, db.prepare('SELECT id FROM posts WHERE thread_id = ? AND is_opening = 1').get(thread.id).id)), 0);
+        assert.match((await inbound.handle('MESSAGE_DELETE', { id: threadMsg, channel_id: CHANNEL })).note, /thread stays/);
+        assert.ok(await forumStore.getThread(db, thread.id), 'the thread is still here');
+        assert.ok((await db.prepare('SELECT external_deleted_at FROM relay_message_map WHERE external_message_id = ?').get(threadMsg)).external_deleted_at);
+        assert.strictEqual(await relay.enqueueEdit(await forumStore.getPost(db, (await db.prepare('SELECT id FROM posts WHERE thread_id = ? AND is_opening = 1').get(thread.id)).id)), 0);
     });
 
     await check('loop prevention: nothing from Discord is ever relayed back out', async () => {
         await settle();
         const before = hook.hits.length;
-        const fromDiscord = postsOf(thread.id).filter((p) => p.origin === 'discord');
+        const fromDiscord = (await postsOf(thread.id)).filter((p) => p.origin === 'discord');
         assert.ok(fromDiscord.length >= 5);
-        for (const p of fromDiscord) assert.strictEqual(relay.enqueuePost(p, forumStore.getThread(db, thread.id), general), 0);
-        assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM relay_deliveries WHERE post_id IN (SELECT id FROM posts WHERE origin = \'discord\')').get().n, 0);
+        for (const p of fromDiscord) assert.strictEqual(await relay.enqueuePost(p, await forumStore.getThread(db, thread.id), general), 0);
+        assert.strictEqual((await db.prepare('SELECT COUNT(*) AS n FROM relay_deliveries WHERE post_id IN (SELECT id FROM posts WHERE origin = \'discord\')').get()).n, 0);
         await settle();
         assert.strictEqual(hook.hits.length, before, 'no webhook call for anything that came from Discord');
     });
@@ -303,19 +304,20 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
         const samJwt = net.sign({ id: 9, subject_id: samU.subject_id, username: 'sam', role: 'user' });
         const adminJwt = net.sign({ id: 1, subject_id: ids.newId('user'), username: 'boss', role: 'admin' });
         const call = (p, { method = 'GET', cookie, json } = {}) => t.get(p, { method, headers: json !== undefined ? { 'content-type': 'application/json' } : {}, body: json !== undefined ? JSON.stringify(json) : undefined, cookies: cookie ? [`ov_token=${cookie}`] : [] });
-        await waitFor(() => t.app.locals.relay.status().inbound.state === 'ready', 'the app\'s gateway READY');
+        await waitFor(async () => (await t.app.locals.relay.status()).inbound.state === 'ready', 'the app\'s gateway READY');
         assert.strictEqual(sent(gw, 2)[0].d.token, 'app-bot-token-not-real');
         const m = await call('/api/v1/relay/mappings', { method: 'POST', cookie: adminJwt, json: { space: 'general', webhook_url_ref: 'DISCORD_WEBHOOK_GENERAL', inbound: true } });
         assert.strictEqual(m.json().mapping.inbound, true);
         const th = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: samJwt, json: { title: 'Ask Discord', body: 'what do you think?' } });
-        await waitFor(() => t.db.prepare("SELECT 1 FROM relay_message_map WHERE local_type = 'thread'").get(), 'the thread on Discord');
-        const anchor = t.db.prepare("SELECT external_message_id, external_channel_id FROM relay_message_map WHERE local_type = 'thread'").get();
+        await waitFor(async () => await t.db.prepare("SELECT 1 FROM relay_message_map WHERE local_type = 'thread'").get(), 'the thread on Discord');
+        const anchor = await t.db.prepare("SELECT external_message_id, external_channel_id FROM relay_message_map WHERE local_type = 'thread'").get();
         gw.dispatch('MESSAGE_CREATE', { id: nextId(), channel_id: anchor.external_channel_id, type: 19, content: 'Looks **great**', author: { id: KIM, username: 'kim', global_name: 'Kim' }, message_reference: { message_id: anchor.external_message_id } });
         const locked = nextId();
+        await waitFor(async () => await t.db.prepare("SELECT 1 FROM posts WHERE origin = 'discord'").get(), 'the Discord reply stored');
         const page = await call(`/s/general/t/${th.json().thread.slug}`);
         assert.strictEqual(page.status, 200);
         assert.ok(page.text.includes('badge-relay') && page.text.includes('Kim') && page.text.includes('<strong>great</strong>'), 'the reply shows with its Discord badge');
-        t.db.prepare('UPDATE threads SET locked = 1').run();
+        await t.db.prepare('UPDATE threads SET locked = 1').run();
         gw.dispatch('MESSAGE_CREATE', { id: locked, channel_id: anchor.external_channel_id, type: 19, content: 'too late', author: { id: KIM, username: 'kim' }, message_reference: { message_id: anchor.external_message_id } });
         assert.strictEqual((await call('/api/v1/relay/inbound', { cookie: samJwt })).status, 403);
         const inb = await call('/api/v1/relay/inbound', { cookie: adminJwt });

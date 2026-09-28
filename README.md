@@ -9,7 +9,7 @@ the rules. It is the home of **pastes** (code, text and screenshots with a link)
 **forum** (spaces, threads and posts), the **comment threads** every other OpenVibe product
 embeds, and **Pulse**, the network's public activity. Submissions follow.
 
-It is a small Node/Express app (CommonJS, no framework, one SQLite database) that
+It is a small Node/Express app (CommonJS, no framework, one PostgreSQL database) that
 server-renders every page — crawlers and no-JS readers get the whole thing — and adds a
 little progressive JavaScript for pagination, copy buttons and the upload path.
 
@@ -20,7 +20,8 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - the typed comment threads every other product embeds, the forum (spaces, threads, posts, votes,
   categories), Pulse (the network's public activity) and the Discord relay
 - the `community.*` events, Search documents for public threads, and the `community.profile` user module
-- one SQLite database (`/var/lib/openvibe-community/community.db` in production)
+- one PostgreSQL database (`ov_community` on the host's data role, ADR-035; schema in [migrations/](migrations/);
+  embedded PGlite in development), with Valkey for the per-actor limit counters
 
 ## Does not own
 
@@ -34,8 +35,8 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - OpenVibe.Media (screenshot and attachment uploads), OpenVibe.VIP (members-only gates), OpenVibe.Chat
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
 - OpenVibe.Live only when `PASTES_AUTHORITY=live` (the rollback mode), and for old VOD/clip comment imports
-- `openvibe-contracts` v0.71.0, `openvibe-sdk` v0.12.0 (events outbox, per-actor limits),
-  `openvibe-shared` v1.25.0, pinned by release tarball
+- `openvibe-contracts` v0.76.0, `openvibe-sdk` v0.21.0 (events outbox, per-actor limits),
+  `openvibe-shared` v1.28.0, pinned by release tarball
 
 ## How it fits the network
 
@@ -105,14 +106,9 @@ Moments feeds read it.
   thing keeping it unlisted. Existing slugs never change and keep working.
 - **Deletes are soft** (content scrubbed, slug kept reserved); edits append `paste_versions`.
 
-Moving the data: `node scripts/import-pastes.js <bundle.json> [--dry-run] [--id-fix-cutoff
-2026-08-20T03:00:26Z]` imports Media's `openvibe.media.pastes-export` bundle. It checks the
-bundle's format, counts and sha256 first, is idempotent (upsert by `legacy_media_id`; a newer
-bundle adds and updates, counters never go down, local edits and deletes stay), maps Live user
-ids to subjects through the Network (rows before the cutoff are also checked as Network ids;
-disagreement or no answer imports the row ownerless and records an `import_hold`), keeps AI
-moment pastes ownerless with origin `ai`, and prints a reconciliation report (also stored in
-`migration_runs`). `--dry-run` rolls everything back.
+Moving the data: Media's `openvibe.media.pastes-export` bundle was imported once (Wave 5, 2026-09-22; the ledger is
+`legacy_id_map`, the report `migration_runs`). The importer (`scripts/import-pastes.js`) was retired with the move to
+PostgreSQL and is in git history.
 
 `/by-user/:username` and `?username=` look the name up in `subject_projection` (the Network
 has no service-token lookup by username), so a person appears there once Community has seen
@@ -161,7 +157,7 @@ API and machine endpoints:
 | `GET /s/feed.xml`, `GET /s/:space/feed.xml` | RSS of the latest threads (public spaces) |
 
 **Readiness and metrics (Track O).** `GET /api/ready` (openvibe-shared/ready) answers 503 only
-when the required `db` check fails (a real query on Community's SQLite). `network_jwks` (the
+when the required `db` check fails (a real round trip that names the store, postgresql or pglite, and a migrated schema). `network_jwks` (the
 Network signing key; without it nobody can sign in or write as a signed-in viewer or service),
 `live` (in `PASTES_AUTHORITY=live`: paste pages and `/api/pastes` read through Live) and `media`
 (in `community` mode: screenshot and file uploads) are optional: a failure keeps the site ready
@@ -250,39 +246,10 @@ item's comments.
 3. Service-side, the same answer: `GET /api/v1/comments/threads/<id>?sort=new` with Live's token
    returns the comments both pages render (`test/comments.test.js` checks the page against it).
 
-**Moving Live's old rows** (`scripts/import-live-comments.js`, `server/comments/live-import.js`):
-reads Live's `comments` table read-only, puts every row in exactly one bucket and prints the
-reconciliation `read = imported + held + excluded`. Imported rows keep their text and times
-(edits keep `edited_at`); the ledger is `legacy_id_map` (`live`/`comment`/<live id> → comment
-id), so re-running imports nothing twice. Authors become Network subjects from Live's
-`linked_accounts.subject_id` and the Network's identity map (system `live`); a row whose author
-maps nowhere (`unmapped_author`), maps two ways (`ambiguous_author`) or whose parent is held
-(`parent_held`) is **held** in `import_hold` (source type `live_comment`) and listed, and a later
-run imports it once the mapping exists. Deleted rows and replies under them, orphans and empty
-messages are **excluded**. Dry run is the default (everything rolled back); `--apply` requires
-`--backup <new file>`, an online backup of Community's database that is integrity-checked
-before anything is written. Community must be deployed first (the script refuses a database
-without `comments.edited_at` rather than migrate it from a dry run).
-
-Production (on the host, as the service's own user and environment through `systemd-run`, so
-no file in `/var/lib/openvibe-community` ends up owned by root). Order: deploy Community → dry
-run → apply → deploy Live → apply again (catches comments Live wrote in between; the ledger
-skips the rest) → verify as above.
-
-```
-RUN="sudo systemd-run --wait --pipe --collect -p User=ubuntu -p Group=ubuntu \
-  -p WorkingDirectory=/opt/openvibe.community -p EnvironmentFile=/etc/openvibe/community.env \
-  -E NODE_ENV=production -E COMMUNITY_DB_PATH=/var/lib/openvibe-community/community.db"
-ARGS="--live-db /opt/openvibe.live/data/live.db --community-db /var/lib/openvibe-community/community.db"
-
-$RUN /usr/bin/env node scripts/import-live-comments.js $ARGS                      # dry run
-$RUN /usr/bin/env node scripts/import-live-comments.js $ARGS --apply \
-  --backup /var/lib/openvibe-community/community.pre-live-comments-$(date -u +%Y%m%dT%H%M%SZ).db
-```
-
-Held rows: `sqlite3 /var/lib/openvibe-community/community.db "SELECT * FROM import_hold WHERE
-source_type = 'live_comment'"`. Rollback: stop Community, copy the backup over `community.db`
-(remove `community.db-wal`/`-shm`), start it; Live's own rows were never changed.
+**Moving Live's old rows**: Live's VOD and clip comments were imported once (ledger `legacy_id_map`, `live`/`comment`;
+held rows in `import_hold`, source type `live_comment`). The importer (`scripts/import-live-comments.js`,
+`server/comments/live-import.js`) was retired with the move to PostgreSQL and is in git history, as is C-24's
+`scripts/migrate-screenshot-refs.js` (applied 2026-09-25: no paste keeps a legacy media reference).
 
 Embedding it — server-side, from another product's backend (the usual way; the person is the
 one your own session says it is):
@@ -546,7 +513,7 @@ Community checks service tokens against these capabilities (manifests in
 | `community.post.create` | active in contracts (v0.7.0) | forum writes |
 | `community.space.read` / `.manage`, `community.thread.read`, `community.vote.set`, `community.pulse.read` | active in contracts | spaces, threads, votes and Pulse reads by services and apps |
 
-This repository pins `openvibe-contracts` v0.71.0, which knows every id above, so they all go
+This repository pins `openvibe-contracts` v0.76.0, which knows every id above, so they all go
 through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
 the installed contracts do not know locally, with the library's own matching rule (the exact id
 or a `prefix.*` grant).
@@ -618,7 +585,9 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `OV_MEDIA_URL` | `https://openvibe.media` | Raw text + screenshots |
 | `OV_MEDIA_INTERNAL_URL` | `http://127.0.0.1:4100` | Media file store for new screenshots (`community` authority) |
 | `PASTES_AUTHORITY` | `live` | `live` = proxy to Live; `community` = this site's database is the authority |
-| `COMMUNITY_DB_PATH` | `./data/community.db` | SQLite file (the systemd unit sets `/var/lib/openvibe-community/community.db`) |
+| `DATABASE_URL`, `DATABASE_DIRECT_URL` | unset (development: embedded PGlite in `data/pglite`) | PostgreSQL through PgBouncer, and the owner's direct connection for migrations (written by OpenVibe.Host `roles/data/add-service.sh community`) |
+| `VALKEY_URL`, `VALKEY_PREFIX` | unset | per-actor limit counters shared across processes |
+| `COMMUNITY_DB_PATH` | `./data/community.db` | the SQLite file of releases before PostgreSQL, read once by `scripts/migrate-to-postgres.js` |
 | `API_CORS_ORIGINS` | Live, Media, Network, Tools, Games origins | Browser origins that may call `/api/v1/comments` and `/api/v1/pulse` with a Bearer JWT |
 | `DISCORD_RELAY_ENABLED` | off | `true` turns the Discord relay on ([docs/discord-relay.md](docs/discord-relay.md)) |
 | `DISCORD_RELAY_POLL_MS` / `DISCORD_RELAY_BACKOFF_MS` / `DISCORD_RELAY_MAX_ATTEMPTS` | `30000` / `30000` / `6` | Relay sender cadence, first retry delay, attempts before `failed` (the dead letter) |
@@ -694,11 +663,14 @@ deploy/nginx/openvibe.community.conf        # → /etc/nginx/sites-available/, T
 
 Production deploys with `sudo ovhost deploy community` on the host (strategy `git-checkout`: fetch,
 fast-forward `/opt/openvibe.community`, install on a lockfile change, restart, wait for `/api/ready`).
-The unit is `openvibe-community.service` on `127.0.0.1:4200`, the env file `/etc/openvibe/community.env`. After a
+The unit is `openvibe-community.service` on `127.0.0.1:4200`, the env file `/etc/openvibe/community.env`. The database is
+`ov_community` on the host's data role (`sudo /opt/openvibe.host/roles/data/add-service.sh community` writes its settings); the
+release migrates it at boot. The one-time move from SQLite is `scripts/migrate-to-postgres.js` (openvibe-sdk
+`runSqliteMigration`, with a `--pglite` rehearsal mode), run while the service is stopped; the old
+`/var/lib/openvibe-community/community.db` stays read-only for 7 days as the rollback. After a
 deploy, record the N-1 fixtures (`npm run n-1:record`).
 Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
-restart; afterwards `sudo ovhost rollback community --to <sha>`. Nothing blocks a rollback: the schema
-code only adds tables and columns.
+restart; afterwards `sudo ovhost rollback community --to <sha>`. Migrations only add tables and columns.
 
 The schema
 is created idempotently at boot in every mode (comments, the forum, Pulse and the relay live
@@ -724,7 +696,7 @@ server/
   graceful.js         SIGTERM: stop timers and scans, drain HTTP (4 s), settle the relays, close the DB, exit 0 (5 s at most)
   app.js              Express app factory: middleware, routes
   config.js           env → config
-  db.js               SQLite (better-sqlite3): schema, opened at COMMUNITY_DB_PATH
+  db.js               PostgreSQL (openvibe-sdk/db): initDb/getDb, migrations/ applied at boot
   auth/routes.js      OAuth2 client (login/callback/logout/me/refresh), optionalAuth
   identity/viewer.js  who is calling: browser JWT, service token (+ X-OV-* headers), anonymous
   identity/network.js Network resolve-batch client + subject_projection cache
@@ -735,7 +707,6 @@ server/
   pastes/api.js       native /api/pastes/* ('community')
   pastes/service.js   paste rules: visibility, limits, burn-after-read, views, shapes
   pastes/store.js     pure SQL over pastes / versions / likes / comments / projections
-  pastes/importer.js  Media export bundle → store (scripts/import-pastes.js is the CLI)
   pastes/source.js    where pages read pastes from (Live or the store)
   pastes/catalog.js   recent public pastes: trending, related, language filter
   comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments),
@@ -761,8 +732,7 @@ server/
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
 (openvibe-shared is the pinned OpenVibe.Shared v1.25.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
-scripts/import-pastes.js  Media paste bundle importer
-scripts/import-live-comments.js  Live's VOD/clip comments → Community threads (dry run by default)
+scripts/migrate-to-postgres.js  the one-time SQLite → PostgreSQL import (runSqliteMigration; --pglite rehearsal)
 test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
 docs/capabilities-proposal/  Wave 5 capability manifests (released in openvibe-contracts v0.7.0)
 docs/discord-relay.md  the Discord relay: how it works, owner steps, staff API, limits

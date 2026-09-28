@@ -112,7 +112,7 @@ function createViewerResolver({ auth, config, network, revocations = null }) {
         if (!subject && network && claims.sub != null) {
             try { subject = await network.subjectForNetworkUser(claims.sub); } catch (err) { console.warn('[Identity] subject lookup failed:', err.message); }
         }
-        if (subject && network) { try { network.rememberClaims(subject, claims); } catch { /* display cache only */ } }
+        if (subject && network) { try { await network.rememberClaims(subject, claims); } catch { /* display cache only */ } }
         const user = claimsToUser(claims);
         if (subject && !user.subject_id) user.subject_id = subject;
         // Staff powers come from the contracts staff map (ADR-022): the role, or Network's issued staff_caps.
@@ -132,7 +132,7 @@ function createViewerResolver({ auth, config, network, revocations = null }) {
             const payload = decodeJwtPayload(token);
             if (payload && typeof payload.sub === 'string' && PRINCIPAL_SUB.test(payload.sub)) {
                 if (opts.services === false) return ANONYMOUS;
-                return fromServiceToken(req, token);
+                return await fromServiceToken(req, token);
             }
         }
         const token = extractToken(req);

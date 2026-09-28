@@ -74,123 +74,123 @@ function createDiscordInbound({ db, perMinute = 6, maxChars = 4000, now = () => 
         return true;
     }
 
-    const mapByMessage = (id) => db.prepare("SELECT * FROM relay_message_map WHERE platform = 'discord' AND external_message_id = ?").get(String(id)) || null;
-    const mappingById = (id) => db.prepare('SELECT * FROM relay_mappings WHERE id = ?').get(id) || null;
+    const mapByMessage = async (id) => await db.prepare("SELECT * FROM relay_message_map WHERE platform = 'discord' AND external_message_id = ?").get(String(id)) || null;
+    const mappingById = async (id) => await db.prepare('SELECT * FROM relay_mappings WHERE id = ?').get(id) || null;
 
     function ignore(reason) { counts.ignored++; return { status: 'ignored', reason }; }
-    function failure(event, d, mappingId, error) {
-        db.prepare(`INSERT INTO relay_inbound_failures (mapping_id, event, external_channel_id, external_message_id, external_author_id, error)
+    async function failure(event, d, mappingId, error) {
+        await db.prepare(`INSERT INTO relay_inbound_failures (mapping_id, event, external_channel_id, external_message_id, external_author_id, error)
                     VALUES (?, ?, ?, ?, ?, ?)`).run(mappingId || null, event, d.channel_id ? String(d.channel_id) : null, d.id ? String(d.id) : null, d.author && d.author.id ? String(d.author.id) : null, String(error).slice(0, 300));
-        db.prepare('DELETE FROM relay_inbound_failures WHERE id <= (SELECT MAX(id) FROM relay_inbound_failures) - ?').run(KEEP_FAILURES);
+        await db.prepare('DELETE FROM relay_inbound_failures WHERE id <= (SELECT MAX(id) FROM relay_inbound_failures) - ?').run(KEEP_FAILURES);
         counts.failed++;
         return { status: 'failed', error };
     }
     /** Is the local thread still somewhere a reply from Discord may land? → null or why not */
-    function closed(thread) {
+    async function closed(thread) {
         if (!thread || thread.deleted_at) return 'the thread was deleted';
-        const space = forumStore.getSpaceById(db, thread.space_id);
+        const space = await forumStore.getSpaceById(db, thread.space_id);
         if (!space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return 'the thread is not public';
         if (thread.locked) return 'the thread is locked';
         return null;
     }
 
-    function create(d, botUserId) {
+    async function create(d, botUserId) {
         if (d.webhook_id) return ignore('a webhook message (the relay\'s own included)');
         const author = d.author || {};
         if (!author.id || author.bot || author.system || (botUserId && String(author.id) === String(botUserId))) return ignore('a bot or system message');
         if (d.type !== undefined && !MESSAGE_TYPES.has(Number(d.type))) return ignore('not a plain message or a reply');
         if (!SNOWFLAKE.test(String(d.id || '')) || !SNOWFLAKE.test(String(d.channel_id || ''))) return ignore('malformed ids');
-        if (mapByMessage(d.id)) return ignore('already relayed');
+        if (await mapByMessage(d.id)) return ignore('already relayed');
         const channel = String(d.channel_id);
         // A Discord thread started from a mapped message, else a reply to one in the same channel.
-        let anchor = mapByMessage(channel);
+        let anchor = await mapByMessage(channel);
         // (message_reference type 1 is a forward, not a reply: never taken in.)
         if (!anchor && d.message_reference && d.message_reference.message_id && !Number(d.message_reference.type || 0)) {
-            const ref = mapByMessage(String(d.message_reference.message_id));
+            const ref = await mapByMessage(String(d.message_reference.message_id));
             if (ref && ref.external_channel_id === channel) anchor = ref;
         }
         if (!anchor) return ignore('not a reply to a relayed message');
-        const mapping = mappingById(anchor.mapping_id);
+        const mapping = await mappingById(anchor.mapping_id);
         if (!mapping || !mapping.enabled || !mapping.inbound) return ignore('inbound is off for this mapping');
         const mapped = [mapping.discord_channel_id, mapping.discord_thread_id].filter(Boolean);
         const inMapped = mapped.includes(channel) || (channel === anchor.external_message_id && mapped.includes(anchor.external_channel_id));
         if (!inMapped) return ignore('not a mapped channel');
-        const thread = db.prepare('SELECT * FROM threads WHERE id = ?').get(anchor.thread_id);
-        const why = closed(thread);
-        if (why) return failure('MESSAGE_CREATE', d, mapping.id, why);
-        if (!allow(`a:${mapping.id}:${author.id}`, perMinute) || !allow(`m:${mapping.id}`, perMinute * 10)) return failure('MESSAGE_CREATE', d, mapping.id, 'rate limited');
+        const thread = await db.prepare('SELECT * FROM threads WHERE id = ?').get(anchor.thread_id);
+        const why = await closed(thread);
+        if (why) return await failure('MESSAGE_CREATE', d, mapping.id, why);
+        if (!allow(`a:${mapping.id}:${author.id}`, perMinute) || !allow(`m:${mapping.id}`, perMinute * 10)) return await failure('MESSAGE_CREATE', d, mapping.id, 'rate limited');
         const body = toMarkdown(d, maxChars);
-        if (!body) return failure('MESSAGE_CREATE', d, mapping.id, 'the message has no text: is the MESSAGE CONTENT intent on for the bot?');
+        if (!body) return await failure('MESSAGE_CREATE', d, mapping.id, 'the message has no text: is the MESSAGE CONTENT intent on for the bot?');
         const name = cleanName((d.member && d.member.nick) || author.global_name || author.username) || 'Discord';
         try {
-            const post = db.transaction(() => {
-                const p = forumStore.addPost(db, { thread_id: thread.id, author_subject: null, origin: 'discord', body_markdown: body, relay_author: name });
-                db.prepare(`INSERT INTO relay_message_map (platform, mapping_id, direction, local_type, local_id, thread_id, external_channel_id, external_message_id)
+            const post = await db.tx(async () => {
+                const p = await forumStore.addPost(db, { thread_id: thread.id, author_subject: null, origin: 'discord', body_markdown: body, relay_author: name });
+                await db.prepare(`INSERT INTO relay_message_map (platform, mapping_id, direction, local_type, local_id, thread_id, external_channel_id, external_message_id)
                             VALUES ('discord', ?, 'in', 'post', ?, ?, ?, ?)`).run(mapping.id, p.id, thread.id, channel, String(d.id));
                 return p;
-            })();
+            });
             counts.applied++;
             return { status: 'applied', post_id: post.id };
         } catch (err) {
-            if (/UNIQUE/.test(err.message)) return ignore('already relayed');
-            return failure('MESSAGE_CREATE', d, mapping.id, `could not save the post: ${err.message}`);
+            if (err.code === '23505') return ignore('already relayed');
+            return await failure('MESSAGE_CREATE', d, mapping.id, `could not save the post: ${err.message}`);
         }
     }
 
-    function update(d) {
+    async function update(d) {
         if (!d.id) return ignore('malformed ids');
-        const row = mapByMessage(d.id);
+        const row = await mapByMessage(d.id);
         if (!row) return ignore('not a relayed message');
         if (row.direction !== 'in') return ignore('the relay\'s own message');
         if (typeof d.content !== 'string') return ignore('no text change');
-        const mapping = mappingById(row.mapping_id);
+        const mapping = await mappingById(row.mapping_id);
         if (!mapping || !mapping.enabled || !mapping.inbound) return ignore('inbound is off for this mapping');
-        const post = forumStore.getPost(db, row.local_id);
-        if (!post || post.deleted_at) return failure('MESSAGE_UPDATE', d, mapping.id, 'the post was deleted');
-        const why = closed(db.prepare('SELECT * FROM threads WHERE id = ?').get(post.thread_id));
-        if (why) return failure('MESSAGE_UPDATE', d, mapping.id, why);
+        const post = await forumStore.getPost(db, row.local_id);
+        if (!post || post.deleted_at) return await failure('MESSAGE_UPDATE', d, mapping.id, 'the post was deleted');
+        const why = await closed(await db.prepare('SELECT * FROM threads WHERE id = ?').get(post.thread_id));
+        if (why) return await failure('MESSAGE_UPDATE', d, mapping.id, why);
         const body = toMarkdown(d, maxChars);
-        if (!body) return failure('MESSAGE_UPDATE', d, mapping.id, 'the edit has no text');
-        forumStore.editPost(db, post.id, body, 'discord');
-        db.prepare('UPDATE relay_message_map SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(row.id);
+        if (!body) return await failure('MESSAGE_UPDATE', d, mapping.id, 'the edit has no text');
+        await forumStore.editPost(db, post.id, body, 'discord');
+        await db.prepare('UPDATE relay_message_map SET updated_at = ov_now() WHERE id = ?').run(row.id);
         counts.applied++;
         return { status: 'applied', post_id: post.id };
     }
 
     /** A delete on Discord. Applied whatever the mapping's switches: taking something down never waits. */
-    function remove(id) {
-        const row = mapByMessage(id);
+    async function remove(id) {
+        const row = await mapByMessage(id);
         if (!row) return ignore('not a relayed message');
-        db.transaction(() => {
-            db.prepare('UPDATE relay_message_map SET external_deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND external_deleted_at IS NULL').run(row.id);
-            if (row.direction === 'in') forumStore.softDeletePost(db, row.local_id);
-        })();
+        await db.tx(async () => {
+            await db.prepare('UPDATE relay_message_map SET external_deleted_at = ov_now(), updated_at = ov_now() WHERE id = ? AND external_deleted_at IS NULL').run(row.id);
+            if (row.direction === 'in') await forumStore.softDeletePost(db, row.local_id);
+        });
         counts.applied++;
         return { status: 'applied', post_id: row.direction === 'in' ? row.local_id : null, note: row.direction === 'out' ? 'the relay\'s message was deleted on Discord; the thread stays' : undefined };
     }
 
     /** One gateway dispatch (type, data, { botUserId }) → result (an array for a bulk delete). */
-    function handle(type, d, { botUserId = null } = {}) {
+    async function handle(type, d, { botUserId = null } = {}) {
         if (!d || typeof d !== 'object') return ignore('no data');
-        if (type === 'MESSAGE_CREATE') return create(d, botUserId);
-        if (type === 'MESSAGE_UPDATE') return update(d);
-        if (type === 'MESSAGE_DELETE') return remove(String(d.id || ''));
-        if (type === 'MESSAGE_DELETE_BULK') return (Array.isArray(d.ids) ? d.ids : []).map((id) => remove(String(id)));
+        if (type === 'MESSAGE_CREATE') return await create(d, botUserId);
+        if (type === 'MESSAGE_UPDATE') return await update(d);
+        if (type === 'MESSAGE_DELETE') return await remove(String(d.id || ''));
+        if (type === 'MESSAGE_DELETE_BULK') return (await Promise.all((Array.isArray(d.ids) ? d.ids : []).map(async (id) => await remove(String(id)))));
         return ignore('not a message event');
     }
 
     // ── staff ────────────────────────────────────────────────
-    function listFailures({ all = false, limit = 50 } = {}) {
-        return db.prepare(`SELECT f.*, s.slug AS space_slug FROM relay_inbound_failures f LEFT JOIN relay_mappings m ON m.id = f.mapping_id LEFT JOIN spaces s ON s.id = m.space_id
-                           WHERE (? = 1 OR f.dismissed_at IS NULL) ORDER BY f.id DESC LIMIT ?`).all(all ? 1 : 0, limit)
+    async function listFailures({ all = false, limit = 50 } = {}) {
+        return (await db.prepare(`SELECT f.*, s.slug AS space_slug FROM relay_inbound_failures f LEFT JOIN relay_mappings m ON m.id = f.mapping_id LEFT JOIN spaces s ON s.id = m.space_id
+                           WHERE (? = 1 OR f.dismissed_at IS NULL) ORDER BY f.id DESC LIMIT ?`).all(all ? 1 : 0, limit))
             .map((f) => ({
                 id: f.id, event: f.event, error: f.error, mapping: f.mapping_id ? { id: f.mapping_id, space: f.space_slug || null } : null,
                 discord: { channel_id: f.external_channel_id, message_id: f.external_message_id, author_id: f.external_author_id },
                 dismissed: !!f.dismissed_at, created_at: f.created_at ? new Date(`${String(f.created_at).replace(' ', 'T')}Z`).toISOString() : null,
             }));
     }
-    function dismiss(id) {
-        return db.prepare('UPDATE relay_inbound_failures SET dismissed_at = CURRENT_TIMESTAMP WHERE id = ? AND dismissed_at IS NULL').run(id).changes;
+    async function dismiss(id) {
+        return (await db.prepare('UPDATE relay_inbound_failures SET dismissed_at = ov_now() WHERE id = ? AND dismissed_at IS NULL').run(id)).changes;
     }
 
     return { handle, listFailures, dismiss, stats: () => ({ ...counts }) };

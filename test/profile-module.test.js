@@ -6,33 +6,32 @@
 const assert = require('assert');
 const http = require('http');
 const { modules } = require('openvibe-contracts');
-const { openDb } = require('../server/db');
-const { summarize, createProfileModule, ensureSchema } = require('../server/identity/profile-module');
+const { testDb } = require('./helpers/db');
+const { summarize, createProfileModule } = require('../server/identity/profile-module');
 
-const ANN = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPA';
-const BOB = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPB';
-const db = openDb(':memory:');
-ensureSchema(db);
-const now = Date.parse('2026-09-25T12:00:00Z');
-const at = (msAgo) => new Date(now - msAgo).toISOString().replace('T', ' ').slice(0, 19);
-const DAY = 86400000;
-
-const space = db.prepare("INSERT INTO spaces (slug, name) VALUES ('profile-test', 'Profile test')").run().lastInsertRowid;
-const thread = db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, created_at) VALUES (?, ?, ?, ?, ?)').run(space, 'hello', 'Hello', ANN, at(10 * DAY)).lastInsertRowid;
-db.prepare('INSERT INTO posts (thread_id, author_subject, is_opening, body_markdown, created_at) VALUES (?, ?, 1, ?, ?)').run(thread, ANN, 'hi', at(10 * DAY));
-db.prepare('INSERT INTO posts (thread_id, author_subject, is_opening, body_markdown, created_at) VALUES (?, ?, 0, ?, ?)').run(thread, ANN, 'reply', at(2 * DAY));
-db.prepare('INSERT INTO posts (thread_id, author_subject, is_opening, body_markdown, created_at, deleted_at) VALUES (?, ?, 0, ?, ?, ?)').run(thread, ANN, 'gone', at(DAY), at(DAY));
-const ct = db.prepare("INSERT INTO comment_threads (ref_service, ref_type, ref_id) VALUES ('live', 'vod', '1')").run().lastInsertRowid;
-db.prepare('INSERT INTO comments (thread_id, author_subject, message, created_at) VALUES (?, ?, ?, ?)').run(ct, ANN, 'nice', at(3 * DAY));
-db.prepare("INSERT INTO comments (thread_id, author_subject, origin, message, created_at) VALUES (?, ?, 'ai', ?, ?)").run(ct, ANN, 'bot', at(3 * DAY));
-db.prepare("INSERT INTO pastes (slug, owner_subject, content, created_at) VALUES ('p1', ?, 'x', ?)").run(ANN, at(5 * DAY));
-db.prepare("INSERT INTO pastes (slug, owner_subject, content, visibility, created_at) VALUES ('p2', ?, 'x', 'private', ?)").run(ANN, at(5 * DAY));
+let ANN, BOB, db, now, at, DAY, space, thread, ct;
 
 (async () => {
-    const s = summarize(db, ANN);
+    ANN = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPA';
+    BOB = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPB';
+    db = await testDb();
+    now = Date.parse('2026-09-25T12:00:00Z');
+    at = (msAgo) => new Date(now - msAgo).toISOString().replace('T', ' ').slice(0, 19);
+    DAY = 86400000;
+    space = (await db.prepare("INSERT INTO spaces (slug, name) VALUES ('profile-test', 'Profile test') RETURNING id").run()).lastInsertRowid;
+    thread = (await db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id').run(space, 'hello', 'Hello', ANN, at(10 * DAY))).lastInsertRowid;
+    await db.prepare('INSERT INTO posts (thread_id, author_subject, is_opening, body_markdown, created_at) VALUES (?, ?, 1, ?, ?)').run(thread, ANN, 'hi', at(10 * DAY));
+    await db.prepare('INSERT INTO posts (thread_id, author_subject, is_opening, body_markdown, created_at) VALUES (?, ?, 0, ?, ?)').run(thread, ANN, 'reply', at(2 * DAY));
+    await db.prepare('INSERT INTO posts (thread_id, author_subject, is_opening, body_markdown, created_at, deleted_at) VALUES (?, ?, 0, ?, ?, ?)').run(thread, ANN, 'gone', at(DAY), at(DAY));
+    ct = (await db.prepare("INSERT INTO comment_threads (ref_service, ref_type, ref_id) VALUES ('live', 'vod', '1') RETURNING id").run()).lastInsertRowid;
+    await db.prepare('INSERT INTO comments (thread_id, author_subject, message, created_at) VALUES (?, ?, ?, ?)').run(ct, ANN, 'nice', at(3 * DAY));
+    await db.prepare("INSERT INTO comments (thread_id, author_subject, origin, message, created_at) VALUES (?, ?, 'ai', ?, ?)").run(ct, ANN, 'bot', at(3 * DAY));
+    await db.prepare("INSERT INTO pastes (slug, owner_subject, content, created_at) VALUES ('p1', ?, 'x', ?)").run(ANN, at(5 * DAY));
+    await db.prepare("INSERT INTO pastes (slug, owner_subject, content, visibility, created_at) VALUES ('p2', ?, 'x', 'private', ?)").run(ANN, at(5 * DAY));
+    const s = await summarize(db, ANN);
     assert.deepStrictEqual(s, { threads: 1, posts: 1, comments: 1, pastes: 1, first_active_at: new Date(now - 10 * DAY).toISOString(), last_active_at: new Date(now - 2 * DAY).toISOString() });
     assert.ok(modules.validateData('community.profile', s).valid, 'matches the namespace schema');
-    assert.strictEqual(summarize(db, BOB), null, 'nothing written: no record');
+    assert.strictEqual(await summarize(db, BOB), null, 'nothing written: no record');
 
     const puts = [];
     const server = http.createServer((req, res) => {
@@ -56,8 +55,8 @@ db.prepare("INSERT INTO pastes (slug, owner_subject, content, visibility, create
     assert.strictEqual(await mod.push('gst_01JAB2C3D4E5F6G7H8J9K0MNPG'), false, 'guests have no record');
 
     // The scan: Bob comments, Ann deletes her reply.
-    db.prepare('INSERT INTO comments (thread_id, author_subject, message, created_at) VALUES (?, ?, ?, ?)').run(ct, BOB, 'first!', at(60000));
-    db.prepare("UPDATE posts SET deleted_at = ? WHERE body_markdown = 'reply'").run(at(30000));
+    await db.prepare('INSERT INTO comments (thread_id, author_subject, message, created_at) VALUES (?, ?, ?, ?)').run(ct, BOB, 'first!', at(60000));
+    await db.prepare("UPDATE posts SET deleted_at = ? WHERE body_markdown = 'reply'").run(at(30000));
     assert.strictEqual(await mod.scan({ now }), 2);
     assert.deepStrictEqual(puts.slice(1).map((p) => [p.subject, p.data.comments, p.data.posts]).sort(), [[ANN, 1, 0], [BOB, 1, 0]]);
     assert.strictEqual(await mod.scan({ now: now + 5 * 60000 }), 0, 'the next scan starts where this one ended');

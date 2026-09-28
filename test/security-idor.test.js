@@ -69,26 +69,26 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
         const res = await fetch(t.base + path, { method, headers: h, body: payload, redirect: 'manual' });
         return { status: res.status, text: await res.text(), json() { return JSON.parse(this.text); } };
     }
-    const snapshot = () => TABLES.map((tb) => `${tb}:${JSON.stringify(t.db.prepare(`SELECT * FROM ${tb} ORDER BY rowid`).all())}`).join('\n');
+    const snapshot = async () => (await Promise.all(TABLES.map(async (tb) => `${tb}:${JSON.stringify(await t.db.prepare(`SELECT * FROM ${tb} ORDER BY ${tb}::text`).all())}`))).join('\n');
     const ok = (r, what) => { assert.ok(r.status >= 200 && r.status < 300, `${what}: ${r.status} ${r.text.slice(0, 300)}`); return r.status === 204 ? null : r.json(); };
     const imageForm = (field, extra = {}) => { const f = new FormData(); for (const [k, v] of Object.entries(extra)) f.append(k, v); f.append(field, new Blob([PNG], { type: 'image/png' }), 'x.png'); return f; };
 
     /** Each persona's attempt is refused (401/403/404, or the route's documented refusal) and changes nothing. */
     async function refused(label, method, path, personas, opts = {}, statuses = [401, 403, 404]) {
         for (const name of personas) {
-            const before = snapshot();
+            const before = await snapshot();
             const o = typeof opts === 'function' ? opts() : opts;
             const r = await send(method, path, { ...as[name], ...o, headers: { ...(as[name].headers || {}), ...(o.headers || {}) } });
             assert.ok(statuses.includes(r.status), `${label} as ${name}: ${r.status} ${r.text.slice(0, 200)}`);
-            assert.strictEqual(snapshot(), before, `${label} as ${name}: refused (${r.status}) but the database changed`);
+            assert.strictEqual(await snapshot(), before, `${label} as ${name}: refused (${r.status}) but the database changed`);
         }
     }
     /** The owner (or staff) may: the route works, and it changes the database. */
     async function allowed(label, method, path, name, opts = {}) {
-        const before = snapshot();
+        const before = await snapshot();
         const r = await send(method, path, { ...as[name], ...opts, headers: { ...(as[name].headers || {}), ...(opts.headers || {}) } });
         const out = ok(r, `${label} as ${name}`);
-        assert.notStrictEqual(snapshot(), before, `${label} as ${name}: answered ${r.status} but nothing changed`);
+        assert.notStrictEqual(await snapshot(), before, `${label} as ${name}: answered ${r.status} but nothing changed`);
         return out;
     }
 
@@ -104,8 +104,8 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
     const cthread = ok(await send('POST', '/api/v1/comments/threads/resolve', { who: alex, json: { ref: { service: 'community', type: 'paste', id: pub.slug } } }), 'comment thread').thread;
     const typed = ok(await send('POST', `/api/v1/comments/threads/${cthread.id}/comments`, { who: alex, json: { message: 'alex typed comment' } }), 'typed comment').comment;
     const upload = ok(await send('POST', '/api/v1/spaces/general/attachments', { who: alex, body: imageForm('file') }), 'alex upload').attachment;
-    t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'general'").run(alex.subject_id);
-    t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'showcase'").run(cora.subject_id);
+    await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'general'").run(alex.subject_id);
+    await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'showcase'").run(cora.subject_id);
     ok(await send('PUT', '/api/v1/spaces/general/chat-room', { who: alex, json: { room: 'alex-room' } }), 'alex attaches a room to his space');
     const liveItem = ok(await send('POST', '/api/v1/pulse/items', { token: net.signService({ sub: 'svc:live', cap: ['community.pulse.write'] }), json: { ref: { service: 'live', type: 'stream', id: '9' }, title: 'alex is live', url: 'https://openvibe.live/@alex' } }), 'live pulse item');
     assert.ok(liveItem.item);
@@ -146,7 +146,7 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
 
     await check('likes and votes are always the caller\'s own; an app cannot name alex', async () => {
         await allowed('sam likes alex\'s paste', 'POST', `/api/pastes/${pub.slug}/like`, 'sam');
-        const likers = t.db.prepare('SELECT subject_id FROM paste_likes pl JOIN pastes p ON p.id = pl.paste_id WHERE p.slug = ?').all(pub.slug).map((r) => r.subject_id);
+        const likers = (await t.db.prepare('SELECT subject_id FROM paste_likes pl JOIN pastes p ON p.id = pl.paste_id WHERE p.slug = ?').all(pub.slug)).map((r) => r.subject_id);
         assert.deepStrictEqual(likers, [sam.subject_id]);
         await refused('an app for sam likes as alex', 'POST', `/api/pastes/${pub.slug}/like`, ['an app for sam'], { headers: { 'x-ov-subject': alex.subject_id } });
         await refused('an app for sam votes as alex', 'POST', `/api/v1/spaces/general/threads/${thread.thread.slug}/votes`, ['an app for sam'], { headers: { 'x-ov-subject': alex.subject_id }, json: { value: 1 } });

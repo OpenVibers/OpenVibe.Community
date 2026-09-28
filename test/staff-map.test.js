@@ -9,7 +9,7 @@ const { boot, check, done } = require('./helpers/app');
     const net = t.network;
     const { createViewerResolver } = require('../server/identity/viewer');
     const viewers = createViewerResolver({ auth: t.app.locals.auth, config: require('../server/config'), network: null });
-    const resolve = (token) => viewers.resolve({ headers: { authorization: `Bearer ${token}` }, get: () => undefined, cookies: {} });
+    const resolve = async (token) => await viewers.resolve({ headers: { authorization: `Bearer ${token}` }, get: () => undefined, cookies: {} });
     const tok = (claims) => net.sign({ id: Math.floor(Math.random() * 1e6), subject_id: ids.newId('user'), username: 'x', display_name: 'X', ...claims });
 
     await check('a global moderator is paste and discussion staff', async () => {

@@ -21,8 +21,8 @@ const { boot, check, done } = require('./helpers/app');
     const forum = t.app.locals.forum;
     const svc = (cap, extra = {}) => net.signService({ cap, ...extra });
     const PULSE = 'community.pulse.write';
-    const items = () => t.db.prepare('SELECT * FROM pulse_items ORDER BY id').all();
-    const bySource = (type, id) => t.db.prepare("SELECT * FROM pulse_items WHERE source_service = 'community' AND source_type = ? AND source_id = ?").get(type, String(id));
+    const items = async () => await t.db.prepare('SELECT * FROM pulse_items ORDER BY id').all();
+    const bySource = async (type, id) => await t.db.prepare("SELECT * FROM pulse_items WHERE source_service = 'community' AND source_type = ? AND source_id = ?").get(type, String(id));
     const call = (path, { method = 'GET', token, headers = {}, json } = {}) => {
         const h = { ...headers };
         if (token) h.authorization = `Bearer ${token}`;
@@ -38,11 +38,11 @@ const { boot, check, done } = require('./helpers/app');
         const burn = (await pastes.createText(asAlex, { content: 'b', burn_after_read: true })).slug;
         const nsfw = (await pastes.createText(asAlex, { content: 'n', is_nsfw: true })).slug;
         const ai = (await pastes.createText({ kind: 'service', subject: null, origin: 'ai', claims: { cap: [] } }, { content: 'a' })).slug;
-        const it = bySource('paste', pub);
+        const it = await bySource('paste', pub);
         assert.ok(it, 'public paste recorded');
         assert.deepStrictEqual([it.title, it.url, it.actor_subject, it.origin, it.visibility], ['Public one', `https://openvibe.community/p/${pub}`, alex.subject_id, 'user', 'public']);
-        assert.strictEqual(bySource('paste', anonPub).actor_subject, null);
-        for (const s of [unl, priv, burn, nsfw, ai]) assert.strictEqual(bySource('paste', s), undefined, `${s} must not enter Pulse`);
+        assert.strictEqual((await bySource('paste', anonPub)).actor_subject, null);
+        for (const s of [unl, priv, burn, nsfw, ai]) assert.strictEqual(await bySource('paste', s), undefined, `${s} must not enter Pulse`);
     });
 
     await check('pastes leave Pulse when made private or deleted; read-time guard covers what the hooks miss', async () => {
@@ -50,29 +50,29 @@ const { boot, check, done } = require('./helpers/app');
         const b = (await pastes.createText(asAlex, { title: 'Soon deleted', content: '2' })).slug;
         const c = (await pastes.createText(asAlex, { title: 'Changed behind our back', content: '3' })).slug;
         await pastes.update(asAlex, a, { visibility: 'private' });
-        pastes.remove(asAlex, b);
-        assert.strictEqual(bySource('paste', a), undefined);
-        assert.strictEqual(bySource('paste', b), undefined);
-        t.db.prepare("UPDATE pastes SET visibility = 'unlisted' WHERE slug = ?").run(c); // no hook ran
-        assert.ok(bySource('paste', c), 'row still there');
+        await pastes.remove(asAlex, b);
+        assert.strictEqual(await bySource('paste', a), undefined);
+        assert.strictEqual(await bySource('paste', b), undefined);
+        await t.db.prepare("UPDATE pastes SET visibility = 'unlisted' WHERE slug = ?").run(c); // no hook ran
+        assert.ok(await bySource('paste', c), 'row still there');
         const listed = (await call('/api/v1/pulse?limit=100')).json().items.map((i) => i.source.id);
         assert.ok(!listed.includes(c), 'but never listed');
     });
 
     await check('threads and replies in public spaces enter; members spaces never; deletes remove', async () => {
         const { thread } = await forum.createThread(asAlex, 'general', { title: 'Pulse thread', body: 'hello' });
-        const it = bySource('thread', thread.id);
+        const it = await bySource('thread', thread.id);
         assert.deepStrictEqual([it.title, it.url, it.actor_subject, it.origin], ['Pulse thread', 'https://openvibe.community/s/general/t/pulse-thread', alex.subject_id, 'user']);
         const { post } = await forum.reply(asAlex, 'general', 'pulse-thread', { body: 'a reply' });
-        assert.strictEqual(bySource('post', post.id).title, 'Re: Pulse thread');
-        assert.strictEqual(bySource('post', post.id).url, `https://openvibe.community/s/general/t/pulse-thread#post-${post.id}`);
-        t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members')").run();
+        assert.strictEqual((await bySource('post', post.id)).title, 'Re: Pulse thread');
+        assert.strictEqual((await bySource('post', post.id)).url, `https://openvibe.community/s/general/t/pulse-thread#post-${post.id}`);
+        await t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members')").run();
         const hidden = await forum.createThread(asAlex, 'insiders', { title: 'Members only', body: 'x' });
-        assert.strictEqual(bySource('thread', hidden.thread.id), undefined);
-        forum.deletePost(asAlex, post.id);
-        assert.strictEqual(bySource('post', post.id), undefined);
-        forum.deleteThread(asAlex, 'general', 'pulse-thread');
-        assert.strictEqual(bySource('thread', thread.id), undefined);
+        assert.strictEqual(await bySource('thread', hidden.thread.id), undefined);
+        await forum.deletePost(asAlex, post.id);
+        assert.strictEqual(await bySource('post', post.id), undefined);
+        await forum.deleteThread(asAlex, 'general', 'pulse-thread');
+        assert.strictEqual(await bySource('thread', thread.id), undefined);
     });
 
     await check('POST /items: services with community.pulse.write only; browsers and other caps refused', async () => {
@@ -109,7 +109,7 @@ const { boot, check, done } = require('./helpers/app');
         const it = again.json().item;
         assert.strictEqual(it.title, 'A VOD (renamed)');
         assert.deepStrictEqual([it.origin, it.actor && it.actor.subject, it.occurred_at], ['user', alex.subject_id, '2026-09-20T10:00:00.000Z'], 'origin, actor and time are the first record\'s');
-        assert.strictEqual(items().filter((i) => i.source_id === 'v9').length, 1);
+        assert.strictEqual((await items()).filter((i) => i.source_id === 'v9').length, 1);
     });
 
     await check('AI items: labelled AI, never attributed (X-OV-Origin: ai or origin ai), system items name no one', async () => {
@@ -118,7 +118,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.deepStrictEqual([viaHeader.json().item.origin, viaHeader.json().item.actor, viaHeader.json().item.label], ['ai', null, 'AI']);
         const viaBody = await call('/api/v1/pulse/items', { method: 'POST', token: svc([PULSE]), headers: { 'x-ov-subject': alex.subject_id }, json: { ref: { service: 'live', type: 'moment', id: 'm2' }, title: 'Summary', url: 'https://openvibe.live/m/2', origin: 'ai' } });
         assert.deepStrictEqual([viaBody.json().item.origin, viaBody.json().item.actor], ['ai', null]);
-        assert.strictEqual(t.db.prepare("SELECT actor_subject FROM pulse_items WHERE source_id = 'm2'").get().actor_subject, null);
+        assert.strictEqual((await t.db.prepare("SELECT actor_subject FROM pulse_items WHERE source_id = 'm2'").get()).actor_subject, null);
         const sys = await call('/api/v1/pulse/items', { method: 'POST', token: svc([PULSE]), headers: { 'x-ov-subject': alex.subject_id }, json: { ref: { service: 'live', type: 'event', id: 'e1' }, title: 'Maintenance tonight', url: 'https://openvibe.live/status', origin: 'system' } });
         assert.deepStrictEqual([sys.json().item.origin, sys.json().item.actor, sys.json().item.label], ['system', null, 'System']);
     });
