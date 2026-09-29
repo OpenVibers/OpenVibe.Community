@@ -1,19 +1,16 @@
 'use strict';
 
 /**
- * Where server-rendered pages read pastes from.
+ * Where server-rendered pages read pastes from: Community's own store, through the same service
+ * the API uses, so a page and the API can never disagree about visibility or view counts.
  *
- *   'live' authority      → live-client.js (OpenVibe.Live's API, Media behind it) — the default.
- *   'community' authority → this site's own store, through the same service the API uses, so a
- *                           page and the API can never disagree about visibility or view counts.
- *
- * Both expose the live-client call shapes (listPastes / getPaste / listByUser / createPaste);
- * `ctx` carries the visitor ({ token, ip, userAgent, viewer, noView }).
+ * app.js installs the service once at boot (source.use(service)); the call shapes
+ * (listPastes / getPaste / listByUser / createPaste) are stable, and `ctx` carries the visitor
+ * ({ token, ip, userAgent, viewer, noView }).
  */
-const live = require('../live-client');
 const { ANONYMOUS } = require('../identity/viewer');
 
-let current = { local: false, listPastes: live.listPastes, getPaste: live.getPaste, listByUser: live.listByUser, createPaste: live.createPaste };
+let current = null;
 
 function localSource(service) {
     const who = (ctx) => (ctx && ctx.viewer) || ANONYMOUS;
@@ -27,15 +24,15 @@ function localSource(service) {
     };
 }
 
-/** Switch to the store (community authority); passing nothing goes back to Live. */
+/** Install the store (the only paste authority). */
 function use(service) {
-    current = service ? localSource(service) : { local: false, listPastes: live.listPastes, getPaste: live.getPaste, listByUser: live.listByUser, createPaste: live.createPaste };
+    current = localSource(service);
     return current;
 }
 
 module.exports = {
     use,
-    get local() { return current.local; },
+    get local() { return !!(current && current.local); },
     listPastes: (...a) => current.listPastes(...a),
     getPaste: (...a) => current.getPaste(...a),
     listByUser: (...a) => current.listByUser(...a),

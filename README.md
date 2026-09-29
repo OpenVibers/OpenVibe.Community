@@ -15,7 +15,7 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 
 ## Owns
 
-- pastes (authority since 2026-09-22, `PASTES_AUTHORITY=community`), their versions, likes and
+- pastes (the only authority since 2026-09-22), their versions, likes and
   comments
 - the typed comment threads every other product embeds, the forum (spaces, threads, posts, votes,
   categories), Pulse (the network's public activity) and the Discord relay
@@ -34,43 +34,38 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - OpenVibe.Network (SSO, JWKS, service tokens, `identity.subject.resolve`, the `community.profile` module)
 - OpenVibe.Media (screenshot and attachment uploads), OpenVibe.VIP (members-only gates), OpenVibe.Chat
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
-- OpenVibe.Live only when `PASTES_AUTHORITY=live` (the rollback mode), and for old VOD/clip comment imports
+- OpenVibe.Live only for old VOD/clip comment imports (it reads and writes no pastes here any more)
 - `openvibe-contracts` v0.76.0, `openvibe-sdk` v0.21.0 (events outbox, per-actor limits),
-  `openvibe-shared` v1.28.0, pinned by release tarball
+  `openvibe-shared` v2.2.0, pinned by release tarball
 
 ## How it fits the network
 
-Pastes moved to Community in roadmap Wave 5. `PASTES_AUTHORITY` picks who owns them:
-
-- **`live`** (the code default, now the rollback mode): the table below.
-- **`community`** (production since 2026-09-22, about 23:35 UTC): Community's own database is
-  the authority — see [Community as the paste authority](#community-as-the-paste-authority).
-  The import brought 889 + 2 pastes, 60 comments and 48 likes; 5 rows (1 paste, 4 comments,
-  `ambiguous_owner`) wait in `import_hold`. Live and Tools forward paste writes here, and Media
-  answers old paste URLs with a 301 to this site. Comments, the forum and Pulse are deployed but
-  hold almost nothing yet (10 wiki comment threads, 0 forum threads), and the Discord relay is
-  off. A restore drill passed on 2026-09-23.
+Pastes moved to Community in roadmap Wave 5; since 2026-09-22 Community's own database is their only
+authority (there is no switch any more — `live-client.js` and the `/api/pastes` proxy were deleted) —
+see [Community as the paste authority](#community-as-the-paste-authority). The import brought
+889 + 2 pastes, 60 comments and 48 likes; 5 rows (1 paste, 4 comments, `ambiguous_owner`) wait in
+`import_hold`. Live and Tools forward paste writes here, and Media answers old paste URLs with a 301 to
+this site. Comments, the forum and Pulse are deployed but hold almost nothing yet (10 wiki comment
+threads, 0 forum threads), and the Discord relay is off. A restore drill passed on 2026-09-23.
 
 | Concern | Where it lives | How Community reaches it |
 | --- | --- | --- |
-| Paste storage | **OpenVibe.Media** (`pastes` table, `/api/v1/:app/pastes`) | never directly |
-| Paste API + account mapping | **OpenVibe.Live** (`/api/pastes/*`) | `OV_LIVE_INTERNAL_URL` (server-side) |
+| Paste storage + API | **Community's PostgreSQL** (`pastes`, `server/pastes/*`) | own database |
+| Screenshot / attachment bytes | **OpenVibe.Media** (`/api/v1/community/files`, objects v2) | service token (`media.object.upload`) |
 | Identity / SSO | **OpenVibe.Network** (OAuth2 + RS256 JWKS) | OAuth client `community` |
-| Raw text, screenshots | OpenVibe.Media public host | 302 from `/p/:slug/raw`, `/p/:slug/screenshot` |
+| Raw text, screenshots | Community's own routes; bytes on Media's public host | served locally, or a 302 to the stored image |
 | Shared chrome, themes | `https://openvibe.network/shared/*.js` | loaded in every page |
 | VIP memberships (members-only spaces/threads) | **OpenVibe.VIP** (`POST /api/v1/policies/evaluate`) | `OV_VIP_INTERNAL_URL`, service token (audience `openvibe.vip`, `vip.resource.policy.evaluate`) |
 | A space's chat room | **OpenVibe.Chat** (`POST/DELETE /api/chat/rooms/:room/attachments`) | `OV_CHAT_INTERNAL_URL`, the signed-in person's own Network token (no service grant) |
 
-Why go through Live and not straight to Media: the visitor's JWT names the account by its
-**Network** id, while the `user_id` Media stores for pastes is **Live's** own — different
-numbers for the same person. Live resolves the visitor against its own accounts before it
-writes, which only Live can do, so Community proxies `/api/pastes/*` to Live and forwards the
-visitor's `Authorization: Bearer <network jwt>` (or `ov_token` cookie). Creation, listing,
-anonymous-post limits, ownership and author names are therefore identical to Live's.
+Community resolves the visitor itself: a Network JWT names the account by its `subject_id` (`usr_…`),
+which is exactly what Community stores, so there is no second identity to map and no proxy. Creation,
+listing, anonymous-post limits, ownership and author names all come from Community's own rules
+(`server/pastes/service.js`).
 
 ### Community as the paste authority
 
-With `PASTES_AUTHORITY=community`, `/api/pastes/*` is Community's native API
+Community is the only paste authority: `/api/pastes/*` is the native API
 (`server/pastes/api.js` → `service.js` → `store.js`) with the paths, bodies, status codes and
 response shapes the browser clients already use, and every page, `/p/:slug/raw`,
 `/p/:slug/screenshot` and `/p/:slug/download` reads from the store (never from Media, which
@@ -140,7 +135,7 @@ API and machine endpoints:
 
 | Route | What |
 | --- | --- |
-| `ANY /api/pastes/*` | `live`: transparent proxy to Live `/api/pastes/*` — list, get, create, `screenshot` (multipart), `:slug/copy`, `:slug/like`, comments, delete… bodies stream through untouched. `community`: the native API (same surface, plus `/:slug/versions`) |
+| `ANY /api/pastes/*` | The native API — list, get, create, `screenshot` (multipart), `:slug/copy`, `:slug/like`, comments, delete and `/:slug/versions` |
 | `/api/v1/comments/*` | Typed comment threads — see [Comments API](#comments-api) |
 | `/api/v1/spaces/*`, `/api/v1/posts/*` | The forum — see [Forum](#forum-spaces-threads-posts) |
 | `/api/v1/pulse/*` | Pulse — see [Pulse](#pulse) |
@@ -159,8 +154,7 @@ API and machine endpoints:
 **Readiness and metrics (Track O).** `GET /api/ready` (openvibe-shared/ready) answers 503 only
 when the required `db` check fails (a real round trip that names the store, postgresql or pglite, and a migrated schema). `network_jwks` (the
 Network signing key; without it nobody can sign in or write as a signed-in viewer or service),
-`live` (in `PASTES_AUTHORITY=live`: paste pages and `/api/pastes` read through Live) and `media`
-(in `community` mode: screenshot and file uploads) are optional: a failure keeps the site ready
+`media` (screenshot and file uploads) is optional: a failure keeps the site ready
 (comments, forum, Pulse and public reads still work) and is listed in `degraded` with
 `status: "degraded"`. Every check reports `status`, `required`, `latency_ms` and `checked_at`.
 Until Track O this route returned `{ "ready": true }` unconditionally. `GET /metrics` serves HTTP
@@ -248,8 +242,8 @@ item's comments.
 
 **Moving Live's old rows**: Live's VOD and clip comments were imported once (ledger `legacy_id_map`, `live`/`comment`;
 held rows in `import_hold`, source type `live_comment`). The importer (`scripts/import-live-comments.js`,
-`server/comments/live-import.js`) was retired with the move to PostgreSQL and is in git history, as is C-24's
-`scripts/migrate-screenshot-refs.js` (applied 2026-09-25: no paste keeps a legacy media reference).
+`server/comments/live-import.js`) was retired with the move to PostgreSQL and is in git history, as is the
+screenshot-reference migration (`scripts/migrate-screenshot-refs.js`, applied 2026-09-25: no paste keeps a legacy media reference).
 
 Embedding it — server-side, from another product's backend (the usual way; the person is the
 one your own session says it is):
@@ -501,8 +495,8 @@ blocks made before it existed need a replay from OpenVibe.Events.
 
 ## Capabilities
 
-Community checks service tokens against these capabilities (manifests in
-`docs/capabilities-proposal/`, same shape as OpenVibe.Contracts' `manifests/capabilities`):
+Community checks service tokens against these capabilities (all released in openvibe-contracts,
+same shape as its `manifests/capabilities`):
 
 | Id | Status | Used for |
 | --- | --- | --- |
@@ -580,11 +574,9 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `OV_OAUTH_CLIENT_ID` | `community` | Registered on the Network |
 | `OV_OAUTH_CLIENT_SECRET` | — | **Required** for sign-in |
 | `OV_OAUTH_REDIRECT_URI` | `https://openvibe.community/auth/callback` | Must match the registration |
-| `OV_LIVE_INTERNAL_URL` | `http://127.0.0.1:3000` | Live's `/api/pastes` |
 | `OV_LIVE_URL` | `https://openvibe.live` | Author links, avatars, legal pages |
 | `OV_MEDIA_URL` | `https://openvibe.media` | Raw text + screenshots |
-| `OV_MEDIA_INTERNAL_URL` | `http://127.0.0.1:4100` | Media file store for new screenshots (`community` authority) |
-| `PASTES_AUTHORITY` | `live` | `live` = proxy to Live; `community` = this site's database is the authority |
+| `OV_MEDIA_INTERNAL_URL` | `http://127.0.0.1:4100` | Media file store for new screenshots |
 | `DATABASE_URL`, `DATABASE_DIRECT_URL` | unset (development: embedded PGlite in `data/pglite`) | PostgreSQL through PgBouncer, and the owner's direct connection for migrations (written by OpenVibe.Host `roles/data/add-service.sh community`) |
 | `VALKEY_URL`, `VALKEY_PREFIX` | unset | per-actor limit counters shared across processes |
 | `API_CORS_ORIGINS` | Live, Media, Network, Tools, Games origins | Browser origins that may call `/api/v1/comments` and `/api/v1/pulse` with a Bearer JWT |
@@ -604,6 +596,7 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `OV_VIP_URL` | `https://openvibe.vip` | Public VIP site, for join links |
 | `VIP_TIMEOUT_MS` | `2000` | One VIP call |
 | `VIP_CACHE_TTL_MS` / `VIP_CACHE_DENY_TTL_MS` / `VIP_CACHE_UNAVAILABLE_TTL_MS` | `30000` / `10000` / `2000` | How long a yes / no / failure is cached (the yes TTL is the convergence bound) |
+| `INDEXNOW_KEY` | unset (IndexNow off) | IndexNow key: served at `/<key>.txt`, and a public, indexable page appearing, changing or going away pings the engines |
 
 ## Run
 
@@ -697,12 +690,12 @@ server/
   identity/network.js Network resolve-batch client + subject_projection cache
   media/files.js      new screenshot bytes → Media's file store (service token)
   media/strip-metadata.js  EXIF/XMP/text chunks out of JPEG/PNG/WebP without re-encoding
-  live-client.js      server-side reads of Live's /api/pastes for rendered pages ('live')
-  pastes/proxy.js     /api/pastes/* → Live (streams bodies, forwards token + address) ('live')
-  pastes/api.js       native /api/pastes/* ('community')
+  live-client.js      (removed: Community is the only paste authority)
+  pastes/proxy.js     (removed: the /api/pastes proxy to Live is gone)
+  pastes/api.js       native /api/pastes/*
   pastes/service.js   paste rules: visibility, limits, burn-after-read, views, shapes
   pastes/store.js     pure SQL over pastes / versions / likes / comments / projections
-  pastes/source.js    where pages read pastes from (Live or the store)
+  pastes/source.js    where pages read pastes from (the store)
   pastes/catalog.js   recent public pastes: trending, related, language filter
   comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments),
                       routes (the /c/:accessId page), live-import (Live's old VOD/clip comments)
@@ -712,7 +705,7 @@ server/
   relay/              Discord relay: discord.js (queue, sender, backoff, message map), events-worker.js (creates
                       from Events), discord-gateway.js + inbound.js (replies from Discord), api (/api/v1/relay)
   http/v1.js          /api/v1 helpers: problem errors, capability guards, cursors, CORS
-  identity/capabilities.js  capability checks incl. the proposed ids; discussion staff/moderators
+  identity/capabilities.js  capability checks; discussion staff/moderators
   identity/authors.js author display from subject_projection; the AI label
   votes.js            race-safe up/down votes (comments, threads)
   limits.js           per-person write limits
@@ -725,10 +718,9 @@ server/
   render/highlight.js highlight.js wrapper, language list, download extensions
   seo.js              robots, sitemap, RSS, JSON-LD builders
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
-(openvibe-shared is the pinned OpenVibe.Shared v1.25.0 release, installed by npm)
+(openvibe-shared is the pinned OpenVibe.Shared v2.2.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
-test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
-docs/capabilities-proposal/  Wave 5 capability manifests (released in openvibe-contracts v0.7.0)
+test/                 run.js + *.test.js (mock Network and Media with a real RS256 key)
 docs/discord-relay.md  the Discord relay: how it works, owner steps, staff API, limits
 ```
 

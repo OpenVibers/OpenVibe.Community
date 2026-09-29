@@ -6,9 +6,10 @@ const mockNetwork = require('./mock-network');
 const mockMedia = require('./mock-media');
 
 /**
- * opts.authority  'live' (default) or 'community' — the latter runs the native paste API, with Network and
- *                 Media mocks behind it. Every boot gets a migrated database of its own (./db.js: PGlite, or the
- *                 PostgreSQL containers under npm run test:pg, with Valkey for the limit counters).
+ * opts.authority  accepted and ignored: Community is the only paste authority, so every boot runs the
+ *                 native paste API with Network and Media mocks behind it. Every boot gets a migrated
+ *                 database of its own (./db.js: PGlite, or the PostgreSQL containers under npm run
+ *                 test:pg, with Valkey for the limit counters).
  * opts.pasteLimits  overrides for service.js limits (e.g. { cooldownSeconds: 0 }).
  * opts.appOpts      passed through to createApp (commentLimits, forumLimits, relayOptions, …).
  * opts.env          environment set after the defaults, before the app loads (its OV_OAUTH_CLIENT_SECRET
@@ -20,7 +21,6 @@ async function boot(opts = {}) {
     const mediaSrv = await mockMedia.start({ publicPem: netSrv.publicPem, issuer: netSrv.url });
     process.env.NODE_ENV = 'test';
     process.env.BASE_URL = 'https://openvibe.community';
-    process.env.OV_LIVE_INTERNAL_URL = liveSrv.url;
     process.env.OV_LIVE_URL = 'https://openvibe.live';
     process.env.OV_MEDIA_URL = 'https://openvibe.media';
     process.env.OV_NETWORK_URL = netSrv.url;
@@ -31,7 +31,6 @@ async function boot(opts = {}) {
     process.env.COOKIE_SECURE = 'true';
     process.env.TRUST_PROXY = '1';
     process.env.OV_MEDIA_INTERNAL_URL = mediaSrv.url;
-    process.env.PASTES_AUTHORITY = opts.authority || 'live';
     // test:pg: the Valkey container too, under a prefix of its own.
     if (process.env.COMMUNITY_TEST_STORE === 'pg' && process.env.OV_TEST_VALKEY_URL) {
         process.env.VALKEY_URL = process.env.OV_TEST_VALKEY_URL;
@@ -42,7 +41,7 @@ async function boot(opts = {}) {
     const { createApp } = require('../../server/app');
     const appOpts = { ...(opts.appOpts || {}) };
     appOpts.db = appOpts.db || await require('./db').testDb();
-    if (opts.authority === 'community') appOpts.pasteLimits = opts.pasteLimits;
+    appOpts.pasteLimits = opts.pasteLimits;
     const app = await createApp(appOpts);
     const server = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}`;

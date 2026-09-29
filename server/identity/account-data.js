@@ -89,7 +89,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
                 const others = await db.prepare(`SELECT 1 FROM paste_comments WHERE paste_id = ? AND (author_subject IS NULL OR author_subject NOT IN ${S}) LIMIT 1`).get(p.id, ...subjects);
                 if (others) {
                     await db.prepare(`UPDATE pastes SET owner_subject = NULL, title = ?, content = '', screenshot_url = NULL, media_ref = NULL, stream_ref = NULL, metadata = NULL,
-                                ai_summary = NULL, ai_tags = NULL, legacy_user_id = NULL, deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE id = ?`).run(TOMBSTONE, now, now, p.id);
+                                ai_summary = NULL, ai_tags = NULL, deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE id = ?`).run(TOMBSTONE, now, now, p.id);
                     add(retained, 'tombstones', 1);
                 } else {
                     await db.prepare('DELETE FROM pastes WHERE id = ?').run(p.id);

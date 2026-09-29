@@ -1,7 +1,7 @@
 'use strict';
 /**
- * Server-rendered pages with PASTES_AUTHORITY=community: everything reads from Community's own
- * store (never from OpenVibe.Live), with the same visibility rules as the API.
+ * Server-rendered pages read from Community's own store (never from OpenVibe.Live), with the
+ * same visibility rules as the API.
  */
 const assert = require('assert');
 const { boot, check, done } = require('./helpers/app');

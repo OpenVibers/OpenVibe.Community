@@ -43,11 +43,6 @@ module.exports = {
         secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === 'true' : isProduction,
     },
 
-    // OpenVibe.Live — backs every paste read and write. The pastes themselves are stored in
-    // OpenVibe.Media, but we go through Live rather than straight to Media: Live owns the
-    // accounts these pastes belong to, so it is the only service that can turn a signed-in
-    // visitor (a Network JWT) into the user id Media files the write under.
-    liveInternalUrl: (process.env.OV_LIVE_INTERNAL_URL || 'http://127.0.0.1:3000').replace(/\/$/, ''),
     // OpenVibe.Search's query API (the /search page), asked anonymously: public documents only.
     searchInternalUrl: (process.env.OV_SEARCH_INTERNAL_URL || 'http://127.0.0.1:4710').replace(/\/$/, ''),
     liveUrl: (process.env.OV_LIVE_URL || 'https://openvibe.live').replace(/\/$/, ''),
@@ -56,12 +51,9 @@ module.exports = {
     // Media's internal address: new screenshot uploads go to its file store (community app).
     mediaInternalUrl: (process.env.OV_MEDIA_INTERNAL_URL || 'http://127.0.0.1:4100').replace(/\/$/, ''),
 
-    // Who answers /api/pastes/* and the paste pages:
-    //   'live'      — proxy to OpenVibe.Live (which stores in Media). The default until cutover.
-    //   'community' — this site's own database is the authority (server/pastes/api.js).
-    pastesAuthority: process.env.PASTES_AUTHORITY === 'community' ? 'community' : 'live',
-    // PostgreSQL (ADR-035) for Community's own data: comments, the forum, Pulse, the relay's bookkeeping, and pastes
-    // once authority=community. DATABASE_URL serves (PgBouncer); DATABASE_DIRECT_URL migrates (owner). Without them,
+    // PostgreSQL (ADR-035) for Community's own data: pastes (Community is their only authority),
+    // comments, the forum, Pulse and the relay's bookkeeping. DATABASE_URL serves (PgBouncer);
+    // DATABASE_DIRECT_URL migrates (owner). Without them,
     // development uses an embedded PGlite database in data/pglite.
     db: { url: process.env.DATABASE_URL || '', directUrl: process.env.DATABASE_DIRECT_URL || '' },
     // Valkey (ADR-035): per-actor limit counters shared across processes; without it they count in this process.
@@ -85,6 +77,11 @@ module.exports = {
         denyTtlMs: parseInt(process.env.VIP_CACHE_DENY_TTL_MS, 10) || 10_000,
         unavailableTtlMs: parseInt(process.env.VIP_CACHE_UNAVAILABLE_TTL_MS, 10) || 2_000,
     },
+
+    // IndexNow (openvibe-shared/indexnow): when INDEXNOW_KEY is set, the key file is served at
+    // /<key>.txt and a public, indexable page appearing, changing or going away pings the engines.
+    // Unset: off — nothing is mounted and nothing is sent.
+    indexnow: { key: process.env.INDEXNOW_KEY || '' },
 
     // OpenVibe.Chat — a space can attach a chat room (server/chat-rooms.js). Community asks Chat, with the
     // signed-in person's own Network token, whether they manage the room; the space page links it.

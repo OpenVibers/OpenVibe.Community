@@ -65,7 +65,7 @@ const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 const PAGE = 30;
 const REPLY_PAGE = 20;
 
-function createCommentService({ db, network = null, pastesLocal = false, limits = {} } = {}) {
+function createCommentService({ db, network = null, limits = {} } = {}) {
     const authors = createAuthors({ db, network });
     const commentLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 5, noun: 'comments', ...(limits.comments || {}) });
     const voteLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'votes', ...(limits.votes || {}) });
@@ -144,7 +144,6 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
     async function checkCommunityRef(ref) {
         if (ref.service !== 'community') return;
         if (ref.type === 'paste') {
-            if (!pastesLocal) return; // PASTES_AUTHORITY=live: Live owns them, nothing to check here
             const p = await pasteStore.getBySlug(db, ref.id);
             if (!p || p.visibility === 'private') fail(404, 'ref.not_found', 'No such paste');
         } else if (ref.type === 'post') {
@@ -159,7 +158,7 @@ function createCommentService({ db, network = null, pastesLocal = false, limits 
     /** Who owns a thread's Community entity (a paste's owner, a forum post's author), or null. */
     async function entityOwner(t) {
         if (t.ref_service !== 'community') return null;
-        if (t.ref_type === 'paste' && pastesLocal) { const p = await pasteStore.getBySlug(db, t.ref_id); return p ? p.owner_subject || null : null; }
+        if (t.ref_type === 'paste') { const p = await pasteStore.getBySlug(db, t.ref_id); return p ? p.owner_subject || null : null; }
         if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) { const r = await db.prepare('SELECT author_subject FROM posts WHERE id = ?').get(Number(t.ref_id)); return r ? r.author_subject || null : null; }
         return null;
     }

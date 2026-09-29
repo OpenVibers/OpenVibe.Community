@@ -1,31 +1,12 @@
 'use strict';
 
 /**
- * Capability checks for service tokens, including the ids Community introduces before the
- * contracts library knows them.
- *
- * openvibe-contracts' capabilities.check() answers capability.unknown for an id that is not in
- * its manifests yet. The ids below are proposed in docs/capabilities-proposal/ and go into a
- * contracts release; until then a grant is decided locally with the library's own matching rule
- * (the exact id, or a `prefix.*` grant covering it). An id the library does know always goes
- * through the library, so the day the release lands nothing changes here.
+ * Capability checks for service tokens, through openvibe-contracts' manifests.
  */
 const { capabilities } = require('openvibe-contracts');
 
-const PROPOSED = new Set([
-    'community.comment.write',
-    'community.comment.moderate',
-    'community.pulse.write',
-    'community.post.create',
-]);
-
 /** → { allowed, code, reason } like capabilities.check(). */
 function checkCapability(claims, capabilityId) {
-    if (!capabilities.get(capabilityId) && PROPOSED.has(capabilityId)) {
-        return capabilities.grants(claims && claims.cap, capabilityId)
-            ? { allowed: true, code: null, reason: null }
-            : { allowed: false, code: 'capability.denied', reason: `${capabilityId} not granted` };
-    }
     return capabilities.check(claims, capabilityId);
 }
 
@@ -53,4 +34,4 @@ function discussionModerator(viewer) {
     return discussionStaff(viewer) || (!!viewer && viewer.kind === 'service' && !viewer.subject && serviceHas(viewer, 'community.comment.moderate'));
 }
 
-module.exports = { checkCapability, serviceHas, discussionStaff, discussionModerator, PROPOSED };
+module.exports = { checkCapability, serviceHas, discussionStaff, discussionModerator };

@@ -15,18 +15,17 @@ function raw(base, path, headers = {}) {
     // Let the boot-time key fetch land.
     await t.app.locals.auth.ensureKey();
 
-    await check('live mode: ready, with db required and Network key and Live optional', async () => {
+    await check('ready, with db required and the Network key and Media optional', async () => {
         const r = await t.get('/api/ready');
         assert.strictEqual(r.status, 200, r.text);
         const b = r.json();
         assert.strictEqual(b.ready, true);
         assert.strictEqual(b.status, 'ready');
         assert.strictEqual(b.service, 'community');
-        assert.strictEqual(b.pastes_authority, 'live');
-        assert.deepStrictEqual(Object.keys(b.checks), ['db', 'valkey', 'network_jwks', 'live']);
+        assert.deepStrictEqual(Object.keys(b.checks), ['db', 'valkey', 'network_jwks', 'media']);
         assert.strictEqual(b.checks.db.required, true);
         assert.strictEqual(b.checks.network_jwks.required, false);
-        assert.strictEqual(b.checks.live.required, false);
+        assert.strictEqual(b.checks.media.required, false);
         for (const [name, c] of Object.entries(b.checks)) {
             assert.strictEqual(c.status, name === 'valkey' && !process.env.VALKEY_URL ? 'skipped' : 'ok', name);   // Valkey under test:pg only
             assert.strictEqual(typeof c.latency_ms, 'number');
@@ -64,26 +63,26 @@ function raw(base, path, headers = {}) {
         assert.ok(/release_client_updates_total\{outcome="reloaded",reason="user"\} 2/.test(m.body), m.body.split('\n').filter((l) => l.includes('release_client')).join('\n'));
     });
 
-    await check('Live down: still ready (comments, forum and Pulse are served), live degraded', async () => {
-        await t.live.close();
+    await check('Network key not loaded: degraded, not down', async () => {
+        const { createCommunityReadiness } = require('../server/observability');
+        const auth = { client: { publicKey: null }, ensureKey: async () => null };
+        const b = await createCommunityReadiness({ db: t.app.locals.db, auth, config: { ...t.app.locals.config, mediaInternalUrl: t.media.url } }).run();
+        assert.strictEqual(b.ready, true);
+        assert.deepStrictEqual(b.degraded, ['network_jwks']);
+        assert.strictEqual(b.checks.media.status, 'ok', 'Media is the optional dependency');
+        assert.match(b.checks.network_jwks.error, /not loaded/);
+    });
+
+    await check('Media down: still ready (pastes, comments, forum and Pulse are served), media degraded', async () => {
+        await t.media.close();
         await new Promise((r) => setTimeout(r, 20));
-        // The Live probe is cached for 15 s; a fresh app instance sees the outage immediately.
+        // The Media probe is cached for 15 s; a fresh app instance sees the outage immediately.
         const { createCommunityReadiness } = require('../server/observability');
         const rd = createCommunityReadiness({ db: t.app.locals.db, auth: t.app.locals.auth, config: t.app.locals.config });
         const b = await rd.run();
         assert.strictEqual(b.ready, true);
         assert.strictEqual(b.status, 'degraded');
-        assert.deepStrictEqual(b.degraded, ['live']);
-    });
-
-    await check('Network key not loaded: degraded, not down', async () => {
-        const { createCommunityReadiness } = require('../server/observability');
-        const auth = { client: { publicKey: null }, ensureKey: async () => null };
-        const b = await createCommunityReadiness({ db: t.app.locals.db, auth, config: { ...t.app.locals.config, pastesAuthority: 'community', mediaInternalUrl: t.media.url } }).run();
-        assert.strictEqual(b.ready, true);
-        assert.deepStrictEqual(b.degraded, ['network_jwks']);
-        assert.strictEqual(b.checks.media.status, 'ok', 'community mode probes Media instead of Live');
-        assert.match(b.checks.network_jwks.error, /not loaded/);
+        assert.deepStrictEqual(b.degraded, ['media']);
     });
 
     await check('database unusable: 503 not_ready with db failed', async () => {

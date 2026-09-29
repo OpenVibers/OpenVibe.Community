@@ -3,19 +3,17 @@
 /**
  * Catalog — the site's view over recent PUBLIC pastes.
  *
- * Live's list endpoint (Media behind it) knows newest/oldest, a text search and a per-user
- * filter; it does not sort by views or filter by language. This keeps the latest window of
- * public pastes (Media's page cap) in memory for a short while and answers trending,
- * related, language counts and the views/language browse modes from it. Everything here is
- * fetched anonymously, so nothing unlisted or private can ever appear on a shared page.
+ * The store knows newest/oldest, a text search and a per-user filter; it does not sort by views or
+ * filter by language. This keeps the latest window of public pastes in memory for a short while
+ * and answers trending, related, language counts and the views/language browse modes from it.
+ * Everything here is read anonymously, so nothing unlisted or private can ever appear on a shared page.
  *
- * With the community authority (source.local) the store answers and the window is kept only
- * LOCAL_TTL_MS — long enough that one page's latest/trending/languages share a single query.
+ * The window is kept only LOCAL_TTL_MS — long enough that one page's latest/trending/languages
+ * share a single query.
  */
 const source = require('./source');
 
-const WINDOW = 200;             // Media's maximum page size
-const TTL_MS = 45 * 1000;       // fresh enough for a community feed, cheap enough for Live
+const WINDOW = 200;             // page cap for one window query
 const LOCAL_TTL_MS = 2000;
 const PER_PAGE = 24;
 
@@ -25,14 +23,14 @@ function _textOnlyPublic(rows) {
     return (rows || []).filter((p) => p && p.slug && (p.visibility === 'public' || p.visibility == null));
 }
 
-/** The latest public pastes (cached). Never throws — an unreachable Live yields the stale list or []. */
+/** The latest public pastes (cached). Never throws — an unavailable store yields the stale list or []. */
 async function recent() {
     const now = Date.now();
     if (_recent.promise) return _recent.promise;
-    if (now - _recent.at < (source.local ? LOCAL_TTL_MS : TTL_MS)) return _recent.pastes;
+    if (now - _recent.at < LOCAL_TTL_MS) return _recent.pastes;
     _recent.promise = source.listPastes({ limit: WINDOW, offset: 0 })
         .then((out) => { _recent = { at: Date.now(), promise: null, pastes: _textOnlyPublic(out && out.pastes) }; return _recent.pastes; })
-        .catch((err) => { console.warn('[Catalog] recent pastes unavailable:', err.message); _recent.promise = null; _recent.at = Date.now() - TTL_MS + 5000; return _recent.pastes; });
+        .catch((err) => { console.warn('[Catalog] recent pastes unavailable:', err.message); _recent.promise = null; _recent.at = Date.now() - LOCAL_TTL_MS + 5000; return _recent.pastes; });
     return _recent.promise;
 }
 
@@ -74,7 +72,7 @@ const _ofType = (type) => (p) => (type === 'all' ? true : type === 'images' ? p.
 
 /**
  * Browse: { q, sort: 'new'|'views', lang, page } → { pastes, total, page, pages, perPage, ... }.
- * Newest with no language filter pages straight through Live (its total is exact); the views
+ * Newest with no language filter pages straight through the store (its total is exact); the views
  * sort and the language filter are answered from the recent window.
  */
 async function browse(query = {}, ctx = {}) {

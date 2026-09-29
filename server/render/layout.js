@@ -31,6 +31,11 @@ function assetVersion(rel) {
 }
 function asset(rel) { return `/${rel}?v=${assetVersion(rel)}`; }
 
+// The deployed release (app.js sets it from openvibe-shared/release): openvibe-shared/boost swaps a page in place only
+// between pages of the same release, and does a normal load across a deploy.
+let RELEASE = 'dev';
+function setRelease(id) { if (id) RELEASE = String(id); }
+
 const abs = (p) => (/^https?:\/\//i.test(p) ? p : `${config.baseUrl}${p.startsWith('/') ? '' : '/'}${p}`);
 
 function jsonLdScript(objects) {
@@ -55,7 +60,7 @@ function navbarInit(opts) {
         history: { type: opts.historyType || 'page', title: opts.historyTitle || opts.title },
         silentLogin: `${config.baseUrl}/auth/login?silent=1&next={url}`,
         sessionUrl: '/auth/me',
-        loginUrl: `/auth/login?next=${encodeURIComponent(opts.canonicalPath || '/')}`,
+        loginUrl: '/auth/login?next={path}',           // filled from the current page (boost moves between pages)
         logoutUrl: '/auth/logout?next={path}',   // Sign out in the shared navbar ends this site's session too
         notificationsRealtime: true,             // the bell hears new notifications over OpenVibe.Events (Shared 1.22.0)
     };
@@ -134,6 +139,8 @@ ${jsonLdScript(o.jsonLd)}
 <script src="${ovServe.url('navbar.js')}" defer></script>
 <script src="${ovServe.url('footer.js')}" defer></script>
 <script src="${asset('js/community.js')}" defer></script>
+<meta name="ov-boost" content="community@${escapeHtml(RELEASE)}">
+<script src="${ovServe.url('boost.js')}" data-main="#main" defer></script>
 </head>
 <body class="${escapeHtml(o.bodyClass || '')}">
 <div id="navbar-mount"></div>
@@ -152,4 +159,4 @@ document.addEventListener('DOMContentLoaded', function () {
 </html>`;
 }
 
-module.exports = { renderPage, asset, assetVersion, abs, jsonLdScript, SITE_NAME, DEFAULT_DESCRIPTION, DEFAULT_OG_IMAGE };
+module.exports = { renderPage, asset, assetVersion, abs, jsonLdScript, setRelease, SITE_NAME, DEFAULT_DESCRIPTION, DEFAULT_OG_IMAGE };

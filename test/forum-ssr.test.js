@@ -196,14 +196,5 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     });
 
     await t.close();
-
-    // The forum lives in Community's database in every mode, including PASTES_AUTHORITY=live.
-    const live = await boot();
-    await check('forum pages work with PASTES_AUTHORITY=live too', async () => {
-        const r = await live.get('/s/general');
-        assert.strictEqual(r.status, 200);
-        has(r.text, '<h1>General</h1>');
-    });
-    await live.close();
     done();
 })();

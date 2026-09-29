@@ -23,7 +23,7 @@
     "community.pulse.read"
   ],
   "capabilitiesRegistered": true,
-  "pastesAuthority": "community in production since 2026-09-22 (~23:35 UTC); live is the rollback mode",
+  "pastes": "Community is the only paste authority (since 2026-09-22, ~23:35 UTC)",
   "deployed": true,
   "deployment": "Public at https://openvibe.community: deployed with `sudo ovhost deploy community`, /opt/openvibe.community, unit openvibe-community on 127.0.0.1:4200 behind the openvibe.community nginx vhost, principal community. The paste import brought 889 + 2 pastes, 60 comments and 48 likes (5 rows held). The Discord relay is off. Restore drill passed 2026-09-23.",
   "features": [

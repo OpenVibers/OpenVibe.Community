@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * /api/pastes/* — Community's native paste API (PASTES_AUTHORITY=community).
+ * /api/pastes/* — Community's native paste API.
  *
- * Same paths, bodies, status codes and response shapes the browser clients already use against
- * OpenVibe.Live's proxy (which fronted OpenVibe.Media); the rules live in service.js.
+ * Same paths, bodies, status codes and response shapes the browser clients already use; the rules
+ * live in service.js.
  *
  *   GET    /                         list (?limit&offset&type&search&sort&origin&username&include_unlisted&since&pinned_first)
  *                                    sort=newest (default) | oldest | top (views, a like worth five views);
@@ -150,7 +150,7 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
     // Deleting someone else's comment is moderation: X-OV-Staff (with community.paste.moderate) for services.
     router.delete('/:slug/comments/:commentId', guard('community.paste.write'), limits('community.paste.comment_delete', { minute: 60, hour: 600 }), run(async (req) => await service.deleteComment(req.viewer, slug(req), req.params.commentId)));
 
-    // Avatars belong to the Network account; Live's proxy set a Live-local avatar here.
+    // Avatars belong to the Network account, not to a paste.
     router.post('/:slug/set-avatar', (_req, res) => res.status(501).json({ error: 'Set your picture on openvibe.network' }));
 
     router.use((req, res) => res.status(404).json({ error: 'Not found' }));

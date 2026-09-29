@@ -1,83 +1,76 @@
 'use strict';
-/** /api/pastes/* is a transparent proxy to Live that forwards the visitor's identity and address. */
+/**
+ * T10 J6 — Community is the only paste authority. The removed proposal is that nothing reads the
+ * old authority switch and nothing proxies /api/pastes any more:
+ *   - no source file under server/ mentions the switch, the Live paste client or the proxy;
+ *   - the config exposes no authority/host for a Live paste API;
+ *   - /api/pastes is the native store API (a real list, a native 404), and the Live mock is never called;
+ *   - the legacy_media_id / legacy_user_id columns are gone from the paste tables.
+ */
 const assert = require('assert');
-const { Readable } = require('stream');
+const fs = require('fs');
+const path = require('path');
 const { boot, check, done } = require('./helpers/app');
 
+const SERVER = path.join(__dirname, '..', 'server');
+const REMOVED = [
+    /PASTES_AUTHORITY/,
+    /OV_LIVE_INTERNAL_URL/,
+    /pastesAuthority/,
+    /liveInternalUrl/,
+    /live-client/,
+    /pastes\/proxy/,
+    /createPastesProxy/,
+    /LiveApiError/,
+];
+
+function sourceFiles(dir, out = []) {
+    for (const name of fs.readdirSync(dir)) {
+        const p = path.join(dir, name);
+        if (fs.statSync(p).isDirectory()) sourceFiles(p, out);
+        else if (p.endsWith('.js')) out.push(p);
+    }
+    return out;
+}
+
 (async () => {
-    const t = await boot();
-
-    await check('GET forwards path, query, the ov_token cookie as Bearer and the client address', async () => {
-        const r = await t.get('/api/pastes/echo/thing?limit=5&x=y', { cookies: ['ov_token=cookie-jwt'], headers: { 'x-forwarded-for': '203.0.113.9' } });
-        assert.strictEqual(r.status, 200);
-        const e = r.json();
-        assert.strictEqual(e.path, '/api/pastes/echo/thing');
-        assert.deepStrictEqual(e.query, { limit: '5', x: 'y' });
-        assert.strictEqual(e.headers.authorization, 'Bearer cookie-jwt');
-        assert.strictEqual(e.headers['x-forwarded-for'], '203.0.113.9');
-        assert.strictEqual(e.headers.cookie, undefined, 'cookies never leave this site');
+    await check('no server/ source mentions the removed paste-authority switch, Live client or proxy', () => {
+        const hits = [];
+        for (const file of sourceFiles(SERVER)) {
+            const text = fs.readFileSync(file, 'utf8');
+            for (const re of REMOVED) if (re.test(text)) hits.push(`${path.relative(path.join(__dirname, '..'), file)}: ${re}`);
+        }
+        assert.deepStrictEqual(hits, []);
+        assert.strictEqual(fs.existsSync(path.join(SERVER, 'pastes', 'api.js')), true, 'the native paste API is there');
     });
 
-    await check('Authorization header wins over the cookie; anonymous calls carry no Authorization', async () => {
-        const r = await t.get('/api/pastes/echo/x', { cookies: ['ov_token=cookie-jwt'], headers: { authorization: 'Bearer header-jwt' } });
-        assert.strictEqual(r.json().headers.authorization, 'Bearer header-jwt');
-        const anon = await t.get('/api/pastes/echo/x');
-        assert.strictEqual(anon.json().headers.authorization, undefined);
+    await check('config exposes no paste-authority switch or Live paste host', () => {
+        const config = require('../server/config');
+        assert.ok(!('pastesAuthority' in config), 'pastesAuthority is gone');
+        assert.ok(!('liveInternalUrl' in config), 'liveInternalUrl is gone');
     });
 
-    await check('JSON POST body reaches Live byte-for-byte with its content-type', async () => {
-        const body = JSON.stringify({ title: 't', content: 'hello', language: 'text' });
-        const r = await t.get('/api/pastes', { method: 'POST', body, headers: { 'content-type': 'application/json' }, cookies: ['ov_token=good-token'] });
-        assert.strictEqual(r.status, 201);
-        assert.strictEqual(r.json().slug, 'new-paste-99');
-        const call = t.live.calls.filter((c) => c.method === 'POST' && c.path === '/api/pastes').pop();
-        assert.strictEqual(call.body.toString(), body);
-        assert.strictEqual(call.headers['content-type'], 'application/json');
-        assert.strictEqual(call.headers.authorization, 'Bearer good-token');
+    const t = await boot({ pasteLimits: { cooldownSeconds: 0 } });
+
+    await check('/api/pastes is the native API (a list and a native 404), never a proxy to Live', async () => {
+        const list = await t.get('/api/pastes?limit=1');
+        assert.strictEqual(list.status, 200);
+        const body = list.json();
+        assert.ok(Array.isArray(body.pastes), 'the native list shape { pastes, total }');
+        assert.strictEqual(typeof body.total, 'number');
+        const missing = await t.get('/api/pastes/does-not-exist');
+        assert.strictEqual(missing.status, 404);
+        assert.ok(missing.json().error, 'a native error body, never a proxied response');
+        assert.strictEqual(t.live.calls.length, 0, 'Live is never called');
     });
 
-    await check('multipart screenshot upload streams through untouched', async () => {
-        const boundary = 'xxBOUNDARYxx';
-        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3, 255, 254]);
-        const body = Buffer.concat([
-            Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="title"\r\n\r\nShot\r\n--${boundary}\r\nContent-Disposition: form-data; name="screenshot"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n`),
-            png, Buffer.from(`\r\n--${boundary}--\r\n`),
-        ]);
-        const r = await t.get('/api/pastes/screenshot', { method: 'POST', body: Readable.from([body]), headers: { 'content-type': `multipart/form-data; boundary=${boundary}`, 'content-length': String(body.length) } });
-        assert.strictEqual(r.status, 201);
-        assert.strictEqual(r.json().received, body.length);
-        const call = t.live.calls.filter((c) => c.path === '/api/pastes/screenshot').pop();
-        assert.ok(call.body.equals(body), 'body identical');
-        assert.strictEqual(call.headers['content-type'], `multipart/form-data; boundary=${boundary}`);
-    });
-
-    await check('upstream status codes and error bodies pass through (404, 429)', async () => {
-        const nf = await t.get('/api/pastes/does-not-exist');
-        assert.strictEqual(nf.status, 404);
-        assert.deepStrictEqual(nf.json(), { error: 'Paste not found' });
-        const rl = await t.get('/api/pastes', { method: 'POST', body: JSON.stringify({ title: 'slow down', content: 'x' }), headers: { 'content-type': 'application/json' } });
-        assert.strictEqual(rl.status, 429);
-        assert.strictEqual(rl.json().cooldown, 30);
-    });
-
-    await check('DELETE and the copy/like sub-routes are forwarded with the method intact', async () => {
-        const del = await t.get('/api/pastes/amber-fox-42', { method: 'DELETE', cookies: ['ov_token=good-token'] });
-        assert.strictEqual(del.json().method, 'DELETE');
-        const copy = await t.get('/api/pastes/amber-fox-42/copy', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
-        assert.strictEqual(copy.json().path, '/api/pastes/amber-fox-42/copy');
-    });
-
-    await check('an unreachable Live answers 502 JSON instead of hanging', async () => {
-        const { createApp } = require('../server/app');
-        const http = require('http');
-        const db = await require('./helpers/db').testDb();
-        const app = await createApp({ liveUrl: 'http://127.0.0.1:1', db });
-        const srv = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
-        const res = await fetch(`http://127.0.0.1:${srv.address().port}/api/pastes`);
-        assert.strictEqual(res.status, 502);
-        assert.deepStrictEqual(await res.json(), { error: 'Could not reach the paste service' });
-        await new Promise((r) => srv.close(r));
-        await db.close();
+    await check('the paste tables no longer carry the legacy_media_id / legacy_user_id columns', async () => {
+        const cols = await t.db.prepare(`SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = current_schema() AND column_name IN ('legacy_media_id', 'legacy_user_id')`).all();
+        assert.deepStrictEqual(cols, []);
+        const kept = await t.db.prepare(`SELECT 1 AS ok FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'legacy_id_map' AND column_name = 'source_id'`).get();
+        assert.ok(kept, 'legacy_id_map (identity resolution) is intact');
     });
 
     await t.close();

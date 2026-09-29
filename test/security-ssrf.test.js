@@ -2,9 +2,9 @@
 /**
  * SSRF (roadmap WS-R task 5). Community fetches no URL a user chooses: no link previews, unfurls,
  * avatar or image imports, user webhooks or screenshots of URLs. Every outbound call goes to a base URL
- * from the owner's environment (Network, Live, Media, Events, VIP, Chat, Search, a Discord webhook
- * variable the owner allowlisted, Discord's gateway), so there is no egress guard to test. Three things
- * keep it that way:
+ * from the owner's environment (Network, Media, Events, VIP, Chat, Search, a Discord webhook
+ * variable the owner allowlisted, Discord's gateway), so there is no egress guard to test. Two
+ * things keep it that way:
  *
  *   1. A ratchet over server/: every outbound call site (fetch, http(s).request/get, WebSocket, net/tls,
  *      dns, child_process, and the SDK clients that make requests) is counted per file and must match
@@ -13,8 +13,6 @@
  *   2. Everywhere a person or a service can hand Community a URL (a Pulse item's url, links and image
  *      syntax in posts and comments, paste content, a screenshot's page_url, a chat room reference, a relay
  *      mapping), a canary server on loopback must never be called.
- *   3. PASTES_AUTHORITY=live proxies /api/pastes/* to Live with the visitor's path: dot segments
- *      ("/api/pastes/../../internal/x", also %2e%2e) and encoded slashes must not reach any other Live route.
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -31,11 +29,9 @@ const INVENTORY = {
     'server/identity/network.js': [2, 'Network /internal/identity/resolve-batch with a service token'],
     'server/identity/account-data.js': [2, 'Network /oauth/token and /internal/account-exports and /internal/account-deletions (fixed paths) with a service token'],
     'server/identity/profile-module.js': [3, 'Network modules API (community.profile) with a service token'],
-    'server/live-client.js': [1, 'OV_LIVE_INTERNAL_URL/api + fixed paths; slugs encoded (callers check SLUG_RE)'],
     'server/media/files.js': [2, 'OV_MEDIA_INTERNAL_URL v1 file store, service token'],
     'server/media/objects.js': [2, 'OV_MEDIA_INTERNAL_URL Object API v2, service token'],
-    'server/observability.js': [1, '/api/ready probes of the configured Live or Media health URL'],
-    'server/pastes/proxy.js': [1, 'OV_LIVE_INTERNAL_URL/api/pastes + the visitor\'s path, which must stay under /api/pastes (tested below)'],
+    'server/observability.js': [1, '/api/ready probes of the configured Media health URL'],
     'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
     'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],
     'server/relay/discord.js': [1, 'a Discord webhook URL read from an environment variable the owner allowlisted; mappings name the variable, never a URL'],
@@ -66,20 +62,6 @@ function inventory() {
     return out;
 }
 
-/** GET a raw path (no client-side normalisation of dot segments). */
-function rawGet(base, rawPath) {
-    const { port } = new URL(base);
-    return new Promise((resolve, reject) => {
-        const req = http.request({ host: '127.0.0.1', port, path: rawPath, method: 'GET' }, (res) => {
-            let body = '';
-            res.on('data', (c) => { body += c; });
-            res.on('end', () => resolve({ status: res.statusCode, body }));
-        });
-        req.on('error', reject);
-        req.end();
-    });
-}
-
 (async () => {
     await check('every outbound call site in server/ is in the classified inventory (a new one must be classified here)', async () => {
         const found = inventory();
@@ -91,33 +73,6 @@ function rawGet(base, rawPath) {
         for (const file of Object.keys(INVENTORY)) if (!found[file]) problems.push(`${file}: no outbound call left, drop it from the inventory`);
         assert.deepStrictEqual(problems, []);
     });
-
-    // ── live mode: the /api/pastes proxy ──
-    {
-        const t = await boot({ appOpts: { startRelay: false } });
-        await check('PASTES_AUTHORITY=live: the /api/pastes proxy never leaves Live\'s paste API (dot segments, %2e%2e, encoded slashes)', async () => {
-            const bad = ['/api/pastes/../../internal/x', '/api/pastes/../x', '/api/pastes/%2e%2e/%2e%2e/internal/x', '/api/pastes/%2E%2E/%2E%2E/metrics', '/api/pastes/.%2e/.%2e/internal/x',
-                '/api/pastes/..%2f..%2finternal/x', '/api/pastes/..%2F..%2Finternal/x', '/api/pastes/..%5c..%5cinternal', '/api/pastes/amber-fox-42/../../../internal/x',
-                '/api/pastes/./../../internal/x?next=1'];
-            for (const p of bad) {
-                const before = t.live.calls.length;
-                const r = await rawGet(t.base, p);
-                const reached = t.live.calls.slice(before).map((c) => c.path);
-                assert.ok(reached.every((x) => x === '/api/pastes' || x.startsWith('/api/pastes/')), `${p} reached Live at ${reached.join(', ')}`);
-                assert.ok(!reached.some((x) => /internal|metrics|%2f|%5c/i.test(x)), `${p} reached Live at ${reached.join(', ')}`);
-                assert.strictEqual(r.status, 404, `${p}: ${r.status}`);
-            }
-            // Positive controls: the paste API itself still goes through.
-            let before = t.live.calls.length;
-            assert.strictEqual((await rawGet(t.base, '/api/pastes/amber-fox-42')).status, 200);
-            assert.deepStrictEqual(t.live.calls.slice(before).map((c) => c.path), ['/api/pastes/amber-fox-42']);
-            before = t.live.calls.length;
-            assert.strictEqual((await rawGet(t.base, '/api/pastes?limit=1')).status, 200);
-            const listed = t.live.calls.slice(before).map((c) => c.path);
-            assert.ok(listed.length === 1 && /^\/api\/pastes\/?$/.test(listed[0]), listed.join(', '));
-        });
-        await t.close();
-    }
 
     // ── community mode: URLs people and services hand in are never fetched ──
     const hits = [];

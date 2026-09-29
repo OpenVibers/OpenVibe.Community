@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * OpenVibe.Media Object API v2 client — images on forum posts (WS-J task 2) and screenshot pastes (C-24). Community keeps a
+ * OpenVibe.Media Object API v2 client — images on forum posts (WS-J task 2) and screenshot pastes. Community keeps a
  * `med_` reference and the public URL; the bytes live in Media under the `community` tenant, owned by
  * the person who attached them (X-OV-Subject), with Community's service token (media.object.upload,
  * namespace community):

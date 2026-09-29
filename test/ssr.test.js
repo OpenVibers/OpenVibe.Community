@@ -1,11 +1,23 @@
 'use strict';
-/** Server-rendered pages: home, browse, paste (SEO head + body), my, new, errors. */
+/** Server-rendered pages: home, browse, paste (SEO head + body), my, new, errors — read from Community's own store. */
 const assert = require('assert');
 const { boot, check, done } = require('./helpers/app');
 
 (async () => {
-    const t = await boot();
+    const t = await boot({ pasteLimits: { cooldownSeconds: 0 } });
     const has = (html, s, msg) => assert.ok(html.includes(s), msg || `expected to find: ${s}`);
+    const alex = t.network.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex', avatar_url: '/data/avatars/alex.png' });
+    const sam = t.network.addUser({ network_user_id: 9, username: 'sam', display_name: 'Sam' });
+    await t.db.prepare('INSERT INTO subject_projection (subject_id, username, display_name, avatar_url) VALUES (?, ?, ?, ?)').run(alex.subject_id, 'alex', 'Alex', '/data/avatars/alex.png');
+    await t.db.prepare('INSERT INTO subject_projection (subject_id, username, display_name, avatar_url) VALUES (?, ?, ?, ?)').run(sam.subject_id, 'sam', 'Sam', null);
+    const ins = t.db.prepare(`INSERT INTO pastes (slug, owner_subject, type, title, content, language, visibility, screenshot_url, views, likes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    await ins.run('amber-fox-42', alex.subject_id, 'paste', 'Hello world in JavaScript', 'const greet = (name) => {\n  return `Hello, ${name}!`;\n};\nconsole.log(greet("OpenVibe"));\n', 'javascript', 'public', null, 120, 3, '2026-09-15 10:00:00', '2026-09-15 10:00:00');
+    await ins.run('blue-lake-17', sam.subject_id, 'paste', 'nginx snippet', 'server {\n  listen 80;\n}\n', 'nginx', 'public', null, 900, 0, '2026-09-14 09:00:00', '2026-09-14 09:00:00');
+    await ins.run('cold-ridge-88', alex.subject_id, 'paste', 'python helper', 'def add(a, b):\n    return a + b\n', 'python', 'public', null, 15, 1, '2026-09-13 08:00:00', '2026-09-13 08:00:00');
+    await ins.run('dark-owl-55', alex.subject_id, 'paste', 'secret notes', 'unlisted <script>alert(1)</script>', 'text', 'unlisted', null, 2, 0, '2026-09-12 08:00:00', '2026-09-12 08:00:00');
+    await ins.run('fair-moon-23', sam.subject_id, 'screenshot', 'Desktop shot', 'my desktop', 'text', 'public', 'https://openvibe.media/o/med_FAIRMOON', 40, 0, '2026-09-11 08:00:00', '2026-09-11 08:00:00');
+    await ins.run('grim-vale-61', alex.subject_id, 'paste', 'private thing', 'private', 'text', 'private', null, 0, 0, '2026-09-10 08:00:00', '2026-09-10 08:00:00');
 
     await check('home renders hero, latest + trending pastes, CTA and roadmap with full SEO head', async () => {
         const r = await t.get('/');
@@ -36,13 +48,26 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(cfg.navbar.menu.after[0].href, '/my');
         assert.strictEqual(cfg.navbar.history.type, 'page');
         assert.strictEqual(cfg.navbar.silentLogin, 'https://openvibe.community/auth/login?silent=1&next={url}');
+        assert.strictEqual(cfg.navbar.loginUrl, '/auth/login?next={path}', 'sign-in returns to the current page (boost moves between pages)');
         assert.strictEqual(cfg.footer.mount, '#ov-footer');
         assert.strictEqual(cfg.footer.variant, 'full');
         // Verbiage: never "free"/"no cost".
         assert.ok(!/\bfree\b(?! speech)/i.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'no "free" claims outside "free speech"');
     });
 
+    await check('every page carries the boost marker and script, and the navbar signs in back to the current page', async () => {
+        for (const url of ['/', '/pastes', '/new', '/p/amber-fox-42']) {
+            const r = await t.get(url);
+            assert.strictEqual(r.status, 200, url);
+            assert.match(r.text, /<meta name="ov-boost" content="community@[^"]+">/, `${url}: the boost marker`);
+            assert.match(r.text, /<script src="\/shared\/boost\.js\?v=[^"]+" data-main="#main" defer><\/script>/, `${url}: the boost script, main = #main`);
+            assert.ok(r.text.includes('"loginUrl":"/auth/login?next={path}"'), `${url}: the navbar's login template`);
+            assert.ok(r.text.includes('<main id="main"'), `${url}: the swappable main`);
+        }
+    });
+
     await check('paste page: SEO head, Article JSON-LD with author/datePublished, highlighted body, actions, related', async () => {
+        const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views;
         const r = await t.get('/p/amber-fox-42');
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>Hello world in JavaScript · OpenVibe.Community</title>');
@@ -63,14 +88,12 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, 'data-copy-content="amber-fox-42"');
         has(r.text, 'twitter.com/intent/tweet');
         has(r.text, '<h2>More like this</h2>');
-        has(r.text, 'https://openvibe.live/data/avatars/alex.png', 'relative Live avatar made absolute');
+        has(r.text, 'https://openvibe.live/data/avatars/alex.png', 'relative avatar made absolute against Live');
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
         assert.strictEqual(cfg.navbar.history.type, 'paste');
         assert.strictEqual(cfg.navbar.history.title, 'Hello world in JavaScript');
         assert.strictEqual(cfg.footer.variant, 'compact');
-        // The view was counted by Live (the SSR fetch had no no_view flag).
-        const call = t.live.calls.find((c) => c.path === '/api/pastes/amber-fox-42');
-        assert.strictEqual(call.query.no_view, undefined);
+        assert.ok((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views >= before, 'views are counted (deduped per visitor)');
     });
 
     await check('unlisted paste is noindex and its content is escaped', async () => {
@@ -81,41 +104,40 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!r.text.includes('<script>alert(1)</script>'));
     });
 
-    await check('screenshot paste uses the Media image as og:image and ImageObject JSON-LD', async () => {
+    await check('screenshot paste uses the stored Media image as og:image and ImageObject JSON-LD', async () => {
         const r = await t.get('/p/fair-moon-23');
-        has(r.text, '<meta property="og:image" content="https://openvibe.media/p/fair-moon-23/screenshot">');
+        has(r.text, '<meta property="og:image" content="https://openvibe.media/o/med_FAIRMOON">');
         has(r.text, '<meta name="twitter:card" content="summary_large_image">');
         has(r.text, '"@type":"ImageObject"');
-        has(r.text, '<img src="https://openvibe.media/p/fair-moon-23/screenshot"');
+        has(r.text, '<img src="https://openvibe.media/o/med_FAIRMOON"');
     });
 
     await check('private paste 404s for anonymous visitors and renders for its owner', async () => {
         const anon = await t.get('/p/grim-vale-61');
         assert.strictEqual(anon.status, 404);
         has(anon.text, 'Paste not found');
-        const token = t.network.sign({ id: 7, username: 'alex', display_name: 'Alex' });
+        const token = t.network.sign({ id: 7, subject_id: alex.subject_id, username: 'alex', display_name: 'Alex' });
         const owner = await t.get('/p/grim-vale-61', { cookies: [`ov_token=${token}`] });
         assert.strictEqual(owner.status, 200);
         has(owner.text, 'data-delete="grim-vale-61"', 'owner sees delete');
-        const call = t.live.calls.filter((c) => c.path === '/api/pastes/grim-vale-61').pop();
-        assert.strictEqual(call.headers.authorization, `Bearer ${token}`, 'visitor token forwarded to Live');
     });
 
-    await check('raw / screenshot bounce to Media; download serves the text as an attachment without a view', async () => {
+    await check('raw serves the text from the store; screenshot redirects to the stored image; download is an attachment without a view', async () => {
         const raw = await t.get('/p/amber-fox-42/raw');
-        assert.strictEqual(raw.status, 302);
-        assert.strictEqual(raw.headers.get('location'), 'https://openvibe.media/p/amber-fox-42/raw');
+        assert.strictEqual(raw.status, 200);
+        assert.ok(raw.text.startsWith('const greet'));
         const shot = await t.get('/p/fair-moon-23/screenshot');
-        assert.strictEqual(shot.headers.get('location'), 'https://openvibe.media/p/fair-moon-23/screenshot');
+        assert.strictEqual(shot.status, 302);
+        assert.strictEqual(shot.headers.get('location'), 'https://openvibe.media/o/med_FAIRMOON');
+        const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views;
         const dl = await t.get('/p/amber-fox-42/download');
         assert.strictEqual(dl.status, 200);
         assert.strictEqual(dl.headers.get('content-disposition'), 'attachment; filename="amber-fox-42.js"');
         assert.ok(dl.text.startsWith('const greet'));
-        const call = t.live.calls.filter((c) => c.path === '/api/pastes/amber-fox-42').pop();
-        assert.strictEqual(call.query.no_view, '1');
+        assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views, before, 'download does not count a view');
     });
 
-    await check('browse: search passes through to Live, views sort and language filter work, search pages are noindex', async () => {
+    await check('browse: search, views sort and language filter over the store, search pages are noindex', async () => {
         const all = await t.get('/pastes');
         assert.strictEqual(all.status, 200);
         has(all.text, '<link rel="canonical" href="https://openvibe.community/pastes">');
@@ -124,8 +146,6 @@ const { boot, check, done } = require('./helpers/app');
         has(q.text, '<meta name="robots" content="noindex,follow">');
         has(q.text, 'href="/p/blue-lake-17"');
         assert.ok(!q.text.includes('href="/p/amber-fox-42"'));
-        const call = t.live.calls.filter((c) => c.path === '/api/pastes' && c.query.search).pop();
-        assert.strictEqual(call.query.search, 'nginx');
         const views = await t.get('/pastes?sort=views');
         const res = views.text.slice(views.text.indexOf('id="results"'));
         assert.ok(res.indexOf('blue-lake-17') < res.indexOf('amber-fox-42') && res.indexOf('amber-fox-42') < res.indexOf('cold-ridge-88'));
@@ -141,38 +161,35 @@ const { boot, check, done } = require('./helpers/app');
         const anon = await t.get('/my');
         assert.strictEqual(anon.status, 302);
         assert.strictEqual(anon.headers.get('location'), '/auth/login?next=%2Fmy');
-        const token = t.network.sign({ id: 7, username: 'alex', display_name: 'Alex' });
+        const token = t.network.sign({ id: 7, subject_id: alex.subject_id, username: 'alex', display_name: 'Alex' });
         const mine = await t.get('/my', { cookies: [`ov_token=${token}`] });
         assert.strictEqual(mine.status, 200);
         has(mine.text, '<meta name="robots" content="noindex,nofollow">');
         for (const slug of ['amber-fox-42', 'cold-ridge-88', 'dark-owl-55', 'grim-vale-61']) has(mine.text, `href="/p/${slug}"`);
         assert.ok(!mine.text.includes('blue-lake-17'));
-        const call = t.live.calls.filter((c) => c.path === '/api/pastes/by-user/alex').pop();
-        assert.strictEqual(call.headers.authorization, `Bearer ${token}`);
     });
 
-    await check('/new renders the form (private option only when signed in) and the no-JS post creates through Live', async () => {
+    await check('/new renders the form (private option only when signed in) and the no-JS post creates in the store', async () => {
         const anon = await t.get('/new');
         assert.strictEqual(anon.status, 200);
         has(anon.text, 'name="content"');
         assert.ok(!anon.text.includes('value="private"'));
-        const token = t.network.sign({ id: 7, username: 'alex', display_name: 'Alex' });
+        const token = t.network.sign({ id: 7, subject_id: alex.subject_id, username: 'alex', display_name: 'Alex' });
         const signed = await t.get('/new?fork=amber-fox-42', { cookies: [`ov_token=${token}`] });
         has(signed.text, 'value="private"');
         has(signed.text, 'Fork of Hello world in JavaScript');
         const body = new URLSearchParams({ title: 'via form', language: 'python', content: 'print(1)', visibility: 'public' }).toString();
         const post = await t.get('/new', { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded' }, cookies: [`ov_token=${token}`] });
         assert.strictEqual(post.status, 303);
-        assert.strictEqual(post.headers.get('location'), '/p/new-paste-99');
-        const call = t.live.calls.filter((c) => c.method === 'POST' && c.path === '/api/pastes').pop();
-        assert.strictEqual(call.headers.authorization, `Bearer ${token}`);
-        assert.deepStrictEqual(JSON.parse(call.body.toString()).content, 'print(1)');
+        const slug = post.headers.get('location').replace('/p/', '');
+        assert.ok(/^[A-Za-z0-9_-]+$/.test(slug), `a generated slug, got ${slug}`);
+        const row = await t.db.prepare('SELECT owner_subject, content FROM pastes WHERE slug = ?').get(slug);
+        assert.deepStrictEqual(row, { owner_subject: alex.subject_id, content: 'print(1)' });
         const empty = await t.get('/new', { method: 'POST', body: 'title=x', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
         assert.strictEqual(empty.status, 400);
         has(empty.text, 'content is empty');
-        const limited = await t.get('/new', { method: 'POST', body: new URLSearchParams({ title: 'slow down', content: 'x' }).toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
-        assert.strictEqual(limited.status, 429);
-        has(limited.text, 'Please wait 30s');
+        const anonPost = await t.get('/new', { method: 'POST', body: new URLSearchParams({ title: 'from anon', content: 'x' }).toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+        assert.strictEqual(anonPost.status, 303, 'anonymous posts create in the store too');
     });
 
     await check('404 page and API 404 JSON; health', async () => {

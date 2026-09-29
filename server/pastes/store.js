@@ -178,7 +178,7 @@ async function listVersions(db, pasteId) {
     return await db.prepare('SELECT revision, title, content, language, edited_by, created_at FROM paste_versions WHERE paste_id = ? ORDER BY revision ASC').all(pasteId);
 }
 
-/** Soft delete: the row stays (slug + legacy id reserved), its content and image link do not. */
+/** Soft delete: the row stays (its slug stays reserved), its content and image link do not. */
 async function softDelete(db, id) {
     return await db.tx(async () => {
         const cur = await getById(db, id);

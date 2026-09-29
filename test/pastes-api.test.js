@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Native /api/pastes (PASTES_AUTHORITY=community): who may call what.
+ * Native /api/pastes (Community is the only paste authority): who may call what.
  * Browser JWTs, anonymous callers and service tokens (capabilities, X-OV-Subject / X-OV-Origin /
  * X-OV-Source-Ref / X-OV-Staff), the AI work queue, the anonymous write limit, author display via
  * the Network's resolve-batch, screenshot uploads to Media, raw text and screenshot links.
@@ -248,7 +248,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(out.slug, p.slug);
         assert.strictEqual(p.type, 'screenshot');
         assert.strictEqual(p.owner_subject, alex.subject_id);
-        assert.ok(up.v2 && up.kind === 'screenshot' && up.visibility === 'unlisted', 'a v2 Media object: unlisted screenshot (C-24)');
+        assert.ok(up.v2 && up.kind === 'screenshot' && up.visibility === 'unlisted', 'a v2 Media object: unlisted screenshot');
         assert.strictEqual(up.owner, alex.subject_id, 'owned by the person');
         assert.strictEqual(p.screenshot_url, `https://openvibe.media/o/${up.key}`);
         assert.strictEqual(p.title, 'My desk');

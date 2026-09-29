@@ -25,9 +25,7 @@ const { createApp } = require('./app');
     } catch (err) { console.warn('[Roadmap] not synced:', err.message); }
     const server = app.listen(config.port, config.host, () => {
         console.log(`[Community] ${config.nodeEnv} on http://${config.host}:${config.port} → ${config.baseUrl}`);
-        console.log(config.pastesAuthority === 'community'
-            ? `[Community] pastes: this site is the authority (PostgreSQL), identity via ${config.networkUrl}`
-            : `[Community] pastes via ${config.liveInternalUrl}/api/pastes, identity via ${config.networkUrl}`);
+        console.log(`[Community] pastes: this site is the authority (PostgreSQL), identity via ${config.networkUrl}`);
     });
     server.keepAliveTimeout = 65_000;
     // Subscribe Pulse to public activity at Events (idempotent; off without EVENTS_URL / COMMUNITY_EVENTS_SECRET).

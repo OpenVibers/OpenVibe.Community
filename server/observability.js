@@ -6,10 +6,7 @@
  *   network_jwks    optional  the Network signing key has loaded. Without it public pages and reads
  *                             still work, but nobody can sign in or write as a signed-in viewer or
  *                             service (those answer 503), so it degrades rather than fails
- *   live            optional  in PASTES_AUTHORITY=live mode: Live answers /api/health (paste pages and
- *                             /api/pastes read through it; comments, forum and Pulse do not)
- *   media           optional  in PASTES_AUTHORITY=community mode: Media answers /healthz
- *                             (screenshot and file uploads; paste text is local)
+ *   media           optional  Media answers /healthz (screenshot and file uploads; paste text is local)
  *
  * Request metrics come from openvibe-shared/metrics in app.js. Content counts (pastes, comments,
  * threads) are deliberately not metrics.
@@ -49,17 +46,13 @@ function createCommunityReadiness({ db, auth, config, relay = null, release = nu
             },
         },
     ];
-    if (config.pastesAuthority === 'community') {
-        checks.push({ name: 'media', required: false, cacheMs: PING_TTL_MS, timeoutMs: 2500, check: probe(`${config.mediaInternalUrl}/healthz`, fetchImpl) });
-    } else {
-        checks.push({ name: 'live', required: false, cacheMs: PING_TTL_MS, timeoutMs: 2500, check: probe(`${config.liveInternalUrl}/api/health`, fetchImpl) });
-    }
+    checks.push({ name: 'media', required: false, cacheMs: PING_TTL_MS, timeoutMs: 2500, check: probe(`${config.mediaInternalUrl}/healthz`, fetchImpl) });
     return createReadiness({
         service: 'community',
         release,
         checks,
         details: async (body) => {
-            const out = { pastes_authority: config.pastesAuthority };
+            const out = {};
             if (relay && relay.enabled && body.checks.db.status === 'ok') {
                 // The queue by status (failed = dead letters), and whether the Events worker and the inbound gateway run.
                 const st = await relay.status();

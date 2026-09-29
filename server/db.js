@@ -3,9 +3,9 @@
 /**
  * Community's own database: PostgreSQL (ADR-035, roadmap WS-X2). The schema is migrations/NNNN_*.sql, applied at boot.
  *
- * Community is the authority for pastes once PASTES_AUTHORITY=community: pastes, their edit
+ * Community is the only authority for pastes: pastes, their edit
  * history, likes and comments live here. Typed comment threads, the forum (spaces, threads,
- * posts), the Discord relay's bookkeeping and Pulse live here in every mode. People are referenced by Network subject ids
+ * posts), the Discord relay's bookkeeping and Pulse live here too. People are referenced by Network subject ids
  * (usr_… / gst_…), never by a service-local integer; subject_projection is only a display cache
  * of what the Network says about them.
  *

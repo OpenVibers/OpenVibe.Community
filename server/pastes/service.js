@@ -3,9 +3,8 @@
 /**
  * Paste service — the rules of the paste system, on top of store.js.
  *
- * This reproduces what OpenVibe.Media's paste API did behind OpenVibe.Live's /api/pastes proxy
- * (status codes, error texts, response shapes, limits), with identity reworked around Network
- * subjects:
+ * This is the paste API Community's own pages and browser clients use: the same status codes,
+ * error texts, response shapes and limits, with identity reworked around Network subjects:
  *   - a "limited" caller is one acting as a person (a signed-in browser, or a service naming
  *     X-OV-Subject): Media's paste cooldown / daily cap and comment limits apply to them, just as
  *     they applied to Media's user callers. Anonymous writes are limited per address in api.js.
@@ -65,10 +64,22 @@ function sinceParam(value) {
     return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 19) : null;
 }
 
-function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null } = {}) {
+function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null, indexnow = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
     // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
     const tell = async (fn) => { if (!pulse) return; try { await fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
+    // IndexNow (openvibe-shared/indexnow): a public, indexable paste page appearing, changing or going away
+    // pings the engines with its path and the sitemap. Private, unlisted, NSFW and burn-after-read pages are
+    // not in the sitemap, so they never ping.
+    const site = String(config.baseUrl || '').replace(/\/$/, '');
+    const indexable = (p) => !!(p && p.visibility === 'public' && !Number(p.is_nsfw) && !Number(p.burn_after_read));
+    const pingIndexNow = (...rows) => {
+        if (!indexnow || !indexnow.enabled) return;
+        const slugs = new Set();
+        for (const p of rows) if (indexable(p)) slugs.add(p.slug);
+        if (!slugs.size) return;
+        indexnow.pingSoon([...slugs].map((s) => `${site}/p/${s}`).concat(`${site}/sitemap.xml`));
+    };
     const visitorSecret = process.env.VIEW_HASH_SECRET
         || crypto.createHash('sha256').update(`community-views:${(config.oauth && config.oauth.clientSecret) || crypto.randomBytes(16).toString('hex')}`).digest('hex');
 
@@ -287,6 +298,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
 
     async function created(row, extra = {}) {
         await tell((p) => p.pasteCreated(row));
+        pingIndexNow(row);
         return { id: row.id, slug: row.slug, url: `/p/${row.slug}`, ...extra };
     }
 
@@ -467,6 +479,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 return r;
             });
             await tell((pl) => pl.pasteChanged(row));
+            pingIndexNow(p, row);
             return { paste: await shapeOne(row, v) };
         },
 
@@ -480,6 +493,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 if (!isOwner(v, p)) await events.moderationAction(v, 'paste.deleted', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
             });
             await tell((pl) => pl.pasteGone(p.slug));
+            pingIndexNow(p);
             return { success: true };
         },
 
@@ -626,6 +640,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     if (action === 'delete') await store.softDelete(db, p.id);
                     else await store.setVisibility(db, p.id, action);
                     if (action !== 'public') await tell((pl) => pl.pasteGone(p.slug));
+                    pingIndexNow(action === 'public' ? { ...p, visibility: 'public' } : p);
                     done++;
                 }
                 if (done) await events.moderationAction(v, 'pastes.bulk', { type: 'pastes', id: 'bulk' }, { details: { bulk_action: action, done, skipped } });
@@ -654,6 +669,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 await events.moderationAction(v, 'paste.censored', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
                 return r;
             });
+            pingIndexNow(row);
             return { paste: await shapeOne(row, v) };
         },
 
@@ -664,6 +680,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const summary = body.ai_summary == null ? null : String(body.ai_summary).slice(0, 2000);
             const tags = body.ai_tags == null ? null : (typeof body.ai_tags === 'string' ? body.ai_tags : JSON.stringify(body.ai_tags)).slice(0, 2000);
             const row = await store.setAi(db, p.id, summary, tags);
+            pingIndexNow(row);
             return { ok: true, paste: await shapeOne(row, v) };
         },
     };

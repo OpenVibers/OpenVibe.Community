@@ -97,7 +97,7 @@ const TITLE_MIN = 3, TITLE_MAX = 200;
 const BODY_MAX = 40_000;
 const THREADS_PER_DAY = 20;
 
-function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {} } = {}) {
+function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {}, config = {}, indexnow = null } = {}) {
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
@@ -108,6 +108,20 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     const viewSeen = new Map();
     const threadsPerDay = limits.threadsPerDay != null ? limits.threadsPerDay : THREADS_PER_DAY;
     const hook = async (fn) => { try { await fn(); } catch (err) { console.warn('[Forum] side effect failed:', err.message); } };
+
+    // IndexNow (openvibe-shared/indexnow): a public, indexable space or thread page appearing, changing
+    // or going away pings the engines with its path (and the space's, when a thread lands or leaves) and
+    // the sitemap. Members-only (gated) spaces and threads are not in the sitemap, so they never ping.
+    const site = String(config.baseUrl || '').replace(/\/$/, '');
+    const indexableSpace = (s) => !!(s && s.visibility === 'public' && !s.members_only_owner);
+    const ping = (urls) => { if (indexnow && indexnow.enabled) indexnow.pingSoon(urls); };
+    const pingSpace = (s) => { if (indexableSpace(s)) ping([`${site}/s/${s.slug}`, `${site}/sitemap.xml`]); };
+    const pingThread = (space, t, { withSpace = false } = {}) => {
+        if (!indexableSpace(space) || !t || t.members_only_owner) return;
+        const urls = [`${site}/s/${space.slug}/t/${t.slug}`, `${site}/sitemap.xml`];
+        if (withSpace) urls.push(`${site}/s/${space.slug}`);
+        ping(urls);
+    };
 
     const moderator = (v) => discussionModerator(v);
     const person = (v) => !!(v && v.subject);
@@ -351,6 +365,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         });
         if (pulse) await hook(async () => { await pulse.threadGone(thread.id); for (const p of await db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(thread.id)) await pulse.postGone(p.id); });
         if (relay) await hook(async () => await relay.enqueueDelete(thread.id, null, mine ? 'deleted by its author' : 'deleted by a moderator'));
+        pingThread(await store.getSpaceById(db, thread.space_id), thread, { withSpace: true });
         return { ok: true, id: thread.id, deleted: 'thread' };
     }
 
@@ -473,6 +488,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const fields = await spaceFields(body, space);
             const next = await store.updateSpace(db, space.id, fields);
             const row = (await store.listSpaces(db, ['public', 'members', 'staff'])).find((r) => r.id === next.id) || next;
+            pingSpace(space);
+            pingSpace(row);
             return { space: await shapeSpace(row, await membersOnly(row.members_only_owner)) };
         },
 
@@ -490,6 +507,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 reactions: fields.reactions != null ? fields.reactions : 1, name: fields.name, description: fields.description || null, group_id: fields.group_id || null,
                 parent_id: fields.parent_id || null, position: fields.position || 0, thread_kind: fields.thread_kind || 'discussion' });
             const row = (await store.listSpaces(db, ['public', 'members', 'staff'])).find((r) => r.slug === slug);
+            pingSpace(row);
             return { space: await shapeSpace(row) };
         },
 
@@ -521,6 +539,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                             attached_at = CASE WHEN space_chat_rooms.room_slug = excluded.room_slug THEN space_chat_rooms.attached_at ELSE ov_now() END`)
                 .run(space.id, out.room.id, out.room.slug, out.room.name, out.room.kind, out.room.visibility, v.subject || null);
             if (before && !same) await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug });
+            pingSpace(space);
             return { space: { slug: space.slug, name: space.name, url: `/s/${space.slug}` }, chat_room: shapeChatRoom(await chatRoomRow(space.id)), created: !same };
         },
 
@@ -534,6 +553,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             await db.prepare('DELETE FROM space_chat_rooms WHERE space_id = ?').run(space.id);
             // Chat's side of the link goes too when the person may remove it there (best effort: the space no longer shows it either way).
             const chat = chatRooms && v.kind === 'user' && v.token ? await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug }) : 'unavailable';
+            pingSpace(space);
             return { detached: true, chat };
         },
 
@@ -639,6 +659,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (pulse) await hook(async () => await pulse.threadCreated(created, target));
             if (relay) await hook(async () => await relay.enqueueThread(created, target));
             const projections = await authors.projectionsFor([created.author_subject]);
+            pingThread(target, created, { withSpace: true });
             return { thread: await shapeThread(created, target, v, projections, null) };
         },
 
@@ -680,7 +701,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (name.length < 2 || name.length > 40) fail(400, 'category.invalid_name', 'Category names are 2 to 40 characters');
             const description = body.description == null ? null : cleanTitle(body.description).slice(0, 200) || null;
             const position = Number.isInteger(Number(body.position)) ? Number(body.position) : 0;
-            return { category: shapeCategory(await store.upsertCategory(db, space.id, { slug, name, description, position })) };
+            const category = shapeCategory(await store.upsertCategory(db, space.id, { slug, name, description, position }));
+            pingSpace(space);
+            return { category };
         },
 
         /** Delete a category — moderators. Its threads stay, without a category. */
@@ -688,6 +711,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators manage categories');
             const space = await spaceFor(v, spaceSlug);
             if (!await store.deleteCategory(db, space.id, slug)) fail(404, 'category.not_found', 'No such category in this space');
+            pingSpace(space);
             return { ok: true };
         },
 
@@ -700,6 +724,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
             const next = await store.setThreadCategory(db, thread.id, category ? category.id : null);
             const projections = await authors.projectionsFor([next.author_subject]);
+            pingThread(space, next);
             return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
@@ -711,6 +736,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!statuses.includes(body.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'This thread has no status');
             const next = await store.setThreadStatus(db, thread.id, body.status);
             const projections = await authors.projectionsFor([next.author_subject]);
+            pingThread(space, next);
             return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
@@ -789,6 +815,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (pulse) await hook(async () => await pulse.threadCreated(thread, space));
             if (relay) await hook(async () => await relay.enqueueThread(thread, space));
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner]);
+            pingThread(space, thread, { withSpace: true });
             return { thread: await shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, await attachmentsOf([post.id]), await pastesOf([post.id])) };
         },
 
@@ -815,6 +842,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             // Where the new post lands: its page in the thread (posts are numbered in id order).
             const position = (await db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id)).c;
             const page = Math.max(Math.ceil(position / POSTS_PER_PAGE), 1);
+            pingThread(space, thread);
             return { post: shapePost(post, v, projections, await attachmentsOf([post.id]), await pastesOf([post.id])), page, url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
         },
 
@@ -828,6 +856,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const next = await store.editPost(db, post.id, cleanBody(body.body != null ? body.body : body.body_markdown), v.subject || v.service || null);
             if (relay && next && next.revision !== post.revision) await hook(async () => await relay.enqueueEdit(next));
             const projections = await authors.projectionsFor([next.author_subject]);
+            pingThread(space, thread);
             return { post: shapePost(next, v, projections) };
         },
 
@@ -842,7 +871,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
         /** Delete a post — the author or a moderator. Deleting the opening post deletes the thread. */
         async deletePost(v, postId) {
-            const { post, thread } = await postFor(v, postId);
+            const { post, thread, space } = await postFor(v, postId);
             if (!(person(v) && post.author_subject === v.subject) && !moderator(v)) fail(403, 'post.not_yours', 'Only the author or a moderator deletes a post');
             if (post.is_opening) return await removeThread(v, thread);
             await db.tx(async () => {
@@ -851,6 +880,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             });
             if (pulse) await hook(async () => await pulse.postGone(post.id));
             if (relay) await hook(async () => await relay.enqueueDelete(thread.id, post.id, person(v) && post.author_subject === v.subject ? 'deleted by its author' : 'deleted by a moderator'));
+            pingThread(space, thread);
             return { ok: true, id: post.id };
         },
 
@@ -889,6 +919,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 return r;
             });
             const projections = await authors.projectionsFor([next.author_subject]);
+            pingThread(space, next);
             return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
@@ -908,6 +939,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const next = await store.setThreadMembersOnly(db, thread.id, owner);
             if (owner) await hideGated([thread.id]);
             const projections = await authors.projectionsFor([next.author_subject, next.members_only_owner]);
+            pingThread(space, thread);
+            pingThread(space, next);
             return { thread: await shapeThread(next, space, v, projections, null) };
         },
 
@@ -919,6 +952,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const owner = gateOwner(v, requested === undefined ? null : requested, null);
             const next = await store.setSpaceMembersOnly(db, space.id, owner);
             if (owner) await hideGated((await db.prepare('SELECT id FROM threads WHERE space_id = ?').all(space.id)).map((r) => r.id));
+            pingSpace(space);
+            pingSpace(next);
             return { space: await shapeSpace(next, await membersOnly(next.members_only_owner)) };
         },
 

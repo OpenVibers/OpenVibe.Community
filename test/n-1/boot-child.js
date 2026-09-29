@@ -11,16 +11,13 @@ const path = require('path');
 (async () => {
     const dir = process.cwd();
     console.warn = () => {};
-    const mockLive = require(path.join(dir, 'test', 'helpers', 'mock-live'));
     const mockNetwork = require(path.join(dir, 'test', 'helpers', 'mock-network'));
     const mockMedia = require(path.join(dir, 'test', 'helpers', 'mock-media'));
-    const liveSrv = await mockLive.start();
     const net = await mockNetwork.start();
     const mediaSrv = await mockMedia.start({ publicPem: net.publicPem, issuer: net.url });
     Object.assign(process.env, {
         NODE_ENV: 'test',
         BASE_URL: 'https://openvibe.community',
-        OV_LIVE_INTERNAL_URL: liveSrv.url,
         OV_LIVE_URL: 'https://openvibe.live',
         OV_MEDIA_URL: 'https://openvibe.media',
         OV_NETWORK_URL: net.url,
@@ -31,7 +28,6 @@ const path = require('path');
         COOKIE_SECURE: 'true',
         TRUST_PROXY: '1',
         OV_MEDIA_INTERNAL_URL: mediaSrv.url,
-        PASTES_AUTHORITY: 'community',
     });
     const { createApp } = require(path.join(dir, 'server', 'app'));
     // Every release this test boots is on PostgreSQL (ADR-035; server/db.js initDb): give it a migrated

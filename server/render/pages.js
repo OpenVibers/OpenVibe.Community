@@ -7,7 +7,6 @@
  */
 const config = require('../config');
 const ovServe = require('openvibe-shared/serve');
-const live = require('../live-client');
 const seo = require('../seo');
 const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
 const frame = require('openvibe-shared/frame');
@@ -16,6 +15,15 @@ const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = r
 const NETWORK_URL = 'https://openvibe.network';
 
 // ── Small helpers ────────────────────────────────────────────
+/** Absolute-ize a Media-relative screenshot URL. */
+function mediaAbs(u) {
+    if (!u) return null;
+    if (/^https?:\/\//i.test(u)) return u;
+    return `${config.mediaUrl}${u.startsWith('/') ? '' : '/'}${u}`;
+}
+/** A screenshot's Media address when the stored row has no screenshot_url. */
+function screenshotFallback(slug) { return `${config.mediaUrl}/p/${encodeURIComponent(slug)}/screenshot`; }
+
 function timeAgo(v) {
     const iso = seo.isoDate(v);
     if (!iso) return '';
@@ -78,7 +86,7 @@ function pagerHref(state, page) {
 function pasteCard(p) {
     const isShot = p.type === 'screenshot';
     const preview = isShot
-        ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(live.mediaPublicUrl(p.screenshot_url))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
+        ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(mediaAbs(p.screenshot_url))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
         : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
     const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
     return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}">
@@ -236,9 +244,9 @@ function pastePage({ paste: p, related, user }) {
     const isShot = p.type === 'screenshot';
     const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
-    const shot = isShot ? live.mediaPublicUrl(p.screenshot_url) || live.screenshotUrl(p.slug) : null;
+    const shot = isShot ? mediaAbs(p.screenshot_url) || screenshotFallback(p.slug) : null;
     const indexable = (p.visibility === 'public' || p.visibility == null) && !Number(p.is_nsfw) && !Number(p.burn_after_read);
-    // Community-authority pastes name their owner by Network subject; Live-proxied ones by name.
+    // Pastes name their owner by Network subject; the projection cache supplies the display fields.
     const isOwner = !!(user && (p.is_owner === true
         || (p.owner_subject && user.subject_id && p.owner_subject === user.subject_id)
         || (p.user_id != null && !p.owner_subject && (String(user.id) === String(p.user_id) || (p.username && user.username === p.username)))));

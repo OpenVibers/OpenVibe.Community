@@ -5,6 +5,14 @@ const { boot, check, done } = require('./helpers/app');
 
 (async () => {
     const t = await boot();
+    const alex = t.network.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex' });
+    const sam = t.network.addUser({ network_user_id: 9, username: 'sam', display_name: 'Sam' });
+    const ins = t.db.prepare(`INSERT INTO pastes (slug, owner_subject, type, title, content, language, visibility, screenshot_url, views, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    await ins.run('amber-fox-42', alex.subject_id, 'paste', 'Hello world in JavaScript', 'const x = 1;\n', 'javascript', 'public', null, 120, '2026-09-15 10:00:00', '2026-09-15 10:00:00');
+    await ins.run('fair-moon-23', sam.subject_id, 'screenshot', 'Desktop shot', 'my desktop', 'text', 'public', 'https://openvibe.media/o/med_FAIRMOON', 40, '2026-09-11 08:00:00', '2026-09-11 08:00:00');
+    await ins.run('dark-owl-55', alex.subject_id, 'paste', 'secret notes', 'unlisted', 'text', 'unlisted', null, 2, '2026-09-12 08:00:00', '2026-09-12 08:00:00');
+    await ins.run('grim-vale-61', alex.subject_id, 'paste', 'private thing', 'private', 'text', 'private', null, 0, '2026-09-10 08:00:00', '2026-09-10 08:00:00');
 
     await check('robots.txt allows crawling, blocks the private routes, points at the sitemap', async () => {
         const r = await t.get('/robots.txt');
