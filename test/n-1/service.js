@@ -1,22 +1,21 @@
 'use strict';
 /**
  * Community's side of the N-1 harness (test/n-1/harness.js): its clients, how a release boots and is
- * seeded, where its SQL lives. Used by scripts/n-1-record.js (on N-1, in a temporary worktree) and by
- * test/n-1.test.js (on this checkout), so both boot and seed the same way.
+ * seeded. Used by scripts/n-1-record.js (on N-1, in a temporary worktree) and by test/n-1.test.js (on
+ * this checkout), so both boot and seed the same way.
  *
  * Community's clients are its pages: public/js/community.js, the forms and scripts the templates in
  * server/render write (an open tab posts the form it was served), the links, scripts and forms of the
  * pages N-1 served (crawled), and the openvibe-sdk community client (pastes) as that release installed it.
  *
  * A release boots in a child process (test/n-1/boot-child.js) with its own Live, Network and Media
- * mocks, the pastes authority on, and its database at COMMUNITY_DB_PATH; sign-in is the ov_token
- * cookie the Network mock signs.
+ * mocks, the pastes authority on, and a migrated PostgreSQL test database of its own; sign-in is the
+ * ov_token cookie the Network mock signs.
  */
 const path = require('path');
 const { spawn } = require('child_process');
 const { readTree } = require('./harness');
 
-const PRELOAD = path.join(__dirname, 'preload.js');
 const CHILD = path.join(__dirname, 'boot-child.js');
 
 function baseEnv(extra) {
@@ -50,17 +49,14 @@ module.exports = {
         [/id\)*$/i, '1'],
     ],
 
-    sqlDirs: ['server'],
-    ledgerTables: [],
-
     /** Community migrates when it opens its database (server/db.js openDb); nothing to do first. */
     seed() {},
 
-    /** Boots the release in `dir` on dbPath → { url, ids, headers(auth), close() }. */
-    async boot({ dir, dbPath, sqlOut = '' }) {
-        const child = spawn(process.execPath, ['-r', PRELOAD, CHILD], {
+    /** Boots the release in `dir` on a migrated PostgreSQL test database → { url, ids, headers(auth), close() }. */
+    async boot({ dir }) {
+        const child = spawn(process.execPath, [CHILD], {
             cwd: dir,
-            env: baseEnv({ N1_DB: dbPath, N1_SQL_OUT: sqlOut }),
+            env: baseEnv({}),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         let log = '';

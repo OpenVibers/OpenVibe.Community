@@ -21,10 +21,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# The code tree stays read-only. Community's database is PostgreSQL (ov_community, ADR-035); /var/lib/openvibe-community
-# keeps the pre-PostgreSQL SQLite file (read-only) for the rollback window and the one-time import.
+# The code tree stays read-only. Community's database is PostgreSQL (ov_community, ADR-035).
 StateDirectory=openvibe-community
-Environment=COMMUNITY_DB_PATH=/var/lib/openvibe-community/community.db
 
 [Install]
 WantedBy=multi-user.target

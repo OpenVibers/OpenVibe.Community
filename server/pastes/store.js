@@ -235,7 +235,7 @@ async function listPastes(db, opts = {}) {
     return { rows, total };
 }
 
-/** Pastes created by a subject since `sinceSql` (an SQLite datetime modifier, e.g. '-1 day'). */
+/** Pastes created by a subject since `sinceSql` (a datetime modifier, e.g. '-1 day'). */
 async function countOwnerSince(db, subject, sinceSql) {
     return (await db.prepare("SELECT COUNT(*) AS c FROM pastes WHERE owner_subject = ? AND created_at > datetime('now', ?)").get(subject, sinceSql)).c;
 }

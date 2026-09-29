@@ -100,7 +100,7 @@ function cors(origins) {
 
 const intIn = (v, def, min, max) => Math.min(Math.max(parseInt(v, 10) || def, min), max);
 
-/** SQLite 'YYYY-MM-DD HH:MM:SS' (UTC) ↔ ISO. */
+/** Text timestamps 'YYYY-MM-DD HH:MM:SS' (UTC) ↔ ISO. */
 function sqlTime(date = new Date()) { return new Date(date).toISOString().replace('T', ' ').slice(0, 19); }
 function isoTime(v) {
     if (!v) return null;

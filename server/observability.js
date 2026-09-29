@@ -2,7 +2,7 @@
 /**
  * Track O: truthful readiness for GET /api/ready (openvibe-shared/ready).
  *
- *   db              required  a real query on Community's SQLite (the schema is there and answers)
+ *   db              required  a real query on Community's PostgreSQL database (the schema is there and answers)
  *   network_jwks    optional  the Network signing key has loaded. Without it public pages and reads
  *                             still work, but nobody can sign in or write as a signed-in viewer or
  *                             service (those answer 503), so it degrades rather than fails

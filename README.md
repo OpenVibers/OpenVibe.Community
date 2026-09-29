@@ -587,7 +587,6 @@ Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0
 | `PASTES_AUTHORITY` | `live` | `live` = proxy to Live; `community` = this site's database is the authority |
 | `DATABASE_URL`, `DATABASE_DIRECT_URL` | unset (development: embedded PGlite in `data/pglite`) | PostgreSQL through PgBouncer, and the owner's direct connection for migrations (written by OpenVibe.Host `roles/data/add-service.sh community`) |
 | `VALKEY_URL`, `VALKEY_PREFIX` | unset | per-actor limit counters shared across processes |
-| `COMMUNITY_DB_PATH` | `./data/community.db` | the SQLite file of releases before PostgreSQL, read once by `scripts/migrate-to-postgres.js` |
 | `API_CORS_ORIGINS` | Live, Media, Network, Tools, Games origins | Browser origins that may call `/api/v1/comments` and `/api/v1/pulse` with a Bearer JWT |
 | `DISCORD_RELAY_ENABLED` | off | `true` turns the Discord relay on ([docs/discord-relay.md](docs/discord-relay.md)) |
 | `DISCORD_RELAY_POLL_MS` / `DISCORD_RELAY_BACKOFF_MS` / `DISCORD_RELAY_MAX_ATTEMPTS` | `30000` / `30000` / `6` | Relay sender cadence, first retry delay, attempts before `failed` (the dead letter) |
@@ -616,12 +615,11 @@ npm run n-1:record # after a deploy: the N-1 fixtures from the deployed commit (
 ```
 
 `test/n-1.test.js` (roadmap WS-P task 11, in `npm test`) runs the previous release's clients against
-this one and its SQL against this schema, from `test/fixtures/n-1/`: every call `community.js`, the
-templates' forms and the openvibe-sdk community client make, and every link, script and form of the
-pages that release served, each answered compatibly (status, JSON, the response fields the client
-reads); then every statement the previous release runs must still prepare after this release opened
-(and migrated) a database the previous one created. After each deploy, record the release now in
-production as the next N-1 and commit `test/fixtures/n-1/`.
+this one, from `test/fixtures/n-1/`: every call `community.js`, the templates' forms and the
+openvibe-sdk community client make, and every link, script and form of the pages that release served,
+each answered compatibly (status, JSON, the response fields the client reads); then this release must
+keep every migration that release ran byte for byte and only add. After each deploy, record the
+release now in production as the next N-1 and commit `test/fixtures/n-1/`.
 
 ## Acceptance
 
@@ -665,10 +663,7 @@ Production deploys with `sudo ovhost deploy community` on the host (strategy `gi
 fast-forward `/opt/openvibe.community`, install on a lockfile change, restart, wait for `/api/ready`).
 The unit is `openvibe-community.service` on `127.0.0.1:4200`, the env file `/etc/openvibe/community.env`. The database is
 `ov_community` on the host's data role (`sudo /opt/openvibe.host/roles/data/add-service.sh community` writes its settings); the
-release migrates it at boot. The one-time move from SQLite is `scripts/migrate-to-postgres.js` (openvibe-sdk
-`runSqliteMigration`, with a `--pglite` rehearsal mode), run while the service is stopped; the old
-`/var/lib/openvibe-community/community.db` stays read-only for 7 days as the rollback. After a
-deploy, record the N-1 fixtures (`npm run n-1:record`).
+release migrates it at boot. After a deploy, record the N-1 fixtures (`npm run n-1:record`).
 Rollback: ovhost puts the previous sha back by itself when `/api/ready` does not answer 2xx after the
 restart; afterwards `sudo ovhost rollback community --to <sha>`. Migrations only add tables and columns.
 
@@ -732,7 +727,6 @@ server/
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
 (openvibe-shared is the pinned OpenVibe.Shared v1.25.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost
-scripts/migrate-to-postgres.js  the one-time SQLite → PostgreSQL import (runSqliteMigration; --pglite rehearsal)
 test/                 run.js + *.test.js (mock Live, Network and Media with a real RS256 key)
 docs/capabilities-proposal/  Wave 5 capability manifests (released in openvibe-contracts v0.7.0)
 docs/discord-relay.md  the Discord relay: how it works, owner steps, staff API, limits

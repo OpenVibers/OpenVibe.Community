@@ -229,7 +229,7 @@ async function softDeleteThread(db, id) {
     return (await db.prepare('UPDATE threads SET deleted_at = ov_now() WHERE id = ? AND deleted_at IS NULL').run(id)).changes;
 }
 
-/** Threads a subject opened since `sinceSql` (SQLite modifier, e.g. '-1 day'); deleted ones count. */
+/** Threads a subject opened since `sinceSql` (a datetime modifier, e.g. '-1 day'); deleted ones count. */
 async function countThreadsSince(db, subject, sinceSql) {
     return (await db.prepare("SELECT COUNT(*) AS c FROM threads WHERE author_subject = ? AND created_at > datetime('now', ?)").get(subject, sinceSql)).c;
 }

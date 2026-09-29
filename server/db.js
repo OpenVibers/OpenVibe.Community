@@ -9,8 +9,8 @@
  * (usr_… / gst_…), never by a service-local integer; subject_projection is only a display cache
  * of what the Network says about them.
  *
- * Timestamps stay SQLite's text ('YYYY-MM-DD HH:MM:SS', UTC): the migration defines ov_now(), datetime() and
- * julianday() with SQLite's behaviour, and ov_hot() for the forum's hot rank.
+ * Timestamps are text ('YYYY-MM-DD HH:MM:SS', UTC): the schema defines ov_now(), datetime() and julianday()
+ * with those semantics, and ov_hot() for the forum's hot rank.
  */
 const crypto = require('crypto');
 const fs = require('fs');

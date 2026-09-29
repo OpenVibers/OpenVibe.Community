@@ -20,7 +20,6 @@
   "author": "OpenVibe Community",
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

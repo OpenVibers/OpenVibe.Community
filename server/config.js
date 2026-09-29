@@ -66,8 +66,6 @@ module.exports = {
     db: { url: process.env.DATABASE_URL || '', directUrl: process.env.DATABASE_DIRECT_URL || '' },
     // Valkey (ADR-035): per-actor limit counters shared across processes; without it they count in this process.
     valkey: { url: process.env.VALKEY_URL || '', prefix: process.env.VALKEY_PREFIX || 'ov:community:' },
-    // The SQLite file of releases before PostgreSQL: read once by scripts/migrate-to-postgres.js.
-    dbPath: process.env.COMMUNITY_DB_PATH || './data/community.db',
 
     // Browser origins allowed to call the embeddable APIs (/api/v1/comments, /api/v1/pulse)
     // with a Bearer Network JWT. No cookies cross origins.

@@ -6,8 +6,8 @@
  * Race safety: a vote is a single UPSERT (or DELETE for 0) followed, in the same transaction, by
  * recomputing the target's score from the vote rows. The score is never incremented or decremented,
  * so interleaved votes from any number of connections or processes cannot drift it. The transaction
- * first locks the target row (SELECT … FOR UPDATE, PostgreSQL's stand-in for SQLite's IMMEDIATE), so
- * votes on one target queue and each recount sees every vote committed before it.
+ * first locks the target row (SELECT … FOR UPDATE), so votes on one target queue and each recount
+ * sees every vote committed before it.
  */
 const TARGETS = {
     comment: { votes: 'comment_votes', key: 'comment_id', table: 'comments', counts: true },
