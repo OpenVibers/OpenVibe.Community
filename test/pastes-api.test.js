@@ -219,6 +219,19 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual((await call('/api/pastes', { method: 'POST', ip, token: svc([CREATE]), json: { content: 'service' } })).status, 201);
     });
 
+    await check('the home page sample works: a multipart text field (curl -F \'content=<file\') makes a text paste, no account', async () => {
+        const fd = new FormData();
+        fd.append('content', 'npm ERR! code ERESOLVE');
+        fd.append('title', 'Build log');
+        const r = await call('/api/pastes', { method: 'POST', ip: '203.0.113.90', body: fd });
+        assert.strictEqual(r.status, 201, r.text);
+        const out = r.json();
+        assert.strictEqual(out.url, `/p/${out.slug}`);
+        assert.notStrictEqual(out.paste.type, 'screenshot');
+        assert.strictEqual(out.paste.title, 'Build log');
+        assert.strictEqual(out.paste.content, 'npm ERR! code ERESOLVE');
+    });
+
     // A JPEG whose APP1 segment carries EXIF (with a fake GPS marker).
     const jpeg = Buffer.concat([
         Buffer.from([0xff, 0xd8]),

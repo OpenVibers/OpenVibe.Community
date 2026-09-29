@@ -40,28 +40,21 @@ img { max-width: 100%; height: auto; }
 .btn-sm { padding: 6px 11px; font-size: .85rem; border-radius: 7px; }
 .btn[disabled] { opacity: .6; cursor: wait; }
 
-/* Hero */
-.hero { padding: 40px 0 24px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
-.hero h1 { font-size: clamp(2.1rem, 5vw, 3.2rem); }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 18px; }
-.hero-points { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--text-secondary); font-size: .92rem; }
-.hero-points i { color: var(--accent-light); width: 18px; text-align: center; margin-right: 4px; }
+
+/* Home: the showcase kit (openvibe-shared/showcase.css) draws the hero, features, code and closing call; this is the terminal sample beside the hero. */
+/* The kit centres its sections at 1080px with their own gutter; here they share the page's column with the paste grids. */
+.page > .sc-hero, .page > .sc-sec, .page > .sc-cta { max-width: none; padding-left: 0; padding-right: 0; }
+.page > .sc-sec .sc-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.cm-hero-code { margin: 0; padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; line-height: 1.65; overflow: auto; white-space: pre; }
 
 /* Sections */
 .section { padding: 28px 0 8px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .section-head h2 { margin: 0; }
 .more { font-size: .9rem; font-weight: 600; white-space: nowrap; }
-.cta { margin-top: 20px; }
-.cta-inner { background: linear-gradient(135deg, rgba(var(--accent-rgb), .18), rgba(var(--accent-rgb), .04)); border: 1px solid rgba(var(--accent-rgb), .35); border-radius: var(--radius); padding: 28px; }
-.cta-inner p { max-width: 52rem; color: var(--text-secondary); }
 .lang-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
 .lang-cloud a { background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: .85rem; color: var(--text-primary); }
 .lang-cloud a small { color: var(--text-muted); margin-left: 4px; }
-.coming-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 12px 0 14px; }
-.coming-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
-.coming-item i { font-size: 1.4rem; color: var(--accent-light); margin-bottom: 8px; display: block; }
-.coming-item p { margin: 0; color: var(--text-secondary); font-size: .93rem; }
 
 /* Cards */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }

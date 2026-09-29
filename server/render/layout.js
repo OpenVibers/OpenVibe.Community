@@ -97,6 +97,7 @@ function footerInit(opts) {
  *   ogImage, jsonLd (array), body (main HTML), active ('home'|'pastes'|'spaces'|'pulse'|'new'|'my'),
  *   feeds ([{ title, href }] RSS alternates; default: the latest-pastes feed),
  *   historyType ('page'|'paste'), historyTitle, footerVariant ('full'|'compact'), bodyClass,
+ *   styles (Shared stylesheets by name, linked before community.css so this site's rules win: ['showcase.css']),
  *   published/modified (ISO, for article:*), noFrame (error pages during outages)
  */
 function renderPage(o) {
@@ -133,6 +134,7 @@ ${o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.m
 ${require('openvibe-shared/app-icon').headTags({ site: 'community', iconBase: '/assets' })}
 ${(o.feeds || [{ title: `${SITE_NAME} — latest pastes`, href: '/feed.xml' }]).map((f) => `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(f.title)}" href="${escapeHtml(f.href)}">`).join('\n')}
 <script src="${ovServe.url('theme-loader.js')}" defer></script>
+${(o.styles || []).map((name) => `<link rel="stylesheet" href="${ovServe.url(name)}">`).join('\n')}
 <link rel="stylesheet" href="${asset('css/community.css')}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 ${jsonLdScript(o.jsonLd)}

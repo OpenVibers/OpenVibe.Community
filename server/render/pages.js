@@ -10,6 +10,7 @@ const ovServe = require('openvibe-shared/serve');
 const seo = require('../seo');
 const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
 const frame = require('openvibe-shared/frame');
+const showcase = require('openvibe-shared/showcase');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 
 const NETWORK_URL = 'https://openvibe.network';
@@ -106,52 +107,66 @@ function cardGrid(pastes, empty = 'Nothing here yet.') {
 }
 
 // ── Home ─────────────────────────────────────────────────────
-function homePage({ latest, trending, languages, user }) {
-    const body = `
-<section class="hero">
-  <p class="eyebrow">OpenVibe.Community</p>
-  <h1>Share it with a link. Talk about it here.</h1>
-  <p class="lede">Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own, and talk things through in <a href="/s">Spaces</a>.</p>
-  <div class="hero-actions">
-    <a class="btn btn-primary" href="/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> Start a paste</a>
-    <a class="btn" href="/pastes"><i class="fa-solid fa-paste" aria-hidden="true"></i> Browse pastes</a>
-    <a class="btn" href="/s"><i class="fa-solid fa-comments" aria-hidden="true"></i> Spaces</a>
-    ${user ? `<a class="btn btn-ghost" href="/my"><i class="fa-solid fa-user" aria-hidden="true"></i> My pastes</a>` : `<a class="btn btn-ghost" href="/auth/login?next=%2F"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Sign in with your OpenVibe account</a>`}
-  </div>
-  <ul class="hero-points">
-    <li><i class="fa-solid fa-people-group" aria-hidden="true"></i> Run by the people using it, moderated in the open</li>
-    <li><i class="fa-solid fa-comment" aria-hidden="true"></i> Open expression within the rules: say it, own it</li>
-    <li><i class="fa-brands fa-github" aria-hidden="true"></i> Open source — <a href="https://github.com/OpenVibers/OpenVibe.Community" rel="noopener">read the code</a></li>
-  </ul>
-</section>
+// The home (openvibe-shared/showcase): what Community is and where to start, the pastes people are sharing right
+// now, what else lives here, and the API a terminal can paste with. The paste grids stay this site's own markup.
+const TERMINAL = `$ curl -F 'content=<build.log' \\
+    https://openvibe.community/api/pastes
+{ "slug": "amber-fox-42",
+  "url": "/p/amber-fox-42", … }`;
 
+function homePage({ latest, trending, languages, user }) {
+    const body = showcase.hero({
+        eyebrow: 'OpenVibe.Community',
+        title: 'Share it with a link.', accent: 'Talk about it here.',
+        lede: 'Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own, and talk things through in Spaces.',
+        actions: [
+            { label: 'Start a paste', href: '/new', primary: true, icon: 'fa-plus' },
+            { label: 'Browse pastes', href: '/pastes', icon: 'fa-paste' },
+            ...(user ? [{ label: 'My pastes', href: '/my', icon: 'fa-user' }] : []),
+        ],
+        note: 'Run by the people using it and moderated in the open. Say it, own it.',
+        aside: { html: `<pre class="cm-hero-code" aria-label="Paste a file from a terminal"><code>${esc(TERMINAL)}</code></pre>` },
+    }) + `
 <section class="section" id="latest">
   <div class="section-head"><h2>Latest pastes</h2><a class="more" href="/pastes">All pastes <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(latest, 'No pastes yet — be the first.')}
+  ${languages && languages.length ? `<p class="lang-cloud" aria-label="Browse by language">${languages.slice(0, 12).map((l) => `<a href="/pastes?lang=${encodeURIComponent(l.language)}">${esc(languageLabel(l.language))} <small>${l.count}</small></a>`).join(' ')}</p>` : ''}
 </section>
 
 <section class="section" id="trending">
   <div class="section-head"><h2>Most viewed</h2><a class="more" href="/pastes?sort=views">By views <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(trending, 'Nothing trending yet.')}
 </section>
-
-<section class="section cta" id="start">
-  <div class="cta-inner">
-    <h2>Start a paste</h2>
-    <p>Code, logs, configs, a screenshot — paste it, get a link, share it anywhere. Sign in to keep your pastes together under your OpenVibe account, or post anonymously.</p>
-    <a class="btn btn-primary" href="/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> New paste</a>
-    ${languages && languages.length ? `<p class="lang-cloud">${languages.slice(0, 12).map((l) => `<a href="/pastes?lang=${encodeURIComponent(l.language)}">${esc(languageLabel(l.language))} <small>${l.count}</small></a>`).join(' ')}</p>` : ''}
-  </div>
-</section>
-
-<section class="section coming" id="spaces">
-  <h2>Spaces and threads</h2>
-  <div class="coming-grid">
-    <div class="coming-item"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><h3><a href="/s">Spaces</a></h3><p>General, Feedback and Showcase: places for the community to talk, share and get help.</p></div>
-    <div class="coming-item"><i class="fa-solid fa-comments" aria-hidden="true"></i><h3><a href="/s/general">Threads</a></h3><p>Long-form discussion that outlives a chat scrollback: start one in any open space.</p></div>
-    <div class="coming-item"><i class="fa-solid fa-wave-square" aria-hidden="true"></i><h3><a href="/pulse">Pulse</a></h3><p>What is happening across the OpenVibe network, in one feed.</p></div>
-  </div>
-</section>
+` + showcase.features({
+        id: 'spaces',
+        title: 'What lives here',
+        items: [
+            { icon: 'fa-paste', title: 'Pastes', text: 'Code, logs and configs with highlighting for every common language, a raw link and a download.', href: '/new' },
+            { icon: 'fa-image', title: 'Screenshots', text: 'Drop an image and share it with a link. Location data is stripped before it is stored.', href: '/new' },
+            { icon: 'fa-layer-group', title: 'Spaces', text: 'General, Feedback and Showcase: places to talk, share and get help.', href: '/s' },
+            { icon: 'fa-comments', title: 'Threads', text: 'Long-form discussion that outlives a chat scrollback. Start one in any open space.', href: '/s/general' },
+            { icon: 'fa-wave-square', title: 'Pulse', text: 'What is happening across the OpenVibe network, in one feed.', href: '/pulse' },
+            { icon: 'fa-code-branch', title: 'Open source', text: 'Every line that runs this site is public. Read it, file an issue, send a fix.', href: 'https://github.com/OpenVibers/OpenVibe.Community' },
+        ],
+    }) + showcase.code({
+        id: 'api',
+        title: 'Paste from anywhere',
+        lede: 'The page you use is the API a script uses: no key for public pastes. Sign in, or send your OpenVibe token, to keep them under your account.',
+        samples: [
+            { label: 'A file from a terminal', lang: 'bash', code: `curl -F 'content=<build.log' -F title='Build log' \\\n  https://openvibe.community/api/pastes` },
+            { label: 'JavaScript', lang: 'js', code: `const api = 'https://openvibe.community/api/pastes';
+const res = await fetch(api, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ title: 'Snippet', content }),
+});
+const { url } = await res.json(); // "/p/<slug>"` },
+        ],
+    }) + showcase.cta({
+        title: 'Start a paste',
+        text: 'Paste it, get a link, share it anywhere. Sign in to keep your pastes together under your OpenVibe account, or post without one.',
+        actions: [{ label: 'New paste', href: '/new', primary: true, icon: 'fa-plus' }, { label: 'Visit the Spaces', href: '/s' }],
+    }) + `
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
     return renderPage({
         title: null,
@@ -159,6 +174,7 @@ function homePage({ latest, trending, languages, user }) {
         canonicalPath: '/',
         active: 'home',
         jsonLd: [seo.websiteLd()],
+        styles: [showcase.STYLESHEET],
         body,
     });
 }
