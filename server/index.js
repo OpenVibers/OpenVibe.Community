@@ -41,17 +41,18 @@ const { createApp } = require('./app');
     let searchDocs = null;
     try { searchDocs = require('./search/documents').createSearchDocuments({ db: require('./db').getDb() }); searchDocs.start(); } catch (err) { console.warn('[Search] documents not started:', err.message); }
 
-    // ── Stop (roadmap WS-P lifecycle; server/graceful.js) ────────
+    // ── Stop (roadmap WS-P lifecycle; openvibe-sdk/service) ──────
     // SIGTERM: the Pulse subscription retries, the community.profile scan and the search-document scans
     // stop (nothing new starts); the server stops taking connections, closes idle keep-alive ones (it keeps
     // them 65 s otherwise) and lets requests in flight finish (4 s at most); then the profile scan in
     // progress, the Discord relay's drain and its Events worker's page (the gateway closes at once) and the
     // events outbox's send finish (unsent rows stay in their tables for the next start), community.db
     // closes, and the process exits 0, within the manifest's 5 s.
-    const { within } = require('./graceful');
+    const { gracefulStop, within } = require('openvibe-sdk/service');
     let profilesDone = null;
-    require('./graceful').gracefulStop({
+    gracefulStop({
         name: 'Community', server,
+        drainMs: 4000, deadlineMs: 5000, deadlineExitCode: 1,
         stop: [
             () => { if (subscriptions) subscriptions.stop(); },
             () => { if (profiles) profilesDone = profiles.stop(); },
