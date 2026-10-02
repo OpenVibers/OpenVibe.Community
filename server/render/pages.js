@@ -256,7 +256,11 @@ function shareLinks(p) {
   </div>`;
 }
 
-function pastePage({ paste: p, related, user }) {
+/**
+ * comments: the paste's typed thread as the comment service shows it to this viewer (null while nobody has
+ * commented); commentSort 'new' or 'old', commentsAfter the paging cursor. No comments on burn-after-read pastes.
+ */
+function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null }) {
     const isShot = p.type === 'screenshot';
     const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
@@ -315,6 +319,10 @@ function pastePage({ paste: p, related, user }) {
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
 </article>
+${p.burn_after_read ? '' : `<section class="section" id="comments">
+  <div class="section-head"><h2>Comments${comments && comments.thread.comment_count ? ` <span class="muted small">${num(comments.thread.comment_count)}</span>` : ''}</h2></div>
+  ${require('./comments').commentPanel({ page: comments, user, base: `/p/${p.slug}`, action: `/p/${p.slug}/comments`, after: commentsAfter, sort: commentSort })}
+</section>`}
 ${related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(related)}

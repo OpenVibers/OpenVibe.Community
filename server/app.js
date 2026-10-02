@@ -9,6 +9,7 @@
  *   GET /               home           ALL /api/pastes/*       the native paste API (pastes/api.js)
  *   GET /pastes         browse         /api/v1/comments/*      typed comment threads (comments/api.js)
  *   GET /p/:slug        paste          /api/v1/spaces/*, /api/v1/posts/*   forum (forum/api.js)
+ *   POST /p/:slug/comments  comment on it (its typed thread)
  *   GET /p/:slug/raw    raw text       /api/v1/pulse/*         Pulse (pulse/api.js)
  *   GET /p/:slug/screenshot → image    /api/v1/relay/*         Discord relay admin (relay/api.js)
  *   GET /p/:slug/download              GET /api/health, /api/ready, /release.json, /metrics (loopback)
@@ -65,6 +66,7 @@ const { createIndexNow } = require('openvibe-shared/indexnow');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
+const pasteRef = (slug) => ({ service: 'community', type: 'paste', id: String(slug) });
 const VERSION = require('../package.json').version;
 
 async function createApp(opts = {}) {
@@ -314,7 +316,36 @@ async function createApp(opts = {}) {
             throw err;
         }
         const related = await catalog.related(paste, 6);
-        html(res, pages.pastePage({ paste, related, user: req.user }));
+        // Its comments are the paste's typed thread (community/paste/<slug>), the one /c/:accessId and the
+        // comments API show, sorted (?sort=old|new) and paged (?after=<last comment id>) as there; null while
+        // nobody has commented. The comment service applies the paste's visibility again.
+        // A burn-after-read paste is gone once shown, so it has no comment panel.
+        const after = /^\d{1,15}$/.test(String(req.query.after || '')) ? String(req.query.after) : null;
+        const sort = req.query.sort === 'old' ? 'old' : 'new';
+        const thread = paste.burn_after_read ? null : await comments.forRef(req.viewer, pasteRef(paste.slug), { sort, after, limit: 30 });
+        html(res, pages.pastePage({ paste, related, user: req.user, comments: thread, commentSort: sort, commentsAfter: after }));
+    }));
+
+    // No-JS comment form: signed in, the cookie (SameSite=Lax) and no Origin from another site, as on /c/:accessId.
+    // The thread opens on the first comment; the comment service decides the rest (visibility, lock, blocks, limits).
+    app.post('/p/:slug/comments', withUser, express.urlencoded({ extended: false, limit: '64kb' }), wrap(async (req, res, next) => {
+        const { slug } = req.params;
+        const origin = req.get('origin');
+        if (origin && origin !== 'null' && origin !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
+        const back = `/p/${encodeURIComponent(slug)}`;
+        try {
+            if (!SLUG_RE.test(slug)) throw new v1.ApiError(404, 'ref.not_found', 'No such paste');
+            if (!req.viewer || !req.viewer.subject) return res.redirect(303, `/auth/login?next=${encodeURIComponent(back)}`);
+            const { thread } = await comments.resolve(req.viewer, { ref: pasteRef(slug) });
+            const b = req.body || {};
+            const out = await comments.add(req.viewer, thread.id, { message: String(b.message || '').slice(0, 5000), parent_id: b.parent_id || null });
+            return res.redirect(303, `${back}#comment-${out.comment.id}`);
+        } catch (err) {
+            if (!(err instanceof v1.ApiError)) return next(err);
+            if (err.status === 401) return res.redirect(303, `/auth/login?next=${encodeURIComponent(back)}`);
+            if (err.status === 404) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
+            return html(res, pages.errorPage({ status: err.status, title: err.status === 429 ? 'Slow down' : 'That did not work', message: err.message }), err.status);
+        }
     }));
 
     // Raw text is served here, the screenshot link is the stored Media URL.

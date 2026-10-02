@@ -18,6 +18,8 @@
 const crypto = require('crypto');
 const events = require('../events');
 const store = require('./store');
+const commentStore = require('../comments/store');
+const { discussionModerator } = require('../identity/capabilities');
 const { stripImageMetadata } = require('../media/strip-metadata');
 const { capabilities } = require('openvibe-contracts');
 const blocks = require('../identity/blocks');
@@ -91,6 +93,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     const limited = (v) => !!(v && v.subject);
     const hasCap = (v, cap) => !!(v && v.kind === 'service' && capabilities.check(v.claims, cap).allowed);
     const isService = (v) => !!(v && v.kind === 'service');
+    const pasteRef = (p) => ({ service: 'community', type: 'paste', id: p.slug });
     const needIdentity = (v) => { if (!v || (!v.subject && !v.staff)) fail(401, 'Authentication required'); };
 
     /**
@@ -178,14 +181,15 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     }
     async function shapeOne(row, v) { return (await shapeMany([row], v))[0]; }
 
-    function shapeComment(c, projections) {
+    /** A typed comment (comments/store.js) in the paste API's old shape: the paste's id, is_deleted, user_id = the author's subject. */
+    function shapeComment(c, p, projections) {
         const out = {
-            id: c.id, paste_id: c.paste_id, user_id: c.author_subject || null, author_subject: c.author_subject || null,
-            parent_id: c.parent_id || null, anon_name: c.anon_name, message: c.message, is_deleted: c.is_deleted,
+            id: c.id, paste_id: p.id, user_id: c.author_subject || null, author_subject: c.author_subject || null,
+            parent_id: c.parent_id || null, anon_name: c.anon_name, message: c.message, is_deleted: c.deleted_at ? 1 : 0,
             created_at: c.created_at, updated_at: c.updated_at,
-            ...authorFields(c.author_subject, 'user', projections),
+            ...authorFields(c.author_subject, c.origin, projections),
         };
-        if (c.replies) { out.replies = c.replies.map((r) => shapeComment(r, projections)); out.reply_count = c.reply_count; }
+        if (c.replies) { out.replies = c.replies.map((r) => shapeComment(r, p, projections)); out.reply_count = c.reply_count; }
         return out;
     }
 
@@ -542,58 +546,73 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { copies: await store.incrementCopies(db, p.id) };
         },
 
-        /** GET /api/pastes/:slug/comments */
+        /**
+         * Paste comments live on the paste's typed comment thread (ref community/paste/<slug>, comments/store.js),
+         * the one /p/:slug, /c/:accessId and /api/v1/comments show; these routes keep their old shapes and rules.
+         * A hidden thread lists nothing and, like a locked one, takes comments from moderators only.
+         *
+         * GET /api/pastes/:slug/comments
+         */
         async comments(v, slug, q = {}) {
             const p = await visible(v, slug);
             const limit = Math.min(parseInt(q.limit || '50', 10) || 50, 100);
             const offset = Math.max(parseInt(q.offset || '0', 10) || 0, 0);
-            const list = await store.listComments(db, p.id, limit, offset);
+            const t = await commentStore.getThreadByRef(db, pasteRef(p));
+            if (!t || (t.visibility === 'hidden' && !discussionModerator(v))) return { comments: [], total: 0 };
+            const list = await commentStore.listNewest(db, t.id, { limit, offset });
             const subjects = [];
             for (const c of list) { subjects.push(c.author_subject); for (const r of c.replies) subjects.push(r.author_subject); }
             const projections = await projectionsFor(subjects);
-            return { comments: list.map((c) => shapeComment(c, projections)), total: await store.countComments(db, p.id) };
+            return { comments: list.map((c) => shapeComment(c, p, projections)), total: Number(t.comment_count) };
         },
 
         /** POST /api/pastes/:slug/comments — anonymous comments allowed (with a name). */
         async addComment(v, slug, body = {}, ctx = {}) {
             const p = await visible(v, slug);
-            const author = v.subject || null;
-            if (!author && !L.commentAnonAllowed) fail(401, 'You must be logged in to comment');
+            const origin = v.origin === 'ai' ? 'ai' : 'user';
+            const author = origin === 'ai' ? null : (v.subject || null);
+            if (!author && origin !== 'ai' && !L.commentAnonAllowed) fail(401, 'You must be logged in to comment');
             const message = String(body.message || '').trim();
             if (!message) fail(400, 'Comment cannot be empty');
             if (message.length > L.commentMaxLength) fail(400, `Comment must be under ${L.commentMaxLength} characters`);
             let anonName = null;
-            if (!author) {
+            if (!author && origin !== 'ai') {
                 anonName = String(body.anon_name || '').trim().substring(0, 32) || 'Anonymous';
                 anonName = anonName.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'Anonymous';
             }
             const rateKey = author ? `s:${author}` : `ip:${ctx.ip || 'unknown'}`;
             if (limited(v)) commentRateCheck(rateKey, message);
+            let t = await commentStore.getThreadByRef(db, pasteRef(p));
+            if (t && t.visibility !== 'public' && !discussionModerator(v)) fail(403, 'This comment thread is locked', { code: 'thread.locked' });
             const parentId = body.parent_id ? parseInt(body.parent_id, 10) : null;
             let parent = null;
             if (parentId) {
-                parent = await store.getComment(db, parentId);
-                if (!parent || parent.paste_id !== p.id) fail(400, 'Invalid parent comment');
+                parent = Number.isSafeInteger(parentId) ? await commentStore.getComment(db, parentId) : null;
+                if (!parent || !t || parent.thread_id !== t.id || parent.deleted_at) fail(400, 'Invalid parent comment');
                 if (parent.parent_id) fail(400, 'Cannot reply to a reply — reply to the original comment instead');
             }
             // Platform blocks: no comment on a paste whose owner blocked you, no reply to a comment whose author did.
             if (author && await blocks.hasBlocked(db, p.owner_subject, author)) fail(403, 'You cannot comment on this paste: its owner blocked you', { code: 'community.blocked' });
             if (author && parent && await blocks.hasBlocked(db, parent.author_subject, author)) fail(403, 'You cannot reply to this comment: its author blocked you', { code: 'community.blocked' });
-            const c = await store.createComment(db, { paste_id: p.id, author_subject: author, anon_name: anonName, parent_id: parentId, message });
+            if (!t) t = (await commentStore.resolveThread(db, pasteRef(p), { createdBy: author || (isService(v) ? v.service : null) })).thread;
+            const c = await commentStore.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message });
             if (limited(v)) commentRecorded(rateKey, message);
-            return { comment: shapeComment(c, await projectionsFor([author])) };
+            return { comment: shapeComment(c, p, await projectionsFor([author])) };
         },
 
         /** DELETE /api/pastes/:slug/comments/:id — the author, the paste's owner, or staff. */
         async deleteComment(v, slug, commentId) {
             needIdentity(v);
             const p = await visible(v, slug);
-            const c = await store.getComment(db, parseInt(commentId, 10));
-            if (!c || c.paste_id !== p.id) fail(404, 'Comment not found');
+            const c = /^\d{1,15}$/.test(String(commentId)) ? await commentStore.getComment(db, Number(commentId)) : null;
+            const t = c ? await commentStore.getThread(db, c.thread_id) : null;
+            const ref = pasteRef(p);
+            if (!t || t.ref_service !== ref.service || t.ref_type !== ref.type || t.ref_id !== ref.id) fail(404, 'Comment not found');
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
             if (!isAuthor && !isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized to delete this comment');
+            if (c.deleted_at) return { message: 'Comment deleted' };   // deleting again is a no-op, as before
             await db.tx(async () => {
-                await store.softDeleteComment(db, c.id);
+                await commentStore.softDeleteComment(db, c.id, v.subject || v.service || null);
                 if (!isAuthor && !isOwner(v, p)) await events.moderationAction(v, 'comment.deleted', { type: 'paste_comment', id: String(c.id), owner_subject: c.author_subject || null }, { details: { paste: p.slug } });
             });
             return { message: 'Comment deleted' };
