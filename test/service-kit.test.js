@@ -1,33 +1,10 @@
 'use strict';
-// Community's graceful shutdown is the shared service kit (roadmap WS-P lifecycle; openvibe-sdk/service):
-// the local shutdown copy is gone and server/index.js wires gracefulStop/within from the SDK with
-// Community's own numbers. The behavioural check below runs a stop and proves Community's stop and close
-// steps run in order and a clean stop exits 0; shutdown.test.js proves the same wiring on the real server.
+// Check the SDK graceful stop primitive used by Community. shutdown.test.js covers
+// the wiring and shutdown behavior on the real server.
 //   node test/service-kit.test.js
 const assert = require('assert');
-const fs = require('fs');
 const http = require('http');
-const path = require('path');
 const { gracefulStop, within } = require('openvibe-sdk/service');
-
-const root = path.join(__dirname, '..');
-const index = fs.readFileSync(path.join(root, 'server', 'index.js'), 'utf8');
-
-// Static: the wiring is the SDK's, with today's Community values.
-assert.ok(/const \{ gracefulStop, within \} = require\('openvibe-sdk\/service'\)/.test(index), "server/index.js imports gracefulStop and within from openvibe-sdk/service");
-assert.ok(!/require\(['"]\.\/graceful['"]\)/.test(index), 'server/index.js no longer requires ./graceful');
-assert.ok(!fs.existsSync(path.join(root, 'server', 'graceful' + '.js')), 'the local shutdown copy is deleted');
-assert.ok(/name: 'Community', server,\s*drainMs: 4000, deadlineMs: 5000, deadlineExitCode: 1/.test(index), 'drainMs 4000, deadlineMs 5000, deadlineExitCode 1');
-// The stop and close step lists are still Community's, in today's order.
-const stopAt = index.indexOf('stop: [');
-const closeAt = index.indexOf('close: [');
-assert.ok(stopAt > 0 && closeAt > stopAt, 'the stop list precedes the close list');
-for (const marker of ['subscriptions.stop()', 'profilesDone = profiles.stop()', 'searchDocs.stop()']) {
-    assert.ok(index.indexOf(marker) > stopAt && index.indexOf(marker) < closeAt, `stop step ${marker} is in the stop list`);
-}
-for (const marker of ["require('./events').stop()", "require('./db').closeDb()", 'valkey.close()', 'relay.stop()']) {
-    assert.ok(index.indexOf(marker) > closeAt, `close step ${marker} is in the close list`);
-}
 
 (async () => {
     const server = http.createServer((req, res) => { res.end('ok'); });
