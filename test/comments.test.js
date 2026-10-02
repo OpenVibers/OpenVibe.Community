@@ -3,7 +3,7 @@
  * /api/v1/comments — typed comment threads: resolve (idempotent, allowlist, services, labels,
  * Community refs), pagination and one-level nesting, anonymous comments under the shared
  * anonymous-write budget, per-person limits, votes, deletes, visibility (lock/hide), service
- * capabilities (including the local match for ids openvibe-contracts does not know yet), CORS.
+ * capabilities (delegated to openvibe-contracts), CORS.
  */
 const assert = require('assert');
 const { ids } = require('openvibe-contracts');
