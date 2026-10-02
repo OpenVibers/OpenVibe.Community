@@ -119,6 +119,7 @@ Pages (server-rendered HTML):
 | `GET /` | Home: hero, latest pastes, most viewed, "start a paste" CTA, what is coming |
 | `GET /pastes` | Browse — `?q=` search, `?sort=new\|views`, `?lang=`, `?page=` |
 | `GET /p/:slug` | Paste page — highlighted body (server-side, highlight.js), raw/download/copy/fork/share, screenshot, related |
+| `POST /p/:slug/comments` | Comment on the paste (signed in; the no-JS form) — its typed comment thread, the one `/c/:accessId` and the APIs show |
 | `GET /p/:slug/raw` | `live`: 302 → `https://openvibe.media/p/:slug/raw`; `community`: the text itself |
 | `GET /p/:slug/screenshot` | `live`: 302 → Media's `/p/:slug/screenshot`; `community`: 302 → the stored image URL |
 | `GET /p/:slug/download` | The text as an attachment (`slug.ext`); screenshots bounce to the image |
@@ -220,7 +221,17 @@ Who may do what:
   given.
 - **Locked** threads can be read but take no comments or votes (moderators still may);
   **hidden** threads are 404 for everyone but moderators.
-- Paste comments stay in `paste_comments` behind `/api/pastes/:slug/comments` for now.
+- **Paste comments** are the paste's typed thread (`community`/`paste`/`<slug>`): the paste page
+  (`/p/:slug` shows it newest first, `?sort=old` and `?after=<last comment id>` as links, `#comment-<id>`
+  anchors; `POST /p/:slug/comments`, signed in, the no-JS form; none on burn-after-read pastes), `/api/pastes/:slug/comments` (GET, POST and
+  DELETE keep their old shapes and rules: anonymous comments with a name, the author, the paste's
+  owner or staff delete; Live's adapter calls them as the person) and `/api/v1/comments` all read and
+  write that one thread. A paste thread follows the paste: private ones are their owner's and staff's
+  only, deleted and burned ones nobody's (404 on every call, by access id too, so a paste made private
+  later takes its comments with it); unlisted ones are open to whoever has the link. Migration
+  `0004_paste_comments_to_threads.sql` copied the old `paste_comments` rows onto the threads (ledger
+  `legacy_id_map`, `community`/`paste_comment` → `comment`); nothing writes `paste_comments` any more and
+  it stays, read-only, for one release.
 - Comments carry `edited_at` (null until the author edits) and `can_edit` / `can_delete` for the
   viewer.
 
@@ -735,7 +746,7 @@ server/
   pastes/proxy.js     (removed: the /api/pastes proxy to Live is gone)
   pastes/api.js       native /api/pastes/*
   pastes/service.js   paste rules: visibility, limits, burn-after-read, views, shapes
-  pastes/store.js     pure SQL over pastes / versions / likes / comments / projections
+  pastes/store.js     pure SQL over pastes / versions / likes / projections (comments: comments/store.js)
   pastes/source.js    where pages read pastes from (the store)
   pastes/catalog.js   recent public pastes: trending, related, language filter
   comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments),
@@ -771,8 +782,8 @@ docs/discord-relay.md  the Discord relay: how it works, owner steps, staff API, 
 
 Spaces per streamer, game and project (with membership), the Discord relay's production round
 trip (owner steps in [docs/discord-relay.md](docs/discord-relay.md)), visibility changes for
-comment threads arriving through Events, and moving paste comments onto the typed comment
-threads. [Submissions](#submissions) are here: send yours at [/submissions](https://openvibe.community/submissions).
+comment threads arriving through Events, and dropping the read-only `paste_comments` table a
+release after paste comments moved onto the typed comment threads. [Submissions](#submissions) are here: send yours at [/submissions](https://openvibe.community/submissions).
 
 ## Related services
 

@@ -85,8 +85,11 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
         }
         // Pastes: gone, unless someone else commented.
         if (await hasTable(db, 'pastes')) {
-            for (const p of await db.prepare(`SELECT id FROM pastes WHERE owner_subject IN ${S}`).all(...subjects)) {
-                const others = await db.prepare(`SELECT 1 FROM paste_comments WHERE paste_id = ? AND (author_subject IS NULL OR author_subject NOT IN ${S}) LIMIT 1`).get(p.id, ...subjects);
+            for (const p of await db.prepare(`SELECT id, slug FROM pastes WHERE owner_subject IN ${S}`).all(...subjects)) {
+                // Comments are on the paste's typed thread; paste_comments still holds the rows from before migration 0004.
+                const others = await db.prepare(`SELECT 1 FROM paste_comments WHERE paste_id = ? AND (author_subject IS NULL OR author_subject NOT IN ${S}) LIMIT 1`).get(p.id, ...subjects)
+                    || (await hasTable(db, 'comments') && await db.prepare(`SELECT 1 FROM comments c JOIN comment_threads t ON t.id = c.thread_id
+                        WHERE t.ref_service = 'community' AND t.ref_type = 'paste' AND t.ref_id = ? AND (c.author_subject IS NULL OR c.author_subject NOT IN ${S}) LIMIT 1`).get(p.slug, ...subjects));
                 if (others) {
                     await db.prepare(`UPDATE pastes SET owner_subject = NULL, title = ?, content = '', screenshot_url = NULL, media_ref = NULL, stream_ref = NULL, metadata = NULL,
                                 ai_summary = NULL, ai_tags = NULL, deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE id = ?`).run(TOMBSTONE, now, now, p.id);

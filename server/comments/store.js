@@ -132,4 +132,15 @@ async function listReplies(db, parentId, { after = null, limit = 50 } = {}) {
     return { rows, hasMore };
 }
 
-module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, editComment, softDeleteComment, listTopLevel, listReplies };
+/**
+ * Top-level comments newest first by offset, each with all its replies (oldest first); deleted ones left
+ * out, with their replies. The paste API's list (pastes/service.js keeps its old response shape).
+ */
+async function listNewest(db, threadId, { limit = 50, offset = 0 } = {}) {
+    const top = await db.prepare('SELECT * FROM comments WHERE thread_id = ? AND parent_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?').all(threadId, limit, offset);
+    const replies = db.prepare('SELECT * FROM comments WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id ASC');
+    for (const c of top) { c.replies = await replies.all(c.id); c.reply_count = c.replies.length; }
+    return top;
+}
+
+module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };
