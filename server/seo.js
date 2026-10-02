@@ -8,6 +8,7 @@ const config = require('./config');
 const catalog = require('./pastes/catalog');
 const { escapeHtml } = require('./render/highlight');
 const { abs, SITE_NAME, DEFAULT_DESCRIPTION } = require('./render/layout');
+const cache = require('openvibe-shared/cache-policy');
 
 const SITEMAP_TTL_MS = 60 * 60 * 1000;
 
@@ -186,7 +187,7 @@ async function sitemapHandler(_req, res) {
         try { _sitemap = await buildSitemap(); _sitemapAt = Date.now(); }
         catch (e) { console.warn('[SEO] sitemap build failed:', e.message); if (!_sitemap) return res.status(503).end(); }
     }
-    res.type('application/xml').set('Cache-Control', 'public, max-age=900').send(_sitemap);
+    res.type('application/xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 900 })).send(_sitemap);
 }
 
 // ── RSS feed of the latest pastes ────────────────────────────
@@ -215,7 +216,7 @@ ${items.join('\n')}
   </channel>
 </rss>
 `;
-    res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(xml);
+    res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(xml);
 }
 
 // ── RSS feeds of the latest threads (/s/feed.xml, /s/:space/feed.xml) ──

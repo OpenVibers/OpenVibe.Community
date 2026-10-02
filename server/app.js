@@ -62,6 +62,7 @@ const { createSubmissionPages } = require('./submissions/routes');
 const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
 const { createIndexNow } = require('openvibe-shared/indexnow');
+const cache = require('openvibe-shared/cache-policy');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -250,15 +251,13 @@ async function createApp(opts = {}) {
         setHeaders(res, filePath) {
             const rel = path.relative(PUBLIC_DIR, filePath).split(path.sep).join('/');
             const v = res.req && res.req.query && res.req.query.v;
-            if (v && v === assetVersion(rel)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            else if (/\.(svg|png|ico|webmanifest)$/.test(rel)) res.setHeader('Cache-Control', 'public, max-age=86400');
-            else res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Cache-Control', cache.assetHeaders(rel, { hashed: !!v && v === assetVersion(rel) }));
         },
     }));
 
     // ── Machine endpoints ────────────────────────────────────
-    app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(seo.robotsTxt()));
-    app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(seo.llmsTxt()));
+    app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(seo.robotsTxt()));
+    app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(seo.llmsTxt()));
     app.get('/sitemap.xml', seo.sitemapHandler);
     app.get('/feed.xml', wrap(seo.feedHandler));
     // GET /<key>.txt — the IndexNow key file (only when a key is configured; it serves itself).
@@ -324,7 +323,7 @@ async function createApp(opts = {}) {
         try {
             const out = await app.locals.pastes.raw(req.viewer, req.params.slug, ctxOf(req));
             if (out.redirect) return res.redirect(302, out.redirect);
-            res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', 'private, no-store');
+            res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', cache.htmlHeaders({ private: true }));
             res.type('text/plain; charset=utf-8').send(out.content);
         } catch (err) {
             if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');

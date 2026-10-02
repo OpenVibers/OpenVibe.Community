@@ -51,7 +51,7 @@ const { boot, check, done } = require('./helpers/app');
         const hashed = await t.get(`/css/community.css?v=${m[1]}`);
         assert.strictEqual(hashed.headers.get('cache-control'), 'public, max-age=31536000, immutable');
         const plain = await t.get('/css/community.css');
-        assert.strictEqual(plain.headers.get('cache-control'), 'no-cache');
+        assert.strictEqual(plain.headers.get('cache-control'), 'public, max-age=300, stale-while-revalidate=86400');
         const fav = await t.get('/favicon.svg');
         assert.strictEqual(fav.status, 200);
         const og = await t.get('/og-default.png');
