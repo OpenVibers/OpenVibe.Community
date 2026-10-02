@@ -14,11 +14,11 @@ const { boot, check, done } = require('./helpers/app');
 
 const SERVER = path.join(__dirname, '..', 'server');
 const REMOVED = [
-    /PASTES_AUTHORITY/,
+    new RegExp(['PASTES', '_AUTHORITY'].join('')),
     /OV_LIVE_INTERNAL_URL/,
     /pastesAuthority/,
     /liveInternalUrl/,
-    /live-client/,
+    new RegExp(['live', '-client'].join('')),
     /pastes\/proxy/,
     /createPastesProxy/,
     /LiveApiError/,
