@@ -17,6 +17,8 @@
  *   GET /s …            spaces, threads, posts (forum/routes.js)    POST /release-metrics (open tabs' update reports)
  *   GET /pulse          the network's public activity
  *   GET|POST /c/:accessId   one comment thread's own page (comments/routes.js)
+ *   GET|POST /submissions …  submissions, their pages and the review queue (submissions/routes.js)
+ *                                      /api/v1/submissions/*   submissions (submissions/api.js)
  *
  * Comments, the forum, Pulse and the relay live in Community's database, alongside the pastes
  * Community itself is the only authority for: the native API (pastes/api.js), pages, raw text
@@ -54,6 +56,9 @@ const { createDiscordGateway } = require('./relay/discord-gateway');
 const { createDiscordInbound } = require('./relay/inbound');
 const { createRelayApi } = require('./relay/api');
 const { createActorLimits } = require('./actor-limits');
+const { createSubmissionService } = require('./submissions/service');
+const { createSubmissionsApi } = require('./submissions/api');
+const { createSubmissionPages } = require('./submissions/routes');
 const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
 const { createIndexNow } = require('openvibe-shared/indexnow');
@@ -156,8 +161,10 @@ async function createApp(opts = {}) {
     const indexnow = opts.indexnow || createIndexNow({ host: config.baseUrl, key: config.indexnow.key, ...(opts.fetchImpl ? { fetch: opts.fetchImpl } : {}) });
     const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, chatRooms, limits: opts.forumLimits, config, indexnow });
     const comments = createCommentService({ db, network, limits: opts.commentLimits });
+    // Submissions (clips, art, ideas, reports for review): their own table, not tied to the forum.
+    const submissions = createSubmissionService({ db, network, pulse, indexnow, config, limits: opts.submissionLimits });
     seo.useForum(forum);
-    Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments, indexnow });
+    Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments, submissions, indexnow });
     if (opts.startRelay !== false) relay.start();
 
     // ── Pastes: Community's own store is the only authority ──
@@ -202,6 +209,8 @@ async function createApp(opts = {}) {
     // ── /api/pastes — the native paste API ───────────────────
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
     app.use('/api/pastes', require('./pastes/api').createPastesApi({ service: app.locals.pastes, viewers, anonWriteLimiter, limits }));
+    // ── /api/v1/submissions — clips, art, ideas and reports for community review ──
+    app.use('/api/v1/submissions', v1.cors(config.apiCorsOrigins), createSubmissionsApi({ submissions, viewers, limits }));
 
     // ── /api/v1: comments, forum, Pulse, relay admin ─────────
     // Opening a thread writes a row: browsers get 300 resolves per 10 minutes per address.
@@ -385,6 +394,7 @@ async function createApp(opts = {}) {
     // ── Forum and Pulse pages ────────────────────────────────
     app.use(createForumRoutes({ forum, viewers, config }));
     app.use(createCommentPages({ comments, viewers, config }));
+    app.use(createSubmissionPages({ submissions, viewers, config }));
     app.get('/pulse', viewers.middleware({ services: false }), wrap(async (req, res) => {
         const origin = pulse.ORIGINS.includes(req.query.origin) ? req.query.origin : '';
         let out;

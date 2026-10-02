@@ -15,7 +15,7 @@ const { escapeHtml } = require('./highlight');
 
 const SITE_NAME = 'OpenVibe.Community';
 const NETWORK_URL = 'https://openvibe.network';
-const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, spaces and threads, and soon submissions. Free speech within the rules.';
+const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, spaces and threads, and submissions. Free speech within the rules.';
 const DEFAULT_OG_IMAGE = `${config.baseUrl}/og-default.png`;
 
 // Content-hashed asset URLs so browsers and nginx can cache them for a year and still pick up

@@ -7,7 +7,8 @@
 The community hub of the OpenVibe network: community-run, open source, free speech within
 the rules. It is the home of **pastes** (code, text and screenshots with a link), the
 **forum** (spaces, threads and posts), the **comment threads** every other OpenVibe product
-embeds, and **Pulse**, the network's public activity. Submissions follow.
+embeds, **Pulse**, the network's public activity, and [**submissions**](#submissions) — clips, art,
+ideas and reports people send in for community review.
 
 It is a small Node/Express app (CommonJS, no framework, one PostgreSQL database) that
 server-renders every page — crawlers and no-JS readers get the whole thing — and adds a
@@ -18,7 +19,7 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - pastes (the only authority since 2026-09-22), their versions, likes and
   comments
 - the typed comment threads every other product embeds, the forum (spaces, threads, posts, votes,
-  categories), Pulse (the network's public activity) and the Discord relay
+  categories), Pulse (the network's public activity), submissions and the Discord relay
 - the `community.*` events, Search documents for public threads, and the `community.profile` user module
 - one PostgreSQL database (`ov_community` on the host's data role, ADR-035; schema in [migrations/](migrations/);
   embedded PGlite in development), with Valkey for the per-actor limit counters
@@ -129,6 +130,10 @@ Pages (server-rendered HTML):
 | `GET /s/:space/new`, `POST /s/:space/new` | Start a thread (signed in) |
 | `POST /s/:space/t/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete) |
 | `GET /pulse` | Public activity across the network — `?origin=user\|ai\|system`, `?after=` |
+| `GET /submissions`, `POST /submissions` | Accepted submissions — `?kind=clip\|art\|idea\|report`, `?mine=1` (your own, any status), `?after=`; signed-in people submit with the no-JS form |
+| `GET /submissions/:slug` | One submission — accepted: anyone (canonical, Open Graph); pending, rejected, withdrawn: its author and moderators only (`noindex`), 404 for anyone else |
+| `POST /submissions/:slug/withdraw\|review` | The no-JS forms: the author withdraws; a moderator accepts or rejects with a note |
+| `GET /submissions/review` | The moderators' queue (pending, newest first) |
 | `GET /c/:accessId`, `POST /c/:accessId` | One comment thread's own page — the same thread the owner product embeds (e.g. a Live VOD), newest first, `?after=` for older; signed-in people comment with the no-JS form. Opens only by the unguessable access id, `noindex` |
 
 API and machine endpoints:
@@ -139,6 +144,7 @@ API and machine endpoints:
 | `/api/v1/comments/*` | Typed comment threads — see [Comments API](#comments-api) |
 | `/api/v1/spaces/*`, `/api/v1/posts/*` | The forum — see [Forum](#forum-spaces-threads-posts) |
 | `/api/v1/pulse/*` | Pulse — see [Pulse](#pulse) |
+| `/api/v1/submissions/*` | Submissions — see [Submissions](#submissions) |
 | `/api/v1/relay/*` | Discord relay administration (staff) — see [Discord relay](#discord-relay) |
 | `GET /api/health`, `GET /api/ready` | Liveness / readiness (see below) |
 | `GET /metrics` | Prometheus text for direct loopback callers only (404 through nginx) |
@@ -460,9 +466,9 @@ A read model of public activity across the network, with provenance (`pulse_item
 per source service/type/id).
 
 - **Community's own**: new public pastes written by a person (not burn-after-read, not NSFW),
-  new threads and replies in public spaces — recorded at write time, removed when deleted or
-  made non-public, and re-checked against their source on every read, so private or unlisted
-  things never show.
+  new threads and replies in public spaces, and submissions once accepted — recorded at write time,
+  removed when deleted, made non-public, withdrawn or rejected, and re-checked against their source
+  on every read, so private, unlisted or unreviewed things never show.
 - **Other services** publish with `community.pulse.write`:
   `POST /api/v1/pulse/items { ref, title, url, origin?, occurred_at?, visibility? }` — the
   ref's `service` must be the caller's own (`svc:live` → `live`), `visibility` other than
@@ -478,6 +484,40 @@ per source service/type/id).
 - **Reading**: `GET /api/v1/pulse?origin=user|ai|system&after=<cursor>&limit=` (newest first,
   keyset cursor), and the `/pulse` page. AI items carry `label: 'AI'` and never an actor —
   they are never attributed to a person (roadmap §33); system items name no one either.
+
+## Submissions
+
+Clips, art, ideas and reports people send in for community review (`submissions`, migration
+`0003_submissions.sql`; `server/submissions/`). They have a table of their own and nothing to do with
+the forum, so they stay here when spaces move to a service of their own.
+
+- **Who submits**: a signed-in person, from the browser (`ov_token` cookie, or `Authorization: Bearer`
+  from another OpenVibe site through CORS). The author is the JWT's `subject_id` (`usr_…`) — never a
+  body field. Signed out: 401 `auth.required` (the form sends you to sign in). Services cannot submit:
+  openvibe-contracts has no submission capability yet (403 `capability.denied`). At most 10 a day per
+  person (429 `submission.daily_limit`).
+- **What**: `kind` (`clip`, `art`, `idea`, `report`), `title` (200), `body` (Markdown, 10 000), an http(s)
+  `url` and/or a `media_ref` (an OpenVibe.Media object, `med_…`: the bytes stay in Media). A clip or art
+  needs a link or a Media object.
+- **Review**: new submissions are `pending`, seen by their author and by discussion moderators
+  (site staff, or a service holding `community.comment.moderate` — `discussionModerator`) and 404 for
+  everyone else. A moderator accepts or rejects (also a decision already made) with an optional note
+  the author sees; the author withdraws while pending or accepted. Accepted ones are public pages
+  (canonical, Open Graph, IndexNow), listed at `/submissions` and recorded in [Pulse](#pulse) as the
+  author's (origin `user`); pending, rejected and withdrawn ones never are.
+- **Pages** work without JavaScript: filters and paging are links, submit, withdraw, accept and
+  reject are plain form posts (SameSite=Lax cookie; a foreign `Origin` is refused).
+
+| Route | Who | What |
+| --- | --- | --- |
+| `GET /api/v1/submissions?kind=&status=&mine=1&after=&limit=` | anyone | newest first, keyset cursor: accepted ones; `mine=1` your own, any status; moderators any `status` (others asking for one get 403 `submission.moderators_only`) |
+| `POST /api/v1/submissions { kind, title, body?, url?, media_ref? }` | a signed-in person | 201 `{ submission }`, `pending` |
+| `GET /api/v1/submissions/:slug` | see above | `{ submission }` — `reviewer` and `review_note` only for the author and moderators |
+| `POST /api/v1/submissions/:slug/withdraw` | the author | `withdrawn` (409 `submission.not_withdrawable` once rejected or withdrawn) |
+| `POST /api/v1/submissions/:slug/review { decision: accept\|reject, note? }` | moderators | `accepted` / `rejected` (409 `submission.withdrawn`) |
+
+Errors are problem+json. Account deletion erases a person's submissions (and their Pulse items) and
+unsigns the decisions they made; the export has `submissions.json`; a subject merge moves both.
 
 ## Platform blocks
 
@@ -624,7 +664,8 @@ every read path and nobody acts on someone else's ids (`security-private`, `secu
 secrets, open redirects (`security-ssrf`, `security-secrets`, `open-redirect`); Pulse and the Events
 consumer (`pulse`, `pulse-consumer`, `events`); revocation, blocks, account export and deletion
 (`revocation`, `blocks`, `account-data`); the Discord relay (`relay*`); per-actor limits
-(`actor-limits`); graceful shutdown (`shutdown`); and the previous release against this one (`n-1`).
+(`actor-limits`); submissions from the form to review, the page and Pulse (`submissions`); graceful
+shutdown (`shutdown`); and the previous release against this one (`n-1`).
 
 ## Security
 
@@ -702,6 +743,7 @@ server/
   forum/              spaces/threads/posts: store, service, api (/api/v1/spaces, /posts), routes (pages)
   vip/                OpenVibe.VIP gate for members-only spaces/threads (index.js) + the vendored client
   pulse/              Pulse read model: store, service (hooks + ingest), api (/api/v1/pulse)
+  submissions/        clips, art, ideas, reports for review: store, service, api (/api/v1/submissions), routes (pages)
   relay/              Discord relay: discord.js (queue, sender, backoff, message map), events-worker.js (creates
                       from Events), discord-gateway.js + inbound.js (replies from Discord), api (/api/v1/relay)
   http/v1.js          /api/v1 helpers: problem errors, capability guards, cursors, CORS
@@ -713,6 +755,7 @@ server/
   render/pages.js     home / browse / paste / new / my / error templates
   render/forum.js     spaces / threads / thread / new-thread / members-only teaser templates
   render/pulse.js     the /pulse page
+  render/submissions.js  the submissions list, a submission's page, the review queue
   render/comments.js  a comment thread's own page
   render/markdown.js  the safe Markdown subset for posts
   render/highlight.js highlight.js wrapper, language list, download extensions
@@ -728,8 +771,8 @@ docs/discord-relay.md  the Discord relay: how it works, owner steps, staff API, 
 
 Spaces per streamer, game and project (with membership), the Discord relay's production round
 trip (owner steps in [docs/discord-relay.md](docs/discord-relay.md)), visibility changes for
-comment threads arriving through Events, moving paste comments onto the typed comment
-threads, and submissions (clips, art, ideas, reports for community review).
+comment threads arriving through Events, and moving paste comments onto the typed comment
+threads. [Submissions](#submissions) are here: send yours at [/submissions](https://openvibe.community/submissions).
 
 ## Related services
 
