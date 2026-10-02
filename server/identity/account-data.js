@@ -36,7 +36,7 @@ const EXPORTS = [
     ['threads.json', 'threads', 'author_subject'], ['posts.json', 'posts', 'author_subject'], ['attachments.json', 'attachments', 'owner_subject'],
     ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'], ['thread_votes.json', 'thread_votes', 'subject_id'],
     ['post_reactions.json', 'post_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
-    ['activity.json', 'pulse_items', 'actor_subject'],
+    ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
 ];
 
 async function exportPart(db, subject) {
@@ -125,6 +125,14 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             if (await hasColumn(db, 'threads', 'reply_count')) await db.prepare("UPDATE threads SET reply_count = (SELECT COUNT(*) FROM posts p WHERE p.thread_id = threads.id AND p.is_opening = 0)").run();
         }
         if (await hasTable(db, 'attachments')) add(erased, 'attachments', (await db.prepare(`DELETE FROM attachments WHERE owner_subject IN ${S}`).run(...subjects)).changes);
+        // Their submissions go (Pulse items with them, below); a decision they made stays, unsigned.
+        if (await hasTable(db, 'submissions')) {
+            for (const r of await db.prepare(`SELECT slug FROM submissions WHERE author_subject IN ${S}`).all(...subjects)) {
+                await db.prepare("DELETE FROM pulse_items WHERE source_service = 'community' AND source_type = 'submission' AND source_id = ?").run(r.slug);
+            }
+            add(erased, 'submissions', (await db.prepare(`DELETE FROM submissions WHERE author_subject IN ${S}`).run(...subjects)).changes);
+            await db.prepare(`UPDATE submissions SET reviewer_subject = NULL WHERE reviewer_subject IN ${S}`).run(...subjects);
+        }
         for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
             ['subject_projection', `subject_id IN ${S}`, 'profile'], ['profile_module_pushes', `subject_id IN ${S}`, 'profile'],
             ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks']]) {

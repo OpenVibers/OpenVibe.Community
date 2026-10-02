@@ -6,7 +6,7 @@
  * Sources:
  *   - Community's own public activity, recorded at write time (the hooks below): new public
  *     pastes written by a person (not burn-after-read, not NSFW), new threads and replies in
- *     public spaces. Deletes and visibility changes take items out again, and listItems()
+ *     public spaces, and submissions when they are accepted. Deletes and visibility changes take items out again, and listItems()
  *     re-checks Community's own items at read time as well.
  *   - Other services, through POST /api/v1/pulse/items with community.pulse.write: an EntityRef
  *     of their own (ref.service must be the calling service), title, url, origin, occurred_at.
@@ -89,6 +89,11 @@ function createPulse({ db, network = null, config = {} } = {}) {
                 actor: post.author_subject, origin: post.origin === 'ai' ? 'ai' : 'user', at: post.created_at,
             });
         },
+        async submissionAccepted(s) {
+            if (!s || s.status !== 'accepted') return;
+            await recordLocal('submission', s.slug, { title: s.title, path: `/submissions/${encodeURIComponent(s.slug)}`, actor: s.author_subject, origin: 'user', at: s.reviewed_at });
+        },
+        async submissionGone(slug) { await forgetLocal('submission', slug); },
         async threadGone(id) { await forgetLocal('thread', id); },
         async postGone(id) { await forgetLocal('post', id); },
 

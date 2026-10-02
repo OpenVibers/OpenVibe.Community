@@ -14,6 +14,7 @@ const MERGE_RE = /^mrg_[0-9A-HJKMNP-TV-Z]{26}$/;
 const AUTHORSHIP = [
     ['pastes', 'owner_subject'], ['paste_comments', 'author_subject'], ['comments', 'author_subject'], ['threads', 'author_subject'],
     ['posts', 'author_subject'], ['attachments', 'owner_subject'], ['pulse_items', 'actor_subject'],
+    ['submissions', 'author_subject'], ['submissions', 'reviewer_subject'],
 ];
 // Per person per item: [table, item column, recompute(db, itemId)]
 const PER_ITEM = [
