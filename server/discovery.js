@@ -7,6 +7,7 @@
  */
 const config = require('./config');
 const catalog = require('./pastes/catalog');
+const source = require('./pastes/source');
 const { abs } = require('./render/layout');
 const { isoDate, clean } = require('./render/jsonld');
 
@@ -45,12 +46,13 @@ async function llmsFullSections() {
     if (_forum) {
         const threads = await _forum.recentPublic({ limit: 50 });
         sections.push({ title: 'Latest threads', pages: threads.map((t) => ({
-            title: `${t.title} (${t.space_name})`, url: abs(`/s/${t.space_slug}/t/${t.slug}`), text: markdownToText(t.opening, 4000),
+            title: `${t.title} (${t.space_name})`, url: abs(`/s/${t.space_slug}/t/${t.slug}`), text: markdownToText(t.opening, Infinity),
         })) });
     }
     const pastes = (await catalog.latest(30)).filter((p) => !Number(p.is_nsfw) && !Number(p.burn_after_read) && p.type !== 'screenshot');
-    sections.push({ title: 'Latest pastes', pages: pastes.map((p) => ({
-        title: p.title || 'Untitled', url: abs(`/p/${p.slug}`), text: String(p.content || '').slice(0, 4000),
+    const full = await Promise.all(pastes.map((p) => source.publicForDiscovery(p.slug)));
+    sections.push({ title: 'Latest pastes', pages: full.filter(Boolean).map((p) => ({
+        title: p.title || 'Untitled', url: abs(`/p/${p.slug}`), text: String(p.content || ''),
     })) });
     return sections;
 }

@@ -39,6 +39,30 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(full.headers.get('cache-control'), cache.htmlHeaders({ maxAge: 3600 }));
         assert.ok(full.text.includes('### Hello world in JavaScript\n\nURL: https://openvibe.community/p/amber-fox-42\n\nconst x = 1;'));
         assert.ok(!full.text.includes('dark-owl-55') && !full.text.includes('grim-vale-61') && !full.text.includes('secret notes'));
+
+        // The catalog keeps a short preview for a few seconds. Discovery must read the
+        // current full row and omit it if its visibility changes after the listing.
+        const long = 'a'.repeat(4200) + ' END_OF_PASTE';
+        const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views;
+        try {
+            await t.db.prepare('UPDATE pastes SET content = ? WHERE slug = ?').run(long, 'amber-fox-42');
+            const expanded = await t.get('/llms-full.txt');
+            assert.ok(expanded.text.includes(long), 'the full paste survives the preview and 4,000-character limits');
+            assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views, before);
+
+            await t.db.prepare("UPDATE pastes SET visibility = 'private' WHERE slug = ?").run('amber-fox-42');
+            assert.ok(!(await t.get('/llms-full.txt')).text.includes('amber-fox-42'), 'cached public preview cannot expose a private paste');
+
+            await t.db.prepare("UPDATE pastes SET visibility = 'public', burn_after_read = 1 WHERE slug = ?").run('amber-fox-42');
+            assert.ok(!(await t.get('/llms-full.txt')).text.includes('amber-fox-42'), 'a newly burning paste is omitted without a view');
+            assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views, before);
+
+            await t.db.prepare('UPDATE pastes SET burn_after_read = 0, is_nsfw = 1 WHERE slug = ?').run('amber-fox-42');
+            assert.ok(!(await t.get('/llms-full.txt')).text.includes('amber-fox-42'), 'a newly NSFW paste is omitted');
+        } finally {
+            await t.db.prepare('UPDATE pastes SET content = ?, visibility = ?, burn_after_read = 0, is_nsfw = 0 WHERE slug = ?')
+                .run('const x = 1;\n', 'public', 'amber-fox-42');
+        }
     });
 
     await check('sitemap.xml lists home, /pastes and every recent public paste — never unlisted/private', async () => {

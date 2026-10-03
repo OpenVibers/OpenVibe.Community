@@ -9,6 +9,7 @@ process.env.OV_LIVE_URL = 'https://openvibe.live';
 const assert = require('assert');
 const seo = require('openvibe-shared/seo');
 const discovery = require('../server/discovery');
+const catalog = require('../server/pastes/catalog');
 const ld = require('../server/render/jsonld');
 const { renderPage } = require('../server/render/layout');
 const { check, done } = require('./helpers/app');
@@ -28,6 +29,23 @@ const { check, done } = require('./helpers/app');
         assert.ok(txt.includes('- [Latest threads (RSS)](https://openvibe.community/s/feed.xml)'));
         assert.ok(txt.includes('- [Full text for language models](https://openvibe.community/llms-full.txt)'));
         assert.ok(txt.includes('labelled as AI-generated'));
+    });
+
+    await check('llms-full.txt keeps opening posts past 4,000 characters', async () => {
+        const latest = catalog.latest;
+        catalog.latest = async () => [];
+        discovery.useForum({ recentPublic: async () => [{
+            title: 'Long thread', space_name: 'General', space_slug: 'general', slug: 'long-thread',
+            opening: 'First ' + 'x'.repeat(4100) + ' THREAD_END',
+        }] });
+        try {
+            const sections = await discovery.llmsFullSections();
+            assert.ok(sections[1].pages[0].text.endsWith('THREAD_END'));
+            assert.ok(sections[1].pages[0].text.length > 4000);
+        } finally {
+            discovery.useForum(null);
+            catalog.latest = latest;
+        }
     });
 
     await check('thread feed items use the 2.5.0 feedXml shape and keep the thread link as guid', () => {
