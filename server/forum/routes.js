@@ -25,6 +25,7 @@ const pages = require('../render/pages');
 const forumPages = require('../render/forum');
 const boardPages = require('../render/board');
 const { ApiError } = require('../http/v1');
+const cache = require('openvibe-shared/cache-policy');
 
 function createForumRoutes({ forum, viewers, config }) {
     const router = express.Router();
@@ -104,13 +105,13 @@ function createForumRoutes({ forum, viewers, config }) {
     }));
 
     router.get('/s/feed.xml', async (_req, res) => {
-        res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(seo.threadFeed({ threads: await forum.recentPublic({ limit: 30 }) }));
+        res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.threadFeed({ threads: await forum.recentPublic({ limit: 30 }) }));
     });
 
     router.get('/s/:space/feed.xml', async (req, res) => {
         const space = (await forum.publicSpaces()).find((s) => s.slug === req.params.space);
         if (!space) return res.status(404).type('text/plain').send('Not found');
-        res.type('application/rss+xml').set('Cache-Control', 'public, max-age=300').send(seo.threadFeed({ space, threads: await forum.recentPublic({ limit: 30, space: space.slug }) }));
+        res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.threadFeed({ space, threads: await forum.recentPublic({ limit: 30, space: space.slug }) }));
     });
 
     router.get('/s/:space', withViewer, wrap(async (req, res, next) => {
