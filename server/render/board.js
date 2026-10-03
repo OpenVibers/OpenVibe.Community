@@ -8,7 +8,7 @@
  * (subreddit-like cards, votes, hot/new/top); both share threads, posts, ratings, images and pastes.
  * Complete without JavaScript: every action is a link or a form post.
  */
-const seo = require('../seo');
+const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
@@ -25,7 +25,7 @@ const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 function boardRow(sp) {
     const icon = sp.style === 'forum' ? 'fa-comments' : 'fa-fire';
     const last = sp.last_post
-        ? `<a href="${esc(sp.last_post.thread.url)}#post-${Number(sp.last_post.id)}">${esc(seo.clean(sp.last_post.thread.title, 48))}</a><span class="small muted">by ${esc(sp.last_post.author ? (sp.last_post.author.display_name || sp.last_post.author.username || 'someone') : 'someone')} · ${timeTag(sp.last_post.created_at)}</span>`
+        ? `<a href="${esc(sp.last_post.thread.url)}#post-${Number(sp.last_post.id)}">${esc(ld.clean(sp.last_post.thread.title, 48))}</a><span class="small muted">by ${esc(sp.last_post.author ? (sp.last_post.author.display_name || sp.last_post.author.username || 'someone') : 'someone')} · ${timeTag(sp.last_post.created_at)}</span>`
         : '<span class="muted small">No posts yet</span>';
     const children = (sp.children || []).length ? `<p class="small board-children">Child boards: ${sp.children.map((c) => `<a href="/s/${esc(c.slug)}">${esc(c.name)}</a>`).join(', ')}</p>` : '';
     return `<tr>
@@ -66,7 +66,7 @@ ${user ? '' : '<p class="muted small">Sign in with your OpenVibe account to post
         canonicalPath: '/s',
         active: 'spaces',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }])],
         body,
     });
 }
@@ -144,7 +144,7 @@ ${viewer.can_moderate ? settingsForm(space, groups) : ''}`;
         robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
         body,
     });
 }
@@ -202,7 +202,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
     const pagerHtml = f.pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Previous', 'Next']);
     const body = `
 <article class="thread forum-topic">
-  ${crumbs([...trail(space), [space.name, `/s/${space.slug}`], [seo.clean(thread.title, 60), base]])}
+  ${crumbs([...trail(space), [space.name, `/s/${space.slug}`], [ld.clean(thread.title, 60), base]])}
   <header class="thread-head">
     ${space.votes === false ? '' : f.voteForm(base, thread, viewer)}
     <div>
@@ -218,7 +218,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
   ${pagerHtml}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
-    const description = gated ? `A topic for VIP members in ${space.name} on OpenVibe.Community.` : (seo.clean(opening ? markdownToText(opening.body_markdown, 200) : thread.title, 200) || thread.title);
+    const description = gated ? `A topic for VIP members in ${space.name} on OpenVibe.Community.` : (ld.clean(opening ? markdownToText(opening.body_markdown, 200) : thread.title, 200) || thread.title);
     return renderPage({
         title: `${thread.title}${page > 1 ? ` (page ${page})` : ''}`,
         description,
@@ -233,8 +233,8 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         footerVariant: 'compact',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [
-            ...(gated ? [] : [seo.threadLd({ space, thread, posts, opening, description })]),
-            seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
+            ...(gated ? [] : [ld.threadLd({ space, thread, posts, opening, description })]),
+            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
         ],
         body,
     });

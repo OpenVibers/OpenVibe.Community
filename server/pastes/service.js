@@ -344,6 +344,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { pastes: await shapeMany(rows, v, { preview: true }), total, username: (proj && proj.username) || String(username) };
         },
 
+        /** A fresh public text paste for discovery; reading it has no view or burn side effects. */
+        async publicForDiscovery(slug) {
+            const p = await store.getBySlug(db, String(slug));
+            if (!p || p.visibility !== 'public' || p.type !== 'paste' || Number(p.is_nsfw) || Number(p.burn_after_read)) return null;
+            return { slug: p.slug, title: p.title, content: p.content };
+        },
+
         /** GET /api/pastes/:slug — counts a page view unless noView; burns a spent burn-after-read paste. */
         async get(v, slug, ctx = {}) {
             const p = await visible(v, slug);

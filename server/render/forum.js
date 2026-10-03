@@ -6,7 +6,7 @@
  * moderator buttons are plain form posts. Every user value is escaped; post bodies are the safe
  * Markdown renderer's output (render/markdown.js).
  */
-const seo = require('../seo');
+const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
@@ -73,7 +73,7 @@ ${list}`;
         canonicalPath: '/s',
         active: 'spaces',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }])],
         body,
     });
 }
@@ -144,7 +144,7 @@ ${footer}`;
         robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
         body,
     });
 }
@@ -253,7 +253,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
 
     const body = `
 <article class="thread">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(seo.clean(thread.title, 60))}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span></nav>
   <header class="thread-head">
     ${space.votes === false ? '' : voteForm(base, thread, viewer)}
     <div>
@@ -268,7 +268,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
   ${pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Earlier', 'Later'])}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
-    const description = gated ? `A thread for VIP members in ${space.name} on OpenVibe.Community.` : (seo.clean(opening ? markdownToText(opening.body_markdown, 200) : thread.title, 200) || thread.title);
+    const description = gated ? `A thread for VIP members in ${space.name} on OpenVibe.Community.` : (ld.clean(opening ? markdownToText(opening.body_markdown, 200) : thread.title, 200) || thread.title);
     return renderPage({
         title: `${thread.title}${page > 1 ? ` (page ${page})` : ''}`,
         description,
@@ -283,8 +283,8 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         footerVariant: 'compact',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [
-            ...(gated ? [] : [seo.threadLd({ space, thread, posts, opening, description })]),
-            seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
+            ...(gated ? [] : [ld.threadLd({ space, thread, posts, opening, description })]),
+            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
         ],
         body,
     });
@@ -336,7 +336,7 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
         : reason === 'vip_unavailable' || reason === 'entitlement_unknown'
             ? '<p class="muted">We could not confirm your membership just now. Try again in a moment.</p>'
             : '<p class="muted">Your account does not have an active membership for this.</p>';
-    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › ${thread ? `<a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(seo.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
+    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Spaces</a> › ${thread ? `<a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
     const body = `
 <header class="page-head">
   ${crumbs}

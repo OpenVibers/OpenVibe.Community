@@ -165,7 +165,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         const feed = await t.get('/s/feed.xml');
         assert.ok(!feed.text.includes('Members only chat'));
         assert.strictEqual((await t.get('/s/insiders/feed.xml')).status, 404);
-        require('../server/seo').resetCaches();
+        require('../server/discovery').resetCaches();
         const map = await t.get('/sitemap.xml');
         assert.ok(!map.text.includes('members-only-chat'));
     });
@@ -180,7 +180,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     });
 
     await check('sitemap, feeds and robots.txt include the forum', async () => {
-        require('../server/seo').resetCaches();
+        require('../server/discovery').resetCaches();
         const map = await t.get('/sitemap.xml');
         for (const loc of ['/s', '/s/general', '/pulse', url]) has(map.text, `<loc>https://openvibe.community${loc}</loc>`);
         const feed = await t.get('/s/feed.xml');
