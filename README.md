@@ -558,7 +558,7 @@ same shape as its `manifests/capabilities`):
 | `community.post.create` | active in contracts (v0.7.0) | forum writes |
 | `community.space.read` / `.manage`, `community.thread.read`, `community.vote.set`, `community.pulse.read` | active in contracts | spaces, threads, votes and Pulse reads by services and apps |
 
-This repository pins `openvibe-contracts` v0.76.0, which knows every id above, so they all go
+This repository pins `openvibe-contracts` v0.86.0, which knows every id above, so they all go
 through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
 the installed contracts do not know locally, with the library's own matching rule (the exact id
 or a `prefix.*` grant).

@@ -4,8 +4,13 @@
  *
  * alex owns a public paste, a private one, a screenshot, comments, a thread with a reply, a typed comment,
  * an uploaded image and a space (as its creator; spaces have no per-space moderators, so a space's owner
- * is what "moderator of X" means here: cora owns another). sam tries each of alex's ids as himself, and so
- * do first-party services forwarding for him (svc:live, svc:tools, each with the write grants they hold)
+ * is what "moderator of X" means here: cora owns another).
+ *
+ * TODO(T10 step 1): migrations/0005_space_moderators.sql adds per-space moderators; revisit the
+ * "no per-space moderators" assumption above (and this file's space expectations) when it lands.
+ *
+ * sam tries each of alex's ids as himself, and so do first-party services forwarding for him
+ * (svc:live, svc:tools, each with the write grants they hold)
  * and a developer app acting for him: editing, deleting, changing visibility, re-screenshotting
  * (censor), the AI write-back, bulk actions, reading edit history, managing comments (also through a
  * paste he owns), gating, pinning/locking, categories and statuses, space settings and chat rooms,
