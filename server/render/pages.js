@@ -170,7 +170,7 @@ const { url } = await res.json(); // "/p/<slug>"` },
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
     return renderPage({
         title: null,
-        description: 'The people of OpenVibe. A community-run, open source home for pastes — code, logs and screenshots with a link — spaces and threads, and submissions. Free speech within the rules.',
+        description: 'The people of OpenVibe. A community-run, open source home for pastes, spaces and threads. Free speech within the rules.',
         canonicalPath: '/',
         active: 'home',
         jsonLd: [seo.websiteLd()],
