@@ -9,7 +9,10 @@
  * service's capability for the route):
  *   - resolve: services with community.comment.write may resolve any ref; browsers (signed in or
  *     not) only refs of the types in BROWSER_REF_TYPES. Community's own refs must exist.
- *   - read: anyone, except hidden threads (moderators only; everyone else gets 404). Browsers
+ *   - read: anyone, except hidden threads (moderators only; everyone else gets 404) and threads of
+ *     Community pastes the viewer may not see (pastes/service.js's rule: a private paste is its
+ *     owner's and staff's only, a deleted or burned one nobody's — 404, checked on every call, so a
+ *     paste made private later takes its thread with it). Browsers
  *     address a thread only by its unguessable access_id (cth_…, what resolve hands them as
  *     `id`); the sequential id works for services only, so nobody can walk thread ids and learn
  *     the refs (unlisted paste slugs, private pages) and comments of entities they were not given.
@@ -128,24 +131,31 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
     }
 
     /** The thread, or 404 — hidden threads look missing to everyone but moderators. */
-    function visible(v, t) {
-        if (!t || (t.visibility === 'hidden' && !moderator(v))) fail(404, 'thread.not_found', 'Comment thread not found');
+    async function visible(v, t) {
+        if (!t || (t.visibility === 'hidden' && !moderator(v)) || !await entityVisible(v, t)) fail(404, 'thread.not_found', 'Comment thread not found');
         return t;
     }
-    const visibleThread = async (v, id) => visible(v, await threadById(v, id));
+    const visibleThread = async (v, id) => await visible(v, await threadById(v, id));
 
     async function visibleComment(v, id) {
         const c = /^\d{1,15}$/.test(String(id)) ? await store.getComment(db, Number(id)) : null;
         if (!c || c.deleted_at) fail(404, 'comment.not_found', 'Comment not found');
-        return { comment: c, thread: visible(v, await store.getThread(db, c.thread_id)) };
+        return { comment: c, thread: await visible(v, await store.getThread(db, c.thread_id)) };
     }
 
-    /** Community's own entities must exist (and be visible) before anyone opens a thread on them. */
-    async function checkCommunityRef(ref) {
+    /** The paste service's rule: a paste that is gone (deleted, burned) is nobody's; a private one its owner's and staff's. */
+    async function pasteVisibleTo(v, slug) {
+        const p = await pasteStore.getBySlug(db, String(slug));
+        return !!p && (p.visibility !== 'private' || !!(v && (v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject))));
+    }
+    /** Whether the viewer may see the entity a thread belongs to (only Community's pastes can be checked here). */
+    const entityVisible = async (v, t) => !(t.ref_service === 'community' && t.ref_type === 'paste') || await pasteVisibleTo(v, t.ref_id);
+
+    /** Community's own entities must exist (and be visible to the viewer) before anyone opens a thread on them. */
+    async function checkCommunityRef(ref, v) {
         if (ref.service !== 'community') return;
         if (ref.type === 'paste') {
-            const p = await pasteStore.getBySlug(db, ref.id);
-            if (!p || p.visibility === 'private') fail(404, 'ref.not_found', 'No such paste');
+            if (!await pasteVisibleTo(v, ref.id)) fail(404, 'ref.not_found', 'No such paste');
         } else if (ref.type === 'post') {
             const ok = /^\d{1,15}$/.test(ref.id) && await db.prepare(`SELECT 1 FROM posts p JOIN threads t ON t.id = p.thread_id JOIN spaces s ON s.id = t.space_id
                                                                 WHERE p.id = ? AND p.deleted_at IS NULL AND t.deleted_at IS NULL AND s.visibility = 'public'`).get(Number(ref.id));
@@ -189,11 +199,23 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
                 const types = BROWSER_REF_TYPES[ref.service];
                 if (!types || !types.includes(ref.type)) fail(403, 'ref.type_not_allowed', `Comments on ${ref.service}/${ref.type} can only be opened by that service`);
             }
-            await checkCommunityRef(ref);
+            await checkCommunityRef(ref, v);
             // Labels are display caches; only a service's word is taken for them.
             const label = v.kind === 'service' && ref.label ? String(ref.label).slice(0, 200) : null;
             const { thread, created } = await store.resolveThread(db, ref, { label, createdBy: v.subject || (v.kind === 'service' ? v.service : null) });
             return { thread: shapeThread(thread, v), created };
+        },
+
+        /**
+         * The thread of an entity as the entity's own page shows it (Community's paste page): get() found by
+         * ref, after the same checks as resolve; reading never opens a thread, so null while nobody has
+         * commented, and null for a hidden thread to everyone but moderators.
+         */
+        async forRef(v, ref, q = {}) {
+            await checkCommunityRef(ref, v);
+            const t = await store.getThreadByRef(db, ref);
+            if (!t || (t.visibility === 'hidden' && !moderator(v))) return null;
+            return await this.get(v, t.access_id, q);
         },
 
         /**

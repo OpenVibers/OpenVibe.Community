@@ -7,7 +7,7 @@
  */
 const config = require('../config');
 const ovServe = require('openvibe-shared/serve');
-const seo = require('../seo');
+const ld = require('./jsonld');
 const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
 const frame = require('openvibe-shared/frame');
 const showcase = require('openvibe-shared/showcase');
@@ -26,7 +26,7 @@ function mediaAbs(u) {
 function screenshotFallback(slug) { return `${config.mediaUrl}/p/${encodeURIComponent(slug)}/screenshot`; }
 
 function timeAgo(v) {
-    const iso = seo.isoDate(v);
+    const iso = ld.isoDate(v);
     if (!iso) return '';
     const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
     if (s < 60) return 'just now';
@@ -37,12 +37,12 @@ function timeAgo(v) {
     return `${Math.floor(s / (86400 * 365))}y ago`;
 }
 function fmtDate(v) {
-    const iso = seo.isoDate(v);
+    const iso = ld.isoDate(v);
     if (!iso) return '';
     return new Date(iso).toUTCString().replace(/:\d\d GMT$/, ' UTC');
 }
 function timeTag(v) {
-    const iso = seo.isoDate(v);
+    const iso = ld.isoDate(v);
     return iso ? `<time datetime="${esc(iso)}" title="${esc(fmtDate(v))}">${esc(timeAgo(v))}</time>` : '';
 }
 function num(n) { return Number(n || 0).toLocaleString('en-US'); }
@@ -170,10 +170,10 @@ const { url } = await res.json(); // "/p/<slug>"` },
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
     return renderPage({
         title: null,
-        description: 'The people of OpenVibe. A community-run, open source home for pastes — code, logs and screenshots with a link — spaces and threads, and submissions. Free speech within the rules.',
+        description: 'The people of OpenVibe. A community-run, open source home for pastes, spaces and threads. Free speech within the rules.',
         canonicalPath: '/',
         active: 'home',
-        jsonLd: [seo.websiteLd()],
+        jsonLd: [ld.websiteLd()],
         styles: [showcase.STYLESHEET],
         body,
     });
@@ -231,16 +231,16 @@ function browsePage(result, languages) {
         canonicalPath: canonical,
         robots: q ? 'noindex,follow' : 'index,follow',
         active: 'pastes',
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }])],
         body,
     });
 }
 
 // ── Paste page ───────────────────────────────────────────────
 function pasteDescription(p) {
-    if (p.ai_summary) return seo.clean(p.ai_summary, 200);
-    if (p.type === 'screenshot') return seo.clean(p.content || `A screenshot shared by ${authorName(p)} on ${SITE_NAME}.`, 200);
-    return seo.clean(`${p.title || 'Paste'} — ${languageLabel(p.language)} paste by ${authorName(p)}: ${String(p.content || '').slice(0, 200)}`, 200);
+    if (p.ai_summary) return ld.clean(p.ai_summary, 200);
+    if (p.type === 'screenshot') return ld.clean(p.content || `A screenshot shared by ${authorName(p)} on ${SITE_NAME}.`, 200);
+    return ld.clean(`${p.title || 'Paste'} — ${languageLabel(p.language)} paste by ${authorName(p)}: ${String(p.content || '').slice(0, 200)}`, 200);
 }
 
 function shareLinks(p) {
@@ -256,7 +256,11 @@ function shareLinks(p) {
   </div>`;
 }
 
-function pastePage({ paste: p, related, user }) {
+/**
+ * comments: the paste's typed thread as the comment service shows it to this viewer (null while nobody has
+ * commented); commentSort 'new' or 'old', commentsAfter the paging cursor. No comments on burn-after-read pastes.
+ */
+function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null }) {
     const isShot = p.type === 'screenshot';
     const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
@@ -294,13 +298,13 @@ function pastePage({ paste: p, related, user }) {
 
     const body = `
 <article class="paste" itemscope itemtype="https://schema.org/${isShot ? 'ImageObject' : 'Article'}">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/pastes">Pastes</a> › <span aria-current="page">${esc(seo.clean(title, 60))}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/pastes">Pastes</a> › <span aria-current="page">${esc(ld.clean(title, 60))}</span></nav>
   <header class="paste-head">
     <h1 itemprop="headline">${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}${esc(title)}</h1>
     <p class="paste-meta">
       ${authorHtml(p)}
       <span class="sep">·</span>${langBadge(p)}
-      <span class="sep">·</span><time datetime="${esc(seo.isoDate(p.created_at) || '')}" itemprop="datePublished">${esc(fmtDate(p.created_at))}</time>
+      <span class="sep">·</span><time datetime="${esc(ld.isoDate(p.created_at) || '')}" itemprop="datePublished">${esc(fmtDate(p.created_at))}</time>
       <span class="sep">·</span><span class="stat" title="Views"><i class="fa-solid fa-eye" aria-hidden="true"></i> ${num(p.views)} views</span>
       ${!isShot && hl ? `<span class="sep">·</span><span class="stat">${num(hl.lines)} lines</span>` : ''}
       ${p.visibility && p.visibility !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="fa-solid fa-${p.visibility === 'private' ? 'lock' : 'eye-slash'}" aria-hidden="true"></i> ${esc(p.visibility)}</span>` : ''}
@@ -315,6 +319,10 @@ function pastePage({ paste: p, related, user }) {
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
 </article>
+${p.burn_after_read ? '' : `<section class="section" id="comments">
+  <div class="section-head"><h2>Comments${comments && comments.thread.comment_count ? ` <span class="muted small">${num(comments.thread.comment_count)}</span>` : ''}</h2></div>
+  ${require('./comments').commentPanel({ page: comments, user, base: `/p/${p.slug}`, action: `/p/${p.slug}/comments`, after: commentsAfter, sort: commentSort })}
+</section>`}
 ${related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(related)}
@@ -327,15 +335,15 @@ ${related && related.length ? `<section class="section" id="related">
         robots: indexable ? 'index,follow' : 'noindex,follow',
         ogType: 'article',
         ogImage: shot || undefined,
-        published: seo.isoDate(p.created_at) || undefined,
-        modified: seo.isoDate(p.updated_at) || undefined,
+        published: ld.isoDate(p.created_at) || undefined,
+        modified: ld.isoDate(p.updated_at) || undefined,
         active: 'pastes',
         historyType: 'paste',
         historyTitle: title,
         footerVariant: 'compact',
         jsonLd: [
-            seo.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
-            seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${p.slug}` }]),
+            ld.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
+            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${p.slug}` }]),
         ],
         body,
     });

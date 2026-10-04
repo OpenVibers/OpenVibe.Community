@@ -353,35 +353,6 @@ async function deleteAllForks(db) {
     });
 }
 
-// ── Comments ─────────────────────────────────────────────────
-
-async function createComment(db, { paste_id, author_subject, anon_name, parent_id, message }) {
-    const info = await db.prepare('INSERT INTO paste_comments (paste_id, author_subject, anon_name, parent_id, message) VALUES (?, ?, ?, ?, ?) RETURNING id')
-        .run(paste_id, author_subject || null, anon_name || null, parent_id || null, message);
-    return await getComment(db, info.lastInsertRowid);
-}
-
-async function getComment(db, id) {
-    return await db.prepare('SELECT * FROM paste_comments WHERE id = ?').get(id) || null;
-}
-
-/** Top-level comments (newest first) with their replies (oldest first); deleted ones hidden. */
-async function listComments(db, pasteId, limit = 50, offset = 0) {
-    const top = await db.prepare(`SELECT * FROM paste_comments WHERE paste_id = ? AND is_deleted = 0 AND parent_id IS NULL
-                            ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`).all(pasteId, limit, offset);
-    const replies = db.prepare('SELECT * FROM paste_comments WHERE parent_id = ? AND is_deleted = 0 ORDER BY created_at ASC, id ASC');
-    for (const c of top) { c.replies = await replies.all(c.id); c.reply_count = c.replies.length; }
-    return top;
-}
-
-async function countComments(db, pasteId) {
-    return (await db.prepare('SELECT COUNT(*) AS c FROM paste_comments WHERE paste_id = ? AND is_deleted = 0').get(pasteId)).c;
-}
-
-async function softDeleteComment(db, id) {
-    return (await db.prepare('UPDATE paste_comments SET is_deleted = 1, updated_at = ov_now() WHERE id = ?').run(id)).changes;
-}
-
 // ── Subject projection (display cache — never authority) ─────
 
 async function getProjections(db, subjectIds) {
@@ -433,7 +404,6 @@ module.exports = {
     getBySlug, getById, insertPaste, updatePaste, listVersions, softDelete, listPastes,
     countOwnerSince, lastPasteTime, hasLiked, toggleLike, incrementCopies, bumpViews, recordVisit, pruneVisits,
     setAi, setScreenshot, setVisibility, stats, listForks, deleteAllForks,
-    createComment, getComment, listComments, countComments, softDeleteComment,
     getProjections, upsertProjection, subjectsByUsername,
     mapGet, mapSet,
     SLUG_ADJECTIVES, SLUG_NOUNS,

@@ -20,12 +20,14 @@
  */
 const express = require('express');
 const multer = require('multer');
-const seo = require('../seo');
+const seo = require('openvibe-shared/seo');
+const cache = require('openvibe-shared/cache-policy');
+const discovery = require('../discovery');
+const { SITE_NAME } = require('../render/layout');
 const pages = require('../render/pages');
 const forumPages = require('../render/forum');
 const boardPages = require('../render/board');
 const { ApiError } = require('../http/v1');
-const cache = require('openvibe-shared/cache-policy');
 
 function createForumRoutes({ forum, viewers, config }) {
     const router = express.Router();
@@ -48,7 +50,7 @@ function createForumRoutes({ forum, viewers, config }) {
         return ids;
     }
     const worthUploading = (title, body) => (title == null || String(title).trim().length >= 3) && String(body || '').trim().length > 0;
-    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', 'no-cache').send(body);
+    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', cache.htmlHeaders({ private: true })).send(body);
     const login = (res, next) => res.redirect(303, `/auth/login?next=${encodeURIComponent(next)}`);
     const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -87,7 +89,7 @@ function createForumRoutes({ forum, viewers, config }) {
         const values = { name: b.name, slug: b.slug, description: b.description, style: b.style === 'feed' ? 'feed' : 'forum', votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null };
         try {
             const out = await forum.createSpace(req.viewer, values);
-            seo.resetCaches();
+            discovery.resetCaches();
             res.redirect(303, `/s/${out.space.slug}`);
         } catch (err) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 403) return failPage(req, res, err, next);
@@ -104,15 +106,23 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.get('/s/feed.xml', async (_req, res) => {
-        res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.threadFeed({ threads: await forum.recentPublic({ limit: 30 }) }));
-    });
+    // RSS of the latest threads, overall and per public space (openvibe-shared/seo feedXml).
+    const threadFeed = async (res, space) => res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.feedXml({
+        title: space ? `${SITE_NAME} — ${space.name}` : `${SITE_NAME} — latest threads`,
+        link: `${config.baseUrl}${space ? `/s/${space.slug}` : '/s'}`,
+        description: space ? (space.description || space.name) : 'New threads in the public spaces of OpenVibe.Community.',
+        language: 'en',
+        selfUrl: `${config.baseUrl}${space ? `/s/${space.slug}` : '/s'}/feed.xml`,
+        items: discovery.threadFeedItems(await forum.recentPublic({ limit: 30, ...(space ? { space: space.slug } : {}) })),
+    }, { format: 'rss' }));
 
-    router.get('/s/:space/feed.xml', async (req, res) => {
+    router.get('/s/feed.xml', wrap(async (_req, res) => threadFeed(res, null)));
+
+    router.get('/s/:space/feed.xml', wrap(async (req, res) => {
         const space = (await forum.publicSpaces()).find((s) => s.slug === req.params.space);
         if (!space) return res.status(404).type('text/plain').send('Not found');
-        res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.threadFeed({ space, threads: await forum.recentPublic({ limit: 30, space: space.slug }) }));
-    });
+        await threadFeed(res, space);
+    }));
 
     router.get('/s/:space', withViewer, wrap(async (req, res, next) => {
         try {
@@ -144,7 +154,7 @@ function createForumRoutes({ forum, viewers, config }) {
             // Images go to Media only when the rest can be saved (no strays from an empty form).
             if (worthUploading(values.title, values.body)) { const ids = await uploadImages(req); if (ids.length) values.attachments = ids; }
             const out = await forum.createThread(req.viewer, req.params.space, values);
-            seo.resetCaches();
+            discovery.resetCaches();
             res.redirect(303, out.thread.url);
         } catch (err) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 404 || err.code === 'vip.members_only') return failPage(req, res, err, next);
@@ -203,7 +213,7 @@ function createForumRoutes({ forum, viewers, config }) {
     router.post('/s/:space/t/:slug/members-only', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         try {
             await forum.setThreadMembersOnly(req.viewer, req.params.space, req.params.slug, { members_only: (req.body || {}).on === '1' ? true : null });
-            seo.resetCaches();
+            discovery.resetCaches();
             res.redirect(303, back(req));
         } catch (err) { failPage(req, res, err, next); }
     }));
@@ -233,7 +243,7 @@ function createForumRoutes({ forum, viewers, config }) {
     router.post('/s/:space/t/:slug/crosspost', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         try {
             const out = await forum.crosspost(req.viewer, req.params.space, req.params.slug, { to: String((req.body || {}).to || '') });
-            seo.resetCaches();
+            discovery.resetCaches();
             res.redirect(303, out.thread.url);
         } catch (err) { failPage(req, res, err, next); }
     }));
@@ -243,7 +253,7 @@ function createForumRoutes({ forum, viewers, config }) {
         const b = req.body || {};
         try {
             await forum.updateSpaceSettings(req.viewer, req.params.space, { name: b.name, description: b.description, style: b.style, votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null });
-            seo.resetCaches();
+            discovery.resetCaches();
             res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
         } catch (err) { failPage(req, res, err, next); }
     }));
@@ -284,7 +294,7 @@ function createForumRoutes({ forum, viewers, config }) {
     router.post('/s/:space/t/:slug/delete', withViewer, sameOrigin, form, async (req, res, next) => {
         try {
             await forum.deleteThread(req.viewer, req.params.space, req.params.slug);
-            seo.resetCaches();
+            discovery.resetCaches();
             res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
         } catch (err) { failPage(req, res, err, next); }
     });

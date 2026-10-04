@@ -15,6 +15,7 @@ const express = require('express');
 const pages = require('../render/pages');
 const { threadPage } = require('../render/comments');
 const { ApiError } = require('../http/v1');
+const cache = require('openvibe-shared/cache-policy');
 
 const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 
@@ -22,7 +23,7 @@ function createCommentPages({ comments, viewers, config }) {
     const router = express.Router();
     const withViewer = viewers.middleware({ services: false });
     const form = express.urlencoded({ extended: false, limit: '64kb' });
-    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', 'no-cache').send(body);
+    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', cache.htmlHeaders({ private: true })).send(body);
     const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
     function failPage(req, res, err, next) {

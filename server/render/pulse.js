@@ -5,7 +5,7 @@
  * (server/pulse). Filtering by origin and paging ("Older") are links, so it works without
  * JavaScript. AI items carry an AI label and no person; system items name no one either.
  */
-const seo = require('../seo');
+const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { timeTag } = require('./pages');
@@ -60,7 +60,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null }) {
         robots: after ? 'noindex,follow' : 'index,follow',
         active: 'pulse',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pulse', url: '/pulse' }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pulse', url: '/pulse' }])],
         body,
     });
 }

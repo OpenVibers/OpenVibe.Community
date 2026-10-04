@@ -1,13 +1,15 @@
 'use strict';
 
 /**
- * Page shell — every page on the site is server-rendered through this: full <head> SEO
- * (title, description, canonical, robots, Open Graph, Twitter card, JSON-LD), the shared
+ * Page shell — every page on the site is server-rendered through this: full <head> SEO from
+ * openvibe-shared/seo (description, canonical, robots, Open Graph, Twitter card, JSON-LD and the
+ * ai-summary page summary), the shared
  * OpenVibe Frame (theme-loader first so there is no flash, navbar.js + footer.js from the
  * Network), this site's small stylesheet and its progressive script.
  */
 const crypto = require('crypto');
 const ovServe = require('openvibe-shared/serve');
+const seo = require('openvibe-shared/seo');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
@@ -38,11 +40,18 @@ function setRelease(id) { if (id) RELEASE = String(id); }
 
 const abs = (p) => (/^https?:\/\//i.test(p) ? p : `${config.baseUrl}${p.startsWith('/') ? '' : '/'}${p}`);
 
-function jsonLdScript(objects) {
-    const list = (Array.isArray(objects) ? objects : [objects]).filter(Boolean);
-    if (!list.length) return '';
-    // </script> inside a JSON string would end the block early — encode the angle bracket.
-    return list.map((o) => `<script type="application/ld+json">${JSON.stringify(o).replace(/</g, '\\u003c')}</script>`).join('\n');
+// openvibe-shared/seo cuts descriptions at 160 characters on a word; a longer one loses whole
+// trailing sentences here first, so a cut never leaves half a phrase ("… Free…").
+const DESCRIPTION_MAX = 160;
+function fitDescription(text) {
+    if (text.length <= DESCRIPTION_MAX) return text;
+    let out = '';
+    for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+        const next = out ? `${out} ${sentence}` : sentence;
+        if (next.length > DESCRIPTION_MAX) break;
+        out = next;
+    }
+    return out || text;
 }
 
 function navbarInit(opts) {
@@ -94,7 +103,7 @@ function footerInit(opts) {
 /**
  * @param {object} o
  *   title, description, canonicalPath, robots ('index,follow'), ogType ('website'|'article'),
- *   ogImage, jsonLd (array), body (main HTML), active ('home'|'pastes'|'spaces'|'pulse'|'new'|'my'),
+ *   ogImage, imageAlt, jsonLd (array), alternates ([{ hreflang, href }]), body (main HTML), active ('home'|'pastes'|'spaces'|'pulse'|'new'|'my'),
  *   feeds ([{ title, href }] RSS alternates; default: the latest-pastes feed),
  *   historyType ('page'|'paste'), historyTitle, footerVariant ('full'|'compact'), bodyClass,
  *   styles (Shared stylesheets by name, linked before community.css so this site's rules win: ['showcase.css']),
@@ -102,7 +111,7 @@ function footerInit(opts) {
  */
 function renderPage(o) {
     const title = o.title ? `${o.title} · ${SITE_NAME}` : `${SITE_NAME} — the people of OpenVibe`;
-    const description = (o.description || DEFAULT_DESCRIPTION).replace(/\s+/g, ' ').trim().slice(0, 300);
+    const description = fitDescription((o.description || DEFAULT_DESCRIPTION).replace(/\s+/g, ' ').trim().slice(0, 300));
     const canonical = abs(o.canonicalPath || '/');
     const robots = o.robots || 'index,follow';
     const ogType = o.ogType || 'website';
@@ -116,28 +125,16 @@ function renderPage(o) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
-<meta name="description" content="${escapeHtml(description)}">
-<link rel="canonical" href="${escapeHtml(canonical)}">
-<meta name="robots" content="${escapeHtml(robots)}">
-<meta property="og:site_name" content="${SITE_NAME}">
-<meta property="og:type" content="${escapeHtml(ogType)}">
-<meta property="og:title" content="${escapeHtml(o.title || SITE_NAME)}">
-<meta property="og:description" content="${escapeHtml(description)}">
-<meta property="og:url" content="${escapeHtml(canonical)}">
-<meta property="og:image" content="${escapeHtml(ogImage)}">
+${seo.headTags({ title: o.title || SITE_NAME, noTitle: true, siteName: SITE_NAME, description, canonical, robots, type: ogType, image: ogImage, imageAlt: o.imageAlt, largeImage: !!o.ogImage, jsonLd: o.jsonLd, alternates: o.alternates })}
 ${o.published ? `<meta property="article:published_time" content="${escapeHtml(o.published)}">` : ''}
 ${o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.modified)}">` : ''}
-<meta name="twitter:card" content="${o.ogImage ? 'summary_large_image' : 'summary'}">
-<meta name="twitter:title" content="${escapeHtml(o.title || SITE_NAME)}">
-<meta name="twitter:description" content="${escapeHtml(description)}">
-<meta name="twitter:image" content="${escapeHtml(ogImage)}">
+${seo.pageSummary({ title: o.title || SITE_NAME, summary: description, url: canonical, updated: o.modified })}
 ${require('openvibe-shared/app-icon').headTags({ site: 'community', iconBase: '/assets' })}
 ${(o.feeds || [{ title: `${SITE_NAME} — latest pastes`, href: '/feed.xml' }]).map((f) => `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(f.title)}" href="${escapeHtml(f.href)}">`).join('\n')}
 <script src="${ovServe.url('theme-loader.js')}" defer></script>
 ${(o.styles || []).map((name) => `<link rel="stylesheet" href="${ovServe.url(name)}">`).join('\n')}
 <link rel="stylesheet" href="${asset('css/community.css')}">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
-${jsonLdScript(o.jsonLd)}
 <script src="${ovServe.url('navbar.js')}" defer></script>
 <script src="${ovServe.url('footer.js')}" defer></script>
 <script src="${asset('js/community.js')}" defer></script>
@@ -161,4 +158,4 @@ document.addEventListener('DOMContentLoaded', function () {
 </html>`;
 }
 
-module.exports = { renderPage, asset, assetVersion, abs, jsonLdScript, setRelease, SITE_NAME, DEFAULT_DESCRIPTION, DEFAULT_OG_IMAGE };
+module.exports = { renderPage, asset, assetVersion, abs, setRelease, SITE_NAME, DEFAULT_DESCRIPTION, DEFAULT_OG_IMAGE };

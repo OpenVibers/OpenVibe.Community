@@ -132,13 +132,13 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
                 }
             }
             // Read-like writes: like, copy, fork, comment, delete a comment — 404 like a missing paste, nothing written.
-            const before = JSON.stringify(await t.db.prepare('SELECT id, likes, copies, revision FROM pastes ORDER BY id').all()) + (await t.db.prepare('SELECT COUNT(*) AS n FROM paste_comments').get()).n;
+            const before = JSON.stringify(await t.db.prepare('SELECT id, likes, copies, revision FROM pastes ORDER BY id').all()) + (await t.db.prepare('SELECT COUNT(*) AS n FROM comments').get()).n;
             for (const [method, suffix, json] of [['POST', '/like'], ['POST', '/copy'], ['POST', '/fork', {}], ['POST', '/comments', { message: 'hi there' }], ['DELETE', `/comments/${privComment.comment.id}`]]) {
                 const a = await send(method, `/api/pastes/${priv.slug}${suffix}`, { ...p, json }), b = await send(method, `/api/pastes/${UNKNOWN_SLUG}${suffix}`, { ...p, json });
                 assert.strictEqual(a.status, b.status, `${method} ${suffix} as ${name}: ${a.status} vs ${b.status}`);
                 assert.ok(!allMarkers.some((m) => a.text.includes(m)), `${method} ${suffix} as ${name} shows a marker`);
             }
-            const after = JSON.stringify(await t.db.prepare('SELECT id, likes, copies, revision FROM pastes ORDER BY id').all()) + (await t.db.prepare('SELECT COUNT(*) AS n FROM paste_comments').get()).n;
+            const after = JSON.stringify(await t.db.prepare('SELECT id, likes, copies, revision FROM pastes ORDER BY id').all()) + (await t.db.prepare('SELECT COUNT(*) AS n FROM comments').get()).n;
             assert.strictEqual(after, before, `a refused write changed something (${name})`);
             // A browser cannot open a comment thread on it either (it looks missing).
             if (p.who) {

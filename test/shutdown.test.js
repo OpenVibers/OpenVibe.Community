@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Graceful stop (roadmap WS-P lifecycle; server/graceful.js), on the real process with the events
+ * Graceful stop (roadmap WS-P lifecycle; openvibe-sdk/service), on the real process with the events
  * outbox, the Discord relay (with its Events worker and gateway), the Pulse subscriptions and the profile and search scans all on (pointed
  * at nothing): SIGTERM while a request is in flight and a keep-alive connection sits idle. New
  * connections are refused, the request is answered (Connection: close), every background worker is
