@@ -110,7 +110,7 @@ const has = (html, s, msg) => assert.ok(html.includes(s), msg || `expected to fi
         assert.strictEqual(pub.status, 200);
         has(pub.text, `<link rel="canonical" href="https://openvibe.community/submissions/${slug}">`);
         has(pub.text, '<meta property="og:type" content="article">');
-        has(pub.text, '<meta property="og:title" content="Best play of the week">');
+        has(pub.text, '<meta property="og:title" content="Best play of the week · OpenVibe.Community">');
         has(pub.text, 'index,follow');
         assert.ok(!pub.text.includes('Great one'), 'the review note is for the author and moderators');
         assert.ok(!pub.text.includes(`/submissions/${slug}/withdraw`) && !pub.text.includes(`/submissions/${slug}/review"`));

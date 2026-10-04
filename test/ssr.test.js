@@ -57,6 +57,30 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!/\bfree\b(?! speech)/i.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'no "free" claims outside "free speech"');
     });
 
+    await check('the home head comes whole from openvibe-shared/shell plus this site\'s extras', async () => {
+        const r = await t.get('/');
+        assert.ok(r.text.startsWith('<!doctype html>'));
+        const head = r.text.split('</head>')[0];
+        assert.strictEqual((head.match(/<title>/g) || []).length, 1, 'one title');
+        has(head, '<title>OpenVibe.Community — the people of OpenVibe</title>');
+        assert.strictEqual((head.match(/<link rel="canonical" href="https:\/\/openvibe\.community\/">/g) || []).length, 1, 'one canonical');
+        has(head, '<meta name="robots" content="index,follow');
+        has(head, '<script type="application/ld+json">');
+        has(head, '"@type":"WebSite"');
+        has(head, '<meta name="ai-summary" content="');
+        has(head, '<link rel="alternate" type="application/rss+xml" title="OpenVibe.Community — latest pastes" href="/feed.xml">');
+        has(head, '/css/community.css?v=');
+        has(head, '/js/community.js?v=');
+        has(head, 'font-awesome');
+        has(head, '<link rel="icon"');
+        assert.match(head, /<meta name="ov-boost" content="community@[^"]+">/);
+        for (const js of ['theme-loader.js', 'navbar.js', 'footer.js', 'boost.js']) has(head, `/shared/${js}?v=`);
+        assert.match(r.text, /<body[^>]* data-page="home">/);
+        has(r.text, '<div id="navbar-mount"></div>');
+        has(r.text, 'id="ov-footer"');
+        has(r.text, 'OpenVibeFooter.init(window.__OV_PAGE.footer)');
+    });
+
     await check('every page carries the boost marker and script, and the navbar signs in back to the current page', async () => {
         for (const url of ['/', '/pastes', '/new', '/p/amber-fox-42']) {
             const r = await t.get(url);
