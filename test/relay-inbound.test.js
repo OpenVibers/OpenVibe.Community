@@ -322,7 +322,7 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
         // Handling is async (the gateway queues dispatches): wait for the failure to be recorded before reading it.
         await waitFor(async () => await t.db.prepare("SELECT 1 FROM relay_inbound_failures WHERE error = 'the thread is locked'").get(), 'the locked reply recorded as a failure');
         assert.strictEqual((await call('/api/v1/relay/inbound', { cookie: samJwt })).status, 403);
-        const inb = await call('/api/v1/relay/inbound', { cookie: adminJwt });
+        const inb =await call('/api/v1/relay/inbound', { cookie: adminJwt });
         assert.strictEqual(inb.status, 200);
         assert.deepStrictEqual(inb.json().failures.map((f) => [f.error, f.discord.message_id, f.mapping.space]), [['the thread is locked', locked, 'general']]);
         assert.strictEqual((await call(`/api/v1/relay/inbound/${inb.json().failures[0].id}/dismiss`, { method: 'POST', cookie: adminJwt })).status, 200);
