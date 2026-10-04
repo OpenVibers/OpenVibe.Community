@@ -5,7 +5,7 @@
  * submission, and the moderators' review queue. Filters and paging are links and every action is
  * a plain form post, so all of it works without JavaScript.
  */
-const seo = require('../seo');
+const ld = require('./jsonld');
 const { renderPage, abs } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { renderMarkdown, markdownToText } = require('./markdown');
@@ -81,7 +81,7 @@ ${submitForm({ user, values, error })}`;
         canonicalPath: listHref({ kind, after }),
         robots: mine || after ? 'noindex,follow' : 'index,follow',
         active: 'submissions',
-        jsonLd: [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Submissions', url: '/submissions' }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Submissions', url: '/submissions' }])],
         body,
     });
 }
@@ -127,7 +127,7 @@ ${reviewForm}`;
         active: 'submissions',
         published: s.created_at,
         modified: s.updated_at,
-        jsonLd: accepted ? [seo.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Submissions', url: '/submissions' }, { name: s.title, url: abs(s.page_url) }])] : [],
+        jsonLd: accepted ? [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Submissions', url: '/submissions' }, { name: s.title, url: abs(s.page_url) }])] : [],
         body,
     });
 }

@@ -156,6 +156,7 @@ API and machine endpoints:
 | `GET /auth/me` | Offline-verified profile from `ov_token` |
 | `POST /auth/refresh` | Rotate via refresh token |
 | `GET /robots.txt`, `GET /sitemap.xml`, `GET /feed.xml` | SEO + RSS of the latest pastes |
+| `GET /llms.txt`, `GET /llms-full.txt` | The site map for language models, and the latest public threads and text pastes in full |
 | `GET /s/feed.xml`, `GET /s/:space/feed.xml` | RSS of the latest threads (public spaces) |
 
 **Readiness and metrics (Track O).** `GET /api/ready` (openvibe-shared/ready) answers 503 only
@@ -604,12 +605,23 @@ per-address form limits. `test/actor-limits.test.js`.
 
 ## SEO
 
-Every page carries a title, description, canonical, robots, Open Graph + Twitter card and
-JSON-LD (`WebSite` on the home page, `Article`/`ImageObject` with author and `datePublished`
-on paste pages, `DiscussionForumPosting` on threads, `BreadcrumbList` everywhere).
+Discovery is written by `openvibe-shared/seo`; Community only supplies the data
+(`server/discovery.js`, `server/render/jsonld.js`). Every page head comes from `seo.headTags`
+(description, canonical, robots, Open Graph + Twitter card, JSON-LD) plus `seo.pageSummary`
+(an `ai-summary` meta and a `WebPage` JSON-LD), with `article:*` times on pastes. JSON-LD:
+`WebSite` on the home page, `Article`/`ImageObject` with author and `datePublished` on paste
+pages, `DiscussionForumPosting` on threads, `BreadcrumbList` everywhere.
 Unlisted/private pastes, search result pages and members/staff spaces are `noindex`. The
 sitemap lists home, `/pastes`, the latest public pastes, `/s`, `/pulse`, public spaces and
-their latest threads (cached 1 h).
+their latest threads (rebuilt at most hourly). `/robots.txt` welcomes search and AI crawlers
+and keeps them out of `/api/`, `/auth/`, `/my`, `/new`, `/s/*/new` and `?sso=` URLs;
+`/llms.txt` maps the site and `/llms-full.txt` carries the latest public threads and text pastes
+in full (no NSFW, no burn-after-read, nothing members-only).
+
+Cache headers come from `openvibe-shared/cache-policy`: a static file at its current `?v=` hash
+is immutable for a year, any other static file is 5 minutes with a day of stale-while-revalidate,
+pages (rendered for the person reading them), raw and download are `private, no-store`, and
+robots/llms/sitemap are public for 1 h, `/feed.xml` 15 min and the thread feeds 5 min.
 
 ## Configuration
 
@@ -762,7 +774,8 @@ server/
   identity/authors.js author display from subject_projection; the AI label
   votes.js            race-safe up/down votes (comments, threads)
   limits.js           per-person write limits
-  render/layout.js    page shell: SEO head, shared chrome, hashed assets
+  render/layout.js    page shell: SEO head (openvibe-shared/seo), shared chrome, hashed assets
+  render/jsonld.js    JSON-LD builders (WebSite, breadcrumbs, paste, thread, authors)
   render/pages.js     home / browse / paste / new / my / error templates
   render/forum.js     spaces / threads / thread / new-thread / members-only teaser templates
   render/pulse.js     the /pulse page
@@ -770,7 +783,7 @@ server/
   render/comments.js  a comment thread's own page
   render/markdown.js  the safe Markdown subset for posts
   render/highlight.js highlight.js wrapper, language list, download extensions
-  seo.js              robots, sitemap, RSS, JSON-LD builders
+  discovery.js        robots disallow set, llms sections, sitemap rows (1 h), feed items
 public/               css/community.css, js/community.js, favicon.svg, og-default.png
 (openvibe-shared is the pinned OpenVibe.Shared v2.2.0 release, installed by npm)
 deploy/               systemd unit, nginx vhost

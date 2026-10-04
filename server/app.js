@@ -13,7 +13,7 @@
  *   GET /p/:slug/raw    raw text       /api/v1/pulse/*         Pulse (pulse/api.js)
  *   GET /p/:slug/screenshot → image    /api/v1/relay/*         Discord relay admin (relay/api.js)
  *   GET /p/:slug/download              GET /api/health, /api/ready, /release.json, /metrics (loopback)
- *   GET|POST /new       create         GET /robots.txt, /sitemap.xml, /feed.xml, /s/feed.xml
+ *   GET|POST /new       create         GET /robots.txt, /llms.txt, /llms-full.txt, /sitemap.xml, /feed.xml, /s/feed.xml
  *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
  *   GET /s …            spaces, threads, posts (forum/routes.js)    POST /release-metrics (open tabs' update reports)
  *   GET /pulse          the network's public activity
@@ -34,9 +34,9 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const catalog = require('./pastes/catalog');
 const source = require('./pastes/source');
-const seo = require('./seo');
+const discovery = require('./discovery');
 const pages = require('./render/pages');
-const { assetVersion } = require('./render/layout');
+const { assetVersion, SITE_NAME, DEFAULT_DESCRIPTION } = require('./render/layout');
 const { createAuthClient, createAuthRoutes } = require('./auth/routes');
 const { getDb } = require('./db');
 const { createNetworkIdentity } = require('./identity/network');
@@ -63,11 +63,16 @@ const { createSubmissionPages } = require('./submissions/routes');
 const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
 const { createIndexNow } = require('openvibe-shared/indexnow');
+const seo = require('openvibe-shared/seo');
+const cache = require('openvibe-shared/cache-policy');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const pasteRef = (slug) => ({ service: 'community', type: 'paste', id: String(slug) });
 const VERSION = require('../package.json').version;
+// Pages are rendered for the person reading them (and a form post redirects back to them), so no
+// shared or browser cache keeps one.
+const PAGE_CACHE = cache.htmlHeaders({ private: true });
 
 async function createApp(opts = {}) {
     const app = express();
@@ -165,7 +170,7 @@ async function createApp(opts = {}) {
     const comments = createCommentService({ db, network, limits: opts.commentLimits });
     // Submissions (clips, art, ideas, reports for review): their own table, not tied to the forum.
     const submissions = createSubmissionService({ db, network, pulse, indexnow, config, limits: opts.submissionLimits });
-    seo.useForum(forum);
+    discovery.useForum(forum);
     Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments, submissions, indexnow });
     if (opts.startRelay !== false) relay.start();
 
@@ -196,7 +201,7 @@ async function createApp(opts = {}) {
         handler: (req, res) => {
             const error = 'Too many anonymous posts — sign in or try again later';
             if (req.originalUrl.startsWith('/api/')) return res.status(429).json({ error });
-            res.status(429).type('html').set('Cache-Control', 'no-cache').send(pages.newPage({ user: req.user, error }));
+            res.status(429).type('html').set('Cache-Control', PAGE_CACHE).send(pages.newPage({ user: req.user, error }));
         },
     });
 
@@ -252,17 +257,26 @@ async function createApp(opts = {}) {
         setHeaders(res, filePath) {
             const rel = path.relative(PUBLIC_DIR, filePath).split(path.sep).join('/');
             const v = res.req && res.req.query && res.req.query.v;
-            if (v && v === assetVersion(rel)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            else if (/\.(svg|png|ico|webmanifest)$/.test(rel)) res.setHeader('Cache-Control', 'public, max-age=86400');
-            else res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Cache-Control', cache.assetHeaders(rel, { hashed: !!v && v === assetVersion(rel) }));
         },
     }));
 
     // ── Machine endpoints ────────────────────────────────────
-    app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(seo.robotsTxt()));
-    app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(seo.llmsTxt()));
-    app.get('/sitemap.xml', seo.sitemapHandler);
-    app.get('/feed.xml', wrap(seo.feedHandler));
+    // Written by openvibe-shared/seo from server/discovery.js; the sitemap is rebuilt at most hourly.
+    app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
+        .send(seo.robotsTxt({ sitemaps: [`${config.baseUrl}/sitemap.xml`], disallow: discovery.ROBOTS_DISALLOW })));
+    app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
+        .send(seo.llmsTxt({ name: SITE_NAME, summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, sections: discovery.llmsSections() })));
+    app.get('/llms-full.txt', wrap(async (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
+        .send(seo.llmsFull({ site: SITE_NAME, summary: discovery.SUMMARY, base: config.baseUrl, sections: await discovery.llmsFullSections(), maxBytes: 512 * 1024 }))));
+    app.get('/sitemap.xml', async (_req, res) => {
+        let rows;
+        try { rows = await discovery.sitemapRows(); } catch { return res.status(503).end(); }
+        res.type('application/xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 })).send(seo.sitemapXml(rows));
+    });
+    app.get('/feed.xml', wrap(async (_req, res) => res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 900 }))
+        .send(seo.feedXml({ title: `${SITE_NAME} — latest pastes`, link: `${config.baseUrl}/pastes`, description: DEFAULT_DESCRIPTION,
+            language: 'en', selfUrl: `${config.baseUrl}/feed.xml`, items: await discovery.pasteFeedItems() }, { format: 'rss' }))));
     // GET /<key>.txt — the IndexNow key file (only when a key is configured; it serves itself).
     if (indexnow.enabled) app.use(indexnow.keyFile);
 
@@ -270,7 +284,9 @@ async function createApp(opts = {}) {
     // Pages are for browsers: the viewer (subject, staff) is resolved here too.
     const withUser = viewers.middleware({ services: false });
     const ctxOf = (req) => ({ token: req.token, ip: req.ip, userAgent: req.get('user-agent') || '', viewer: req.viewer });
-    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', 'no-cache').send(body);
+    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', PAGE_CACHE).send(body);
+    // Every page response below (redirects and error pages too) that sets no policy of its own.
+    app.use(cache.applyHtml({ private: true }));
 
     app.get('/', withUser, wrap(async (req, res) => {
         const [latest, trending, languages] = await Promise.all([catalog.latest(12), catalog.trending(8), catalog.languages()]);
@@ -355,7 +371,7 @@ async function createApp(opts = {}) {
         try {
             const out = await app.locals.pastes.raw(req.viewer, req.params.slug, ctxOf(req));
             if (out.redirect) return res.redirect(302, out.redirect);
-            res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', 'private, no-store');
+            res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', cache.htmlHeaders({ private: true }));
             res.type('text/plain; charset=utf-8').send(out.content);
         } catch (err) {
             if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
@@ -381,7 +397,7 @@ async function createApp(opts = {}) {
         catch (err) { if (err.status === 404 || err.status === 410) return res.status(err.status).type('text/plain').send('Not found'); throw err; }
         if (paste.type === 'screenshot') return res.redirect(302, paste.screenshot_url || `/p/${encodeURIComponent(slug)}/screenshot`);
         res.set('Content-Disposition', `attachment; filename="${slug}.${extensionFor(paste.language)}"`);
-        res.set('Cache-Control', 'private, no-cache');
+        res.set('Cache-Control', cache.htmlHeaders({ private: true }));
         res.type('text/plain; charset=utf-8').send(String(paste.content || ''));
     }));
 
