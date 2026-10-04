@@ -319,8 +319,9 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
         assert.ok(page.text.includes('badge-relay') && page.text.includes('Kim') && page.text.includes('<strong>great</strong>'), 'the reply shows with its Discord badge');
         await t.db.prepare('UPDATE threads SET locked = 1').run();
         gw.dispatch('MESSAGE_CREATE', { id: locked, channel_id: anchor.external_channel_id, type: 19, content: 'too late', author: { id: KIM, username: 'kim' }, message_reference: { message_id: anchor.external_message_id } });
+        await waitFor(async () => await t.db.prepare('SELECT 1 FROM relay_inbound_failures').get(), 'the locked-thread failure recorded');
         assert.strictEqual((await call('/api/v1/relay/inbound', { cookie: samJwt })).status, 403);
-        const inb = await call('/api/v1/relay/inbound', { cookie: adminJwt });
+        const inb =await call('/api/v1/relay/inbound', { cookie: adminJwt });
         assert.strictEqual(inb.status, 200);
         assert.deepStrictEqual(inb.json().failures.map((f) => [f.error, f.discord.message_id, f.mapping.space]), [['the thread is locked', locked, 'general']]);
         assert.strictEqual((await call(`/api/v1/relay/inbound/${inb.json().failures[0].id}/dismiss`, { method: 'POST', cookie: adminJwt })).status, 200);
