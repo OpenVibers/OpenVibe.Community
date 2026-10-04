@@ -6,7 +6,8 @@
  *
  *   network.account.export_requested  Community's part (POST /internal/account-exports/:id/parts with a service token):
  *                                     pastes (with their content), paste comments, comments, threads, posts,
- *                                     attachments, likes, votes and reactions, game progress, blocks and activity.
+ *                                     attachments, likes, votes and reactions, game progress, blocks, activity and
+ *                                     the spaces they moderate.
  *   network.account.deleted           what the subject (and the accounts merged into it) wrote goes. An item with
  *                                     someone else's reply anywhere beneath it stays as an authorless tombstone
  *                                     ("[deleted]"), so the replies keep their place:
@@ -14,8 +15,8 @@
  *                                     - a comment or paste comment others answered;
  *                                     - a thread others posted in, and its opening post.
  *                                     Likes, votes and reactions go and cached counts are recomputed. Game progress,
- *                                     blocks both ways, activity items and the cached profile go. Spaces the person
- *                                     created stay without them. Community then confirms with counts.
+ *                                     blocks both ways, activity items, the cached profile and their place as a space's
+ *                                     moderator go. Spaces the person created, and moderators they added, stay without them. Community then confirms with counts.
  */
 const SUBJECT_RE = /^usr_[0-9A-HJKMNP-TV-Z]{26}$/;
 const EXPORT_RE = /^exp_[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -37,6 +38,7 @@ const EXPORTS = [
     ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'], ['thread_votes.json', 'thread_votes', 'subject_id'],
     ['post_reactions.json', 'post_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
+    ['space_moderators.json', 'space_moderators', 'subject_id'],
 ];
 
 async function exportPart(db, subject) {
@@ -138,12 +140,13 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
         }
         for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
             ['subject_projection', `subject_id IN ${S}`, 'profile'], ['profile_module_pushes', `subject_id IN ${S}`, 'profile'],
-            ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks']]) {
+            ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks'], ['space_moderators', `subject_id IN ${S}`, 'space_moderators']]) {
             if (!await hasTable(db, table)) continue;
             const params = where.includes(' OR ') ? [...subjects, ...subjects] : subjects;
             add(erased, key, (await db.prepare(`DELETE FROM ${table} WHERE ${where}`).run(...params)).changes);
         }
         for (const table of ['spaces', 'comment_threads']) if (await hasColumn(db, table, 'created_by')) await db.prepare(`UPDATE ${table} SET created_by = NULL WHERE created_by IN ${S}`).run(...subjects);
+        if (await hasColumn(db, 'space_moderators', 'added_by')) await db.prepare(`UPDATE space_moderators SET added_by = NULL WHERE added_by IN ${S}`).run(...subjects);
         // The cached counts and scores follow the rows that stay.
         for (const [table, items] of recount) {
             for (const i of items) {

@@ -3,11 +3,10 @@
  * IDOR: nobody acts on someone else's things by swapping ids (roadmap WS-R task 5).
  *
  * alex owns a public paste, a private one, a screenshot, comments, a thread with a reply, a typed comment,
- * an uploaded image and a space (as its creator; spaces have no per-space moderators, so a space's owner
- * is what "moderator of X" means here: cora owns another).
- *
- * TODO(T10 step 1): migrations/0005_space_moderators.sql adds per-space moderators; revisit the
- * "no per-space moderators" assumption above (and this file's space expectations) when it lands.
+ * an uploaded image and a space (as its creator: creating a space does not make you its moderator, so
+ * nobody here is listed in space_moderators and a space's owner is what "moderator of X" means here:
+ * cora owns another). Per-space moderators, and their refusals in other spaces, are in
+ * test/space-moderators.test.js.
  *
  * sam tries each of alex's ids as himself, and so do first-party services forwarding for him
  * (svc:live, svc:tools, each with the write grants they hold)

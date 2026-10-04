@@ -252,8 +252,23 @@ function createForumRoutes({ forum, viewers, config }) {
     router.post('/s/:space/settings', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         const b = req.body || {};
         try {
-            await forum.updateSpaceSettings(req.viewer, req.params.space, { name: b.name, description: b.description, style: b.style, votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null });
+            // The group (the board index) is staff's; a space's own moderators change the rest.
+            await forum.updateSpaceSettings(req.viewer, req.params.space, { name: b.name, description: b.description, style: b.style, votes: b.votes === '1', reactions: b.reactions === '1', group: forum.isModerator(req.viewer) ? b.group || null : undefined });
             discovery.resetCaches();
+            res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // The space's own moderators (no JS): add one by Network subject, remove one; back to the space.
+    router.post('/s/:space/moderators', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.addModerator(req.viewer, req.params.space, String((req.body || {}).subject || '').trim().slice(0, 64));
+            res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+    router.post('/s/:space/moderators/remove', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.removeModerator(req.viewer, req.params.space, String((req.body || {}).subject || '').trim().slice(0, 64));
             res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
         } catch (err) { failPage(req, res, err, next); }
     }));
