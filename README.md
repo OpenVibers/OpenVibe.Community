@@ -327,6 +327,16 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   deletes are soft (tombstones keep the numbering; deleting the opening post deletes the
   thread). Moderators (admin/global_mod browsers; services with `community.comment.moderate`)
   pin, lock and delete; locked threads take no replies or votes.
+- **A space's own moderators** (`space_moderators`, migration 0005): people listed for one space act there as
+  moderators do everywhere: thread state, status and category, edits and deletes, replies in locked
+  threads, the VIP gate (they pass it), members-only, settings (name, description, style, votes, ratings,
+  kind), categories and the chat room. They cannot move the space on the board index (group, parent,
+  position), create spaces, manage the board index's groups, add roadmap items or open staff spaces. Those
+  stay with staff. Any moderator of a space, or staff, adds and removes that space's moderators. They must
+  be Network users (`usr_…`), and nobody is added across a block in either direction. A listing counts only
+  for the person signed in themselves, never for a service naming them. Account deletion erases the rows and
+  a subject merge moves them. No capability or Contracts change is involved. The cutover runbook is
+  `docs/cutover-community-0005-space-moderators.md`.
 
 - **Two styles, one system.** Each space is a **forum** or a **feed**. A forum reads like vBulletin or SMF:
   - the board index at `/s` lists every space under its group, with topics, posts and the last post;
@@ -380,6 +390,8 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `PUT /spaces/:space/chat-room` `{ room: slug \| https://openvibe.chat/r/<slug> }` | The space's owner or staff, signed in themselves: attach a chat room (201; the same room again 200) |
 | `DELETE /spaces/:space/chat-room` | The space's owner or staff (moderator services too): detach it (idempotent) |
 | `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` · `GET /posts/:id/versions` | Author or moderator |
+| `GET /spaces/:space/moderators` | The space's own moderators `{ space, moderators: [{ subject, username, display_name, added_by, added_at }] }` (whoever can read the space) |
+| `PUT`/`DELETE /spaces/:space/moderators/:subject` | The space's moderators or staff: add (blocks refuse, 403 `community.blocked`) or remove one (idempotent). The no-JS forms are `POST /s/:space/moderators` and `POST /s/:space/moderators/remove` `{ subject }` |
 
 ### A space's chat room (OpenVibe.Chat)
 

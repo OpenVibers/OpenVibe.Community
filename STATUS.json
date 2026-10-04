@@ -30,6 +30,7 @@
     "pastes: code, text and screenshots, with versions, likes, comments, forks and burn-after-read",
     "typed comment threads embedded by other products",
     "forum: spaces, threads, posts, categories and votes",
+    "per-space moderators (migration 0005)",
     "members-only spaces and threads gated by OpenVibe.VIP",
     "a space's chat room on OpenVibe.Chat",
     "Pulse: the network's public activity from Events",
@@ -40,5 +41,5 @@
     "N-1 compatibility tests",
     "per-actor limits (openvibe-sdk/limits)"
   ],
-  "updated": "2026-10-03"
+  "updated": "2026-10-04"
 }

@@ -297,6 +297,23 @@ async function softDeletePost(db, id) {
         return 1;
     });
 }
+// ── per-space moderators ─────────────────────────────────────
+async function listModerators(db, spaceId) {
+    return await db.prepare('SELECT subject_id, added_by, created_at FROM space_moderators WHERE space_id = ? ORDER BY created_at, subject_id').all(spaceId);
+}
+
+async function moderatesSpace(db, spaceId, subject) {
+    if (!subject) return false;
+    return !!await db.prepare('SELECT 1 FROM space_moderators WHERE space_id = ? AND subject_id = ?').get(spaceId, subject);
+}
+
+async function addModerator(db, spaceId, subject, addedBy) {
+    await db.prepare('INSERT INTO space_moderators (space_id, subject_id, added_by) VALUES (?, ?, ?) ON CONFLICT (space_id, subject_id) DO NOTHING').run(spaceId, subject, addedBy || null);
+}
+
+async function removeModerator(db, spaceId, subject) {
+    return (await db.prepare('DELETE FROM space_moderators WHERE space_id = ? AND subject_id = ?').run(spaceId, subject)).changes > 0;
+}
 
 async function countPostsSince(db, subject, sinceSql) {
     return (await db.prepare("SELECT COUNT(*) AS c FROM posts WHERE author_subject = ? AND created_at > datetime('now', ?)").get(subject, sinceSql)).c;
@@ -308,5 +325,6 @@ module.exports = {
     getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
     listCategories, getCategory, getCategoryById, upsertCategory, deleteCategory, setThreadCategory, setThreadStatus, getThreadByKey,
     lastPosts, listGroups, updateSpace, createSpace, authorStats, bumpViews,
+    listModerators, moderatesSpace, addModerator, removeModerator,
     getPost, addPost, listPosts, editPost, listPostVersions, softDeletePost, countPostsSince,
 };

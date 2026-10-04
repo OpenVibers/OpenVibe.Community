@@ -30,11 +30,15 @@
  *   PUT    /spaces/:space/chat-room { room: slug | https://openvibe.chat/r/<slug> }   the space's owner or staff, signed in
  *                                                         themselves (Chat checks they manage the room) → { chat_room, created }
  *   DELETE /spaces/:space/chat-room                       the space's owner or staff (idempotent) → { detached, chat }
+ *   GET    /spaces/:space/moderators                      the space's own moderators → { space, moderators: [{ subject, username, display_name, added_by, added_at }] }
+ *   PUT    /spaces/:space/moderators/:subject             add a person (usr_…) — the space's moderators or staff (idempotent)
+ *   DELETE /spaces/:space/moderators/:subject             remove one — the space's moderators or staff (idempotent)
  *   POST   /posts/:id/reactions { reaction: agree|winner|funny|informative|friendly|sympathy|dumb|disgusting|bad_reading|late|null }
  *   PUT    /posts/:id { body }   DELETE /posts/:id   GET /posts/:id/versions
  *
  * Services write with community.post.create (as X-OV-Subject, or as AI with X-OV-Origin: ai) and
- * moderate with community.comment.moderate. Errors are problem+json. A members-only space or thread
+ * moderate with community.comment.moderate. "moderators" on a /spaces/:space route means discussion staff or
+ * one of that space's own moderators (people, signed in themselves). Errors are problem+json. A members-only space or thread
  * refuses readers and writers without the creator's VIP membership with 403 vip.members_only
  * ({ reason, gate, members_only: { owner, owner_username, join_url } }).
  */
@@ -53,6 +57,15 @@ function createSpacesApi({ forum, viewers, limits }) {
     const write = serviceCap(POST);
     const writeOrMod = serviceAnyCap([POST, MOD]);
     const p = (req) => req.params;
+    // A space's moderators: a service needs community.comment.moderate (as before); a browser must be discussion
+    // staff or one of the space's own moderators (the service methods decide again, with 404 for a missing space).
+    const spaceMod = (req, res, next) => {
+        const v = req.viewer;
+        if (v && v.kind === 'service') return serviceCap(MOD)(req, res, next);
+        return forum.canModerate(v, p(req).space)
+            .then((ok) => (ok ? next() : contracts.http.sendProblem(res, 403, 'capability.denied', { detail: "Only this space's moderators", ctx: req.ov })))
+            .catch(next);
+    };
     // Per-actor limits (server/actor-limits.js): reads take the defaults. The person limits in service.js
     // (threads 3 a minute and a daily cap, replies 6, uploads 12, votes 60) keep deciding for people;
     // these cap requests, refused ones included, and every write that has no content limit.
@@ -62,7 +75,7 @@ function createSpacesApi({ forum, viewers, limits }) {
 
     router.get('/', run(async (req) => await forum.listSpaces(req.viewer)));
     router.post('/', serviceCap(MOD), limits('community.space.create', { minute: 10, hour: 60 }), jsonBody, run(async (req) => await forum.createSpace(req.viewer, req.body || {}), 201));
-    router.put('/:space/settings', serviceCap(MOD), configure, jsonBody, run(async (req) => await forum.updateSpaceSettings(req.viewer, p(req).space, req.body || {})));
+    router.put('/:space/settings', configure, spaceMod, jsonBody, run(async (req) => await forum.updateSpaceSettings(req.viewer, p(req).space, req.body || {})));
     router.get('/:space', run(async (req) => await forum.space(req.viewer, p(req).space)));
     router.get('/:space/threads', run(async (req) => await forum.listThreads(req.viewer, p(req).space, req.query)));
     router.get('/:space/categories', run(async (req) => await forum.categories(req.viewer, p(req).space)));
@@ -73,22 +86,26 @@ function createSpacesApi({ forum, viewers, limits }) {
         : next()));
     // An upload is stored in OpenVibe.Media: 20 a minute, above the 12 a person may keep.
     router.post('/:space/attachments', write, limits('community.attachment.upload', { minute: 20, hour: 200 }), withFile, run(async (req) => await forum.uploadAttachment(req.viewer, p(req).space, req.file), 201));
-    router.put('/:space/categories/:category', serviceCap(MOD), configure, jsonBody, run(async (req) => await forum.putCategory(req.viewer, p(req).space, p(req).category, req.body || {})));
-    router.delete('/:space/categories/:category', serviceCap(MOD), configure, run(async (req) => await forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
+    router.put('/:space/categories/:category', configure, spaceMod, jsonBody, run(async (req) => await forum.putCategory(req.viewer, p(req).space, p(req).category, req.body || {})));
+    router.delete('/:space/categories/:category', configure, spaceMod, run(async (req) => await forum.deleteCategory(req.viewer, p(req).space, p(req).category)));
     router.put('/:space/threads/:slug/category', writeOrMod, editThread, jsonBody, run(async (req) => await forum.setThreadCategory(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/threads/:slug/status', serviceCap(MOD), configure, jsonBody, run(async (req) => await forum.setThreadStatus(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/status', configure, spaceMod, jsonBody, run(async (req) => await forum.setThreadStatus(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.post('/:space/threads/:slug/crosspost', write, limits('community.thread.crosspost', { minute: 10, hour: 60 }), jsonBody, run(async (req) => await forum.crosspost(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
     router.post('/:space/threads', write, limits('community.thread.create', { minute: 10, hour: 60 }), jsonBody, run(async (req) => await forum.createThread(req.viewer, p(req).space, req.body || {}), 201));
     router.get('/:space/threads/:slug', run(async (req) => await forum.getThread(req.viewer, p(req).space, p(req).slug, req.query)));
     router.delete('/:space/threads/:slug', writeOrMod, editThread, run(async (req) => await forum.deleteThread(req.viewer, p(req).space, p(req).slug)));
     router.post('/:space/threads/:slug/posts', write, limits('community.post.create', { minute: 20, hour: 300 }), jsonBody, run(async (req) => await forum.reply(req.viewer, p(req).space, p(req).slug, req.body || {}), 201));
     router.post('/:space/threads/:slug/votes', write, limits('community.thread.vote', { minute: 120, hour: 1200 }), jsonBody, run(async (req) => await forum.voteThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/threads/:slug/state', serviceCap(MOD), configure, jsonBody, run(async (req) => await forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/state', configure, spaceMod, jsonBody, run(async (req) => await forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/threads/:slug/members-only', writeOrMod, editThread, jsonBody, run(async (req) => await forum.setThreadMembersOnly(req.viewer, p(req).space, p(req).slug, req.body || {})));
-    router.put('/:space/members-only', serviceCap(MOD), configure, jsonBody, run(async (req) => await forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
+    router.put('/:space/members-only', configure, spaceMod, jsonBody, run(async (req) => await forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
     // A chat room (OpenVibe.Chat): people attach with their own token; moderator services may only detach.
     router.put('/:space/chat-room', configure, jsonBody, run(async (req) => await forum.attachChatRoom(req.viewer, p(req).space, req.body || {}), (out) => (out.created ? 201 : 200)));
     router.delete('/:space/chat-room', serviceCap(MOD), configure, run(async (req) => await forum.detachChatRoom(req.viewer, p(req).space)));
+    // The space's own moderators (people): listed to its readers, added and removed by its moderators or staff.
+    router.get('/:space/moderators', run(async (req) => await forum.moderators(req.viewer, p(req).space)));
+    router.put('/:space/moderators/:subject', configure, spaceMod, run(async (req) => await forum.addModerator(req.viewer, p(req).space, p(req).subject)));
+    router.delete('/:space/moderators/:subject', configure, spaceMod, run(async (req) => await forum.removeModerator(req.viewer, p(req).space, p(req).subject)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
