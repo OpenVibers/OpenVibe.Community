@@ -31,7 +31,8 @@
  *                                                         themselves (Chat checks they manage the room) → { chat_room, created }
  *   DELETE /spaces/:space/chat-room                       the space's owner or staff (idempotent) → { detached, chat }
  *   GET    /spaces/:space/moderators                      the space's own moderators → { space, moderators: [{ subject, username, display_name, added_by, added_at }] }
- *   PUT    /spaces/:space/moderators/:subject             add a person (usr_…) — the space's moderators or staff (idempotent)
+ *   PUT    /spaces/:space/moderators/:subject             add a person (usr_… or @username, resolved through the Network; 404 moderator.unknown_user)
+ *                                                         — the space's moderators or staff (idempotent)
  *   DELETE /spaces/:space/moderators/:subject             remove one — the space's moderators or staff (idempotent)
  *   POST   /posts/:id/reactions { reaction: agree|winner|funny|informative|friendly|sympathy|dumb|disgusting|bad_reading|late|null }
  *   PUT    /posts/:id { body }   DELETE /posts/:id   GET /posts/:id/versions
