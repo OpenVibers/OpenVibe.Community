@@ -415,6 +415,23 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         });
     }
 
+    /**
+     * The person a moderator form or API call names: a Network user subject (usr_…) as it is, or an @username
+     * resolved through the Network (identity.subject.resolve). 400 when it is neither, 404 when nobody holds the name.
+     */
+    async function moderatorSubject(who) {
+        const s = String(who || '').trim();
+        if (isUserSubject(s)) return s;
+        if (!/^@?[A-Za-z0-9_.-]{1,40}$/.test(s)) fail(400, 'moderator.invalid_subject', 'Name the person by their @username');
+        let subject = null;
+        if (network && network.subjectForUsername) {
+            try { subject = await network.subjectForUsername(s); }
+            catch { fail(503, 'identity.unavailable', 'Accounts cannot be looked up right now; try again in a minute'); }
+        }
+        if (!subject) fail(404, 'moderator.unknown_user', `No OpenVibe account is called @${s.replace(/^@/, '')}`);
+        return subject;
+    }
+
     /** The space, when the viewer moderates it: 404 (no such space), else 403. */
     async function moderatedSpace(v, slug, what) {
         const space = await spaceFor(v, slug);
@@ -471,9 +488,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          * Add a person as one of the space's moderators — its moderators or discussion staff. A Network user
          * subject (usr_…); not someone who blocked the one adding them, or whom they blocked. Idempotent.
          */
-        async addModerator(v, spaceSlug, subject) {
+        async addModerator(v, spaceSlug, who) {
             const space = await moderatedSpace(v, spaceSlug, 'add moderators');
-            if (!isUserSubject(subject)) fail(400, 'moderator.invalid_subject', 'Name the person by their Network subject (usr_…)');
+            const subject = await moderatorSubject(who);
             if (person(v) && v.subject !== subject && (await blocks.hasBlocked(db, subject, v.subject) || await blocks.hasBlocked(db, v.subject, subject))) {
                 fail(403, 'community.blocked', 'You cannot add this person as a moderator: one of you blocked the other');
             }
@@ -487,9 +504,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         },
 
         /** Remove one of the space's moderators (themselves included) — its moderators or discussion staff. Idempotent. */
-        async removeModerator(v, spaceSlug, subject) {
+        async removeModerator(v, spaceSlug, who) {
             const space = await moderatedSpace(v, spaceSlug, 'remove moderators');
-            if (!isUserSubject(subject)) fail(400, 'moderator.invalid_subject', 'Name the person by their Network subject (usr_…)');
+            const subject = await moderatorSubject(who);
             await db.tx(async () => {
                 if (await store.removeModerator(db, space.id, subject)) await events.moderationAction(v, 'space.moderator_removed', { type: 'space', id: space.slug }, { details: { subject } });
             });

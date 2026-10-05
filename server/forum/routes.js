@@ -129,8 +129,10 @@ function createForumRoutes({ forum, viewers, config }) {
             const out = await forum.listThreads(req.viewer, req.params.space, { sort: req.query.sort, page: req.query.page, category: req.query.category, status: req.query.status });
             if (out.page > out.pages) throw new ApiError(404, 'page.not_found', 'There is no page with that number.');
             const chatRoom = forumPages.chatRoomBox(out.space, { canManage: out.viewer.can_manage_chat_room, error: typeof req.query.chat_error === 'string' ? req.query.chat_error.slice(0, 200) : null });
-            if (out.space.style === 'forum') return html(res, boardPages.forumSpacePage({ ...out, user: req.user, chatRoom }));
-            html(res, forumPages.spacePage({ ...out, user: req.user, chatRoom, footer: out.viewer.can_moderate ? boardPages.settingsForm(out.space, out.groups) : '' }));
+            const me = req.viewer && req.viewer.subject;
+            const modError = typeof req.query.mod_error === 'string' ? req.query.mod_error.slice(0, 200) : null;
+            if (out.space.style === 'forum') return html(res, boardPages.forumSpacePage({ ...out, user: req.user, chatRoom, me, modError }));
+            html(res, forumPages.spacePage({ ...out, user: req.user, chatRoom, footer: out.viewer.can_moderate ? boardPages.settingsForm(out.space, out.groups) + boardPages.moderatorsBox(out.space, out.moderators || [], { me, error: modError }) : '' }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
@@ -259,18 +261,27 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    // The space's own moderators (no JS): add one by Network subject, remove one; back to the space.
+    // The space's own moderators (no JS): add one by @username (or Network subject), remove one; back to the space's
+    // moderators box. A refusal about the person named (unknown, blocked, malformed) comes back as a notice there.
+    const modsBack = (req, error) => `/s/${encodeURIComponent(req.params.space)}${error ? `?mod_error=${encodeURIComponent(error)}` : ''}#moderators`;
+    const modRefusal = (err) => err instanceof ApiError && (String(err.code).startsWith('moderator.') || err.code === 'community.blocked' || err.code === 'identity.unavailable');
     router.post('/s/:space/moderators', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         try {
             await forum.addModerator(req.viewer, req.params.space, String((req.body || {}).subject || '').trim().slice(0, 64));
-            res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
-        } catch (err) { failPage(req, res, err, next); }
+            res.redirect(303, modsBack(req));
+        } catch (err) {
+            if (modRefusal(err)) return res.redirect(303, modsBack(req, err.message));
+            failPage(req, res, err, next);
+        }
     }));
     router.post('/s/:space/moderators/remove', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         try {
             await forum.removeModerator(req.viewer, req.params.space, String((req.body || {}).subject || '').trim().slice(0, 64));
-            res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
-        } catch (err) { failPage(req, res, err, next); }
+            res.redirect(303, modsBack(req));
+        } catch (err) {
+            if (modRefusal(err)) return res.redirect(303, modsBack(req, err.message));
+            failPage(req, res, err, next);
+        }
     }));
 
     // The space's chat room (no JS): attach by address or link, detach. A refusal comes back as a notice on the space.

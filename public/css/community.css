@@ -259,6 +259,9 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .chat-room { margin: 12px 0 16px; padding: 10px 14px; border: 1px solid var(--border-light); border-radius: 10px; background: var(--bg-card); }
 .chat-room h2 { margin: 0 0 6px; }
 .space-settings summary, .crosspost-form summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
+.mod-list { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 6px; }
+.mod-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-card); }
+.mod-row .inline-form { margin-left: auto; }
 .discuss-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .postbits { display: grid; gap: 12px; margin: 12px 0; }
 .postbit { display: grid; grid-template-columns: 170px 1fr; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 12px; scroll-margin-top: 80px; }

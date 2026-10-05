@@ -12,7 +12,7 @@ const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
-const { timeTag, fmtDate, num, avatarUrl } = require('./pages');
+const { timeTag, fmtDate, num, avatarUrl, authorHtml } = require('./pages');
 const f = require('./forum');
 
 const STYLE_LABELS = { forum: 'Forum', feed: 'Feed' };
@@ -108,8 +108,29 @@ function settingsForm(space, groups = []) {
 </form></details>`;
 }
 
+/**
+ * Moderators: who moderates the space, a remove (or "Step down") button per person, and an add-by-@username form, no
+ * JS. `me` is the viewer's subject; `error` is a refused add or remove, shown in the box (which then opens).
+ */
+function moderatorsBox(space, moderators = [], { me = null, error = null } = {}) {
+    const slug = esc(space.slug);
+    const rows = moderators.map((m) => {
+        const name = m.username ? `@${m.username}` : (m.display_name || 'this person');
+        const self = me && m.subject === me;
+        return `<li class="mod-row">${authorHtml(m)}${m.added_at ? ` <span class="muted small">since ${timeTag(m.added_at)}</span>` : ''}
+    <form class="inline-form" method="post" action="/s/${slug}/moderators/remove"><input type="hidden" name="subject" value="${esc(m.subject)}"><button class="btn btn-sm btn-ghost" type="submit"${self ? '' : ` aria-label="Remove ${esc(name)} as a moderator"`}>${self ? 'Step down' : 'Remove'}</button></form></li>`;
+    }).join('');
+    return `<details class="space-settings" id="moderators"${error ? ' open' : ''}><summary><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Moderators (${moderators.length})</summary>
+${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
+${rows ? `<ul class="mod-list">${rows}</ul>` : '<p class="muted small">No one moderates this space yet; discussion staff do.</p>'}
+<form class="paste-form" method="post" action="/s/${slug}/moderators">
+  <label class="field"><span>Add a moderator</span><input name="subject" required maxlength="41" placeholder="@username" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Add moderator</button></div>
+</form></details>`;
+}
+
 // ── /s/:space (forum style) ──────────────────────────────────
-function forumSpacePage({ space, threads, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, children = [], groups = [], chatRoom = '' }) {
+function forumSpacePage({ space, threads, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, children = [], groups = [], chatRoom = '', moderators = [], me = null, modError = null }) {
     const filtered = !!(category || status);
     const indexable = space.visibility === 'public' && !space.members_only && !filtered;
     const href = (o = {}) => f.spaceHref(space.slug, { sort: 'active', category, status, ...o }).replace(/[?&]sort=active/, '').replace(/\?&/, '?').replace(/\?$/, '');
@@ -136,7 +157,7 @@ ${threads.length ? `<table class="board-table topic-table"><caption class="sr-on
   <tbody>${threads.map((t) => topicRow(t, space)).join('')}</tbody></table>` : `<p class="empty">${filtered ? `Nothing here yet. <a href="${esc(href({ category: null, status: null }))}">See every topic</a>.` : viewer.can_start !== false ? `No topics yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.` : 'Nothing here yet.'}</p>`}
 ${pagerHtml}
 </section>
-${viewer.can_moderate ? settingsForm(space, groups) : ''}`;
+${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moderators, { me, error: modError }) : ''}`;
     return renderPage({
         title: `${space.name}${page > 1 ? ` (page ${page})` : ''}`,
         description: `${space.description || `Topics in ${space.name}`} ${plural(total, 'topic', 'topics')} on OpenVibe.Community.`,
@@ -277,4 +298,4 @@ ${groups.map((g) => `<section class="board-group"><h2 class="board-group-h">${es
     return renderPage({ title: 'Discuss in a space', canonicalPath: '/s/discuss', robots: 'noindex,follow', active: 'spaces', footerVariant: 'compact', body });
 }
 
-module.exports = { boardIndexPage, forumSpacePage, forumTopicPage, newSpacePage, settingsForm, discussPage };
+module.exports = { boardIndexPage, forumSpacePage, forumTopicPage, newSpacePage, settingsForm, moderatorsBox, discussPage };
