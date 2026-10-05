@@ -391,7 +391,7 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `DELETE /spaces/:space/chat-room` | The space's owner or staff (moderator services too): detach it (idempotent) |
 | `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` · `GET /posts/:id/versions` | Author or moderator |
 | `GET /spaces/:space/moderators` | The space's own moderators `{ space, moderators: [{ subject, username, display_name, added_by, added_at }] }` (whoever can read the space) |
-| `PUT`/`DELETE /spaces/:space/moderators/:subject` | The space's moderators or staff: add (blocks refuse, 403 `community.blocked`) or remove one (idempotent). The no-JS forms are `POST /s/:space/moderators` and `POST /s/:space/moderators/remove` `{ subject }` |
+| `PUT`/`DELETE /spaces/:space/moderators/:subject` | The space's moderators or staff: add (blocks refuse, 403 `community.blocked`) or remove one (idempotent). `:subject` is a Network user subject (`usr_…`) or an `@username`, resolved through the Network (404 `moderator.unknown_user` when nobody holds it). The space page shows its moderators a Moderators box (list, remove or step down, add by @username); its no-JS forms are `POST /s/:space/moderators` and `POST /s/:space/moderators/remove` `{ subject }`, and a refusal comes back as a notice in the box |
 
 ### A space's chat room (OpenVibe.Chat)
 

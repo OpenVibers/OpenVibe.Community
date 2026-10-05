@@ -5,7 +5,7 @@
  * Also the Wave-1 service-principal surface Community uses in 'community' authority mode:
  *   - client_credentials grants (form-encoded, as openvibe-contracts' token client sends them)
  *     mint service tokens with the requested audience and scope as capabilities;
- *   - POST /internal/identity/resolve-batch answers from `directory` and insists on a service
+ *   - POST /internal/identity/resolve-batch (and GET /internal/identity/resolve?username=) answer from `directory` and insist on a service
  *     token for openvibe.network holding identity.subject.resolve.
  * signService() mints tokens as another service (e.g. Live) would present them to Community.
  */
@@ -85,6 +85,18 @@ function start({ clientSecret = 'shh' } = {}) {
                     }
                 }
                 return json(200, { results });
+            }
+            if (req.url.startsWith('/internal/identity/resolve?') && req.method === 'GET') {
+                // GET /internal/identity/resolve?username= (Network #56): the current holder of a name, any case, a
+                // leading @ ignored; 404 for nobody (or a banned account).
+                const auth = String(req.headers.authorization || '');
+                const v = serviceAuth.verifyServiceToken(auth.slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.network' });
+                if (!v.ok) return json(401, { code: v.code, error: v.reason });
+                if (!(v.claims.cap || []).includes('identity.subject.resolve')) return json(403, { code: 'capability.denied', error: 'not granted' });
+                if (directory.down) return json(503, { error: 'down' });
+                const name = String(new URL(req.url, 'http://x').searchParams.get('username') || '').replace(/^@/, '').toLowerCase();
+                const u = directory.users.find((x) => String(x.username || '').toLowerCase() === name && !x.banned);
+                return u ? json(200, projection(u)) : json(404, { code: 'identity.subject_not_found' });
             }
             json(404, { error: 'not found' });
         });

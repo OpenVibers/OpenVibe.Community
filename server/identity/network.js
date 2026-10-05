@@ -111,6 +111,30 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
         });
     }
 
+    /**
+     * The user subject an @username names right now (a leading @ and case are ignored), or null when nobody holds it
+     * or the account is banned or deleted (Network answers 404). Remembered in the projection cache like any lookup.
+     */
+    async function subjectForUsername(username, retried = false) {
+        const name = String(username || '').trim().replace(/^@/, '');
+        if (!/^[A-Za-z0-9_.-]{1,40}$/.test(name)) return null;
+        const res = await fetchImpl(`${base}/internal/identity/resolve?username=${encodeURIComponent(name)}`, {
+            headers: { Accept: 'application/json', ...(await tokens.authHeaders()) },
+            signal: AbortSignal.timeout(8000),
+        });
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await subjectForUsername(name, true); }
+        if (res.status === 404) return null;
+        const p = await res.json().catch(() => null);
+        if (!res.ok || !p || !p.subject) {
+            const err = new Error(`resolve ${res.status}: ${(p && (p.detail || p.error)) || 'bad response'}`);
+            err.status = res.status;
+            throw err;
+        }
+        if (p.subject.type !== 'user') return null;
+        await remember(p);
+        return p.subject.id;
+    }
+
     let inflight = null;
     const pending = new Set();
     /** Background refresh of stale entries, batched and deduplicated. */
@@ -149,7 +173,7 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
         return map;
     }
 
-    return { resolveSubjects, resolveLegacy, subjectForNetworkUser, rememberClaims, projections, tokens };
+    return { resolveSubjects, resolveLegacy, subjectForNetworkUser, subjectForUsername, rememberClaims, projections, tokens };
 }
 
 module.exports = { createNetworkIdentity, PROJECTION_TTL_MS };
