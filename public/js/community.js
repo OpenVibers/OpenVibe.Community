@@ -152,14 +152,14 @@
     }
 
     // Pulse follows OpenVibe.Events realtime (roadmap WS-F task 1): on the first page, public activity
-    // from here and the other sites arrives over events.openvibe.network/realtime/stream, and a bar
+    // from here and the other sites arrives over openvibe.events/realtime/stream, and a bar
     // offers to show it (the page itself stays server-rendered, so a reload is the whole update).
     if (pulseEs) { pulseEs.close(); pulseEs = null; }
     var pulse = document.querySelector('[data-pulse-live]');
     if (pulse && typeof EventSource !== 'undefined') {
       var topics = ['community.paste.created', 'live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published'];
       var bar = pulse.querySelector('.pulse-new'), show = pulse.querySelector('[data-pulse-show]'), fresh = 0;
-      var es = new EventSource('https://events.openvibe.network/realtime/stream?topics=' + encodeURIComponent(topics.join(',')));
+      var es = new EventSource('https://openvibe.events/realtime/stream?topics=' + encodeURIComponent(topics.join(',')));
       pulseEs = es;
       es.onmessage = function (m) {
         var d; try { d = JSON.parse(m.data); } catch (e) { return; }
