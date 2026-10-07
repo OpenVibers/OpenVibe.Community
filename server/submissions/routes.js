@@ -11,7 +11,7 @@
  *   POST /submissions/:slug/review      moderators: decision=accept|reject, note
  *
  * Form posts carry the ov_token cookie (SameSite=Lax) and an Origin from another site is refused,
- * as in the forum.
+ * as on other no-JS forms.
  */
 const express = require('express');
 const pages = require('../render/pages');

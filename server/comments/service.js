@@ -20,7 +20,7 @@
  *     from a service (origin ai, never attributed). Not on locked threads (moderators still may).
  *     Threads of the types in SIGNED_IN_ONLY take no anonymous comments (the owner product's rule).
  *     Platform blocks (identity/blocks.js): no reply to a comment whose author blocked you, no comment
- *     on a Community paste or post whose owner blocked you (403 community.blocked).
+ *     on a Community paste whose owner blocked you (403 community.blocked).
  *   - edit: the comment's author only (edited_at records it).
  *   - delete: the comment's author, or a moderator.
  *   - one comment with its thread (getComment): services only — comment ids are sequential, so a
@@ -37,7 +37,7 @@
 const contracts = require('openvibe-contracts');
 const store = require('./store');
 const pasteStore = require('../pastes/store');
-const { applyVote, myVotes, parseVote } = require('../votes');
+const { applyVote, myVotes, parseVote } = require('./votes');
 const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
@@ -53,7 +53,7 @@ const blocks = require('../identity/blocks');
 const BROWSER_REF_TYPES = {
     live: ['stream', 'channel'],
     media: ['object'],
-    community: ['paste', 'post'],
+    community: ['paste'],
     wiki: ['page'],
     blog: ['post'],
     reviews: ['entity'],
@@ -118,7 +118,7 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
         const all = [];
         for (const r of rows) { all.push(r); if (r.replies) all.push(...r.replies); }
         const projections = await authors.projectionsFor(all.map((c) => c.author_subject));
-        const votes = await myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
+        const votes = await myVotes(db, all.map((c) => c.id), v && v.subject);
         return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v)));
     }
 
@@ -154,22 +154,16 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
     /** Community's own entities must exist (and be visible to the viewer) before anyone opens a thread on them. */
     async function checkCommunityRef(ref, v) {
         if (ref.service !== 'community') return;
-        if (ref.type === 'paste') {
-            if (!await pasteVisibleTo(v, ref.id)) fail(404, 'ref.not_found', 'No such paste');
-        } else if (ref.type === 'post') {
-            const ok = /^\d{1,15}$/.test(ref.id) && await db.prepare(`SELECT 1 FROM posts p JOIN threads t ON t.id = p.thread_id JOIN spaces s ON s.id = t.space_id
-                                                                WHERE p.id = ? AND p.deleted_at IS NULL AND t.deleted_at IS NULL AND s.visibility = 'public'`).get(Number(ref.id));
-            if (!ok) fail(404, 'ref.not_found', 'No such post');
-        }
+        if (ref.type !== 'paste') fail(403, 'ref.type_not_allowed', 'Community comments only reference pastes');
+        if (!await pasteVisibleTo(v, ref.id)) fail(404, 'ref.not_found', 'No such paste');
     }
 
     const signedInOnly = (t) => (SIGNED_IN_ONLY[t.ref_service] || []).includes(t.ref_type);
 
-    /** Who owns a thread's Community entity (a paste's owner, a forum post's author), or null. */
+    /** Who owns a thread's Community paste, or null. */
     async function entityOwner(t) {
         if (t.ref_service !== 'community') return null;
         if (t.ref_type === 'paste') { const p = await pasteStore.getBySlug(db, t.ref_id); return p ? p.owner_subject || null : null; }
-        if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) { const r = await db.prepare('SELECT author_subject FROM posts WHERE id = ?').get(Number(t.ref_id)); return r ? r.author_subject || null : null; }
         return null;
     }
 
@@ -325,7 +319,7 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
             const { comment: c, thread: t } = await visibleComment(v, commentId);
             if (t.visibility !== 'public') fail(403, 'thread.locked', 'This comment thread is locked');
             voteLimiter.check(`s:${v.subject}`);
-            const out = await applyVote(db, 'comment', c.id, v.subject, value);
+            const out = await applyVote(db, c.id, v.subject, value);
             voteLimiter.record(`s:${v.subject}`);
             return { comment_id: c.id, ...out };
         },

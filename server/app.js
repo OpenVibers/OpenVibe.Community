@@ -8,20 +8,20 @@
  *   Pages (server-rendered)            API / machine
  *   GET /               home           ALL /api/pastes/*       the native paste API (pastes/api.js)
  *   GET /pastes         browse         /api/v1/comments/*      typed comment threads (comments/api.js)
- *   GET /p/:slug        paste          /api/v1/spaces/*, /api/v1/posts/*   forum (forum/api.js)
+ *   GET /p/:slug        paste
  *   POST /p/:slug/comments  comment on it (its typed thread)
  *   GET /p/:slug/raw    raw text       /api/v1/pulse/*         Pulse (pulse/api.js)
- *   GET /p/:slug/screenshot → image    /api/v1/relay/*         Discord relay admin (relay/api.js)
+ *   GET /p/:slug/screenshot → image
  *   GET /p/:slug/download              GET /api/health, /api/ready, /release.json, /metrics (loopback)
- *   GET|POST /new       create         GET /robots.txt, /llms.txt, /llms-full.txt, /sitemap.xml, /feed.xml, /s/feed.xml
+ *   GET|POST /new       create         GET /robots.txt, /llms.txt, /llms-full.txt, /sitemap.xml, /feed.xml
  *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
- *   GET /s …            spaces, threads, posts (forum/routes.js)    POST /release-metrics (open tabs' update reports)
+ *   GET /s …            redirect to OpenVibe.Space    POST /release-metrics (open tabs' update reports)
  *   GET /pulse          the network's public activity
  *   GET|POST /c/:accessId   one comment thread's own page (comments/routes.js)
  *   GET|POST /submissions …  submissions, their pages and the review queue (submissions/routes.js)
  *                                      /api/v1/submissions/*   submissions (submissions/api.js)
  *
- * Comments, the forum, Pulse and the relay live in Community's database, alongside the pastes
+ * Comments and Pulse live in Community's database, alongside the pastes
  * Community itself is the only authority for: the native API (pastes/api.js), pages, raw text
  * and screenshots all come from the store.
  */
@@ -45,17 +45,8 @@ const v1 = require('./http/v1');
 const { createCommentService } = require('./comments/service');
 const { createCommentsApi } = require('./comments/api');
 const { createCommentPages } = require('./comments/routes');
-const { createForumService } = require('./forum/service');
-const { createVipGate } = require('./vip');
-const { createSpacesApi, createPostsApi, createGroupsApi } = require('./forum/api');
-const { createForumRoutes } = require('./forum/routes');
 const { createPulse } = require('./pulse/service');
 const { createPulseApi } = require('./pulse/api');
-const { createDiscordRelay } = require('./relay/discord');
-const { createRelayEventsWorker } = require('./relay/events-worker');
-const { createDiscordGateway } = require('./relay/discord-gateway');
-const { createDiscordInbound } = require('./relay/inbound');
-const { createRelayApi } = require('./relay/api');
 const { createActorLimits } = require('./actor-limits');
 const { createSubmissionService } = require('./submissions/service');
 const { createSubmissionsApi } = require('./submissions/api');
@@ -132,47 +123,12 @@ async function createApp(opts = {}) {
     await revocations.load();
     const viewers = createViewerResolver({ auth, config, network, revocations });
     const pulse = createPulse({ db, network, config });
-    const relay = opts.relay || createDiscordRelay({
-        db, config, enabled: config.discordRelay.enabled,
-        pollMs: config.discordRelay.pollMs, baseMs: config.discordRelay.backoffMs, maxAttempts: config.discordRelay.maxAttempts,
-        webhookVars: config.discordRelay.webhookVars,
-        ...(opts.relayOptions || {}),
-    });
-    // Its Events worker (creates from community.thread.* / community.post.*) and the inbound gateway;
-    // both off unless configured (relay/events-worker.js, relay/discord-gateway.js, relay/inbound.js).
-    const relayInbound = relay.enabled ? createDiscordInbound({ db, perMinute: config.discordRelay.inboundPerMinute, maxChars: config.discordRelay.inboundMaxChars, ...(opts.inboundOptions || {}) }) : null;
-    if (!opts.relay) {
-        relay.attach({
-            worker: createRelayEventsWorker({
-                db, relay, enabled: config.discordRelay.events, eventsUrl: config.discordRelay.eventsUrl, clientSecret: config.oauth.clientSecret,
-                tokenUrl: `${config.networkInternalUrl}/oauth/token`, clientId: config.oauth.clientId, pollMs: config.discordRelay.eventsPollMs, fetchImpl: opts.fetchImpl,
-                ...(opts.relayWorkerOptions || {}),
-            }),
-            gateway: relayInbound && config.discordRelay.inbound ? createDiscordGateway({
-                token: config.discordRelay.botToken, url: config.discordRelay.gatewayUrl,
-                onDispatch: async (type, data, ctx) => await relayInbound.handle(type, data, ctx),
-                ...(opts.gatewayOptions || {}),
-            }) : null,
-            inbound: relayInbound,
-        });
-    }
-    // OpenVibe.VIP: members-only spaces and threads (fails closed without a client secret or VIP).
-    const vip = opts.vip || createVipGate({ config, ...(opts.vipOptions || {}) });
-    // Images on posts go to OpenVibe.Media's Object API as med_ objects (media/objects.js).
     const mediaObjects = opts.mediaObjects || require('./media/objects').createMediaObjects({ config });
-    // A space's chat room on OpenVibe.Chat (chat-rooms.js): attached with the person's own token.
-    const chatRooms = opts.chatRooms || require('./chat-rooms').createChatRooms({ config });
-    // IndexNow (openvibe-shared/indexnow): created once at boot from INDEXNOW_KEY; unset → off
-    // (nothing mounted, nothing sent). The key file is served at /<key>.txt and the paste and forum
-    // services ping the engines when a public, indexable page appears, changes or goes away.
     const indexnow = opts.indexnow || createIndexNow({ host: config.baseUrl, key: config.indexnow.key, ...(opts.fetchImpl ? { fetch: opts.fetchImpl } : {}) });
-    const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, chatRooms, limits: opts.forumLimits, config, indexnow });
     const comments = createCommentService({ db, network, limits: opts.commentLimits });
-    // Submissions (clips, art, ideas, reports for review): their own table, not tied to the forum.
+    // Submissions (clips, art, ideas and reports for review) have their own table.
     const submissions = createSubmissionService({ db, network, pulse, indexnow, config, limits: opts.submissionLimits });
-    discovery.useForum(forum);
-    Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments, submissions, indexnow });
-    if (opts.startRelay !== false) relay.start();
+    Object.assign(app.locals, { db, network, pulse, comments, submissions, indexnow });
 
     // ── Pastes: Community's own store is the only authority ──
     {
@@ -186,7 +142,7 @@ async function createApp(opts = {}) {
             tokens: files.tokens,
             async upload({ buffer, filename, mime, owner = null }) {
                 if (!mediaObjects.configured) return await files.upload({ buffer, filename, mime });
-                const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste' });
+                const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner });
                 return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id };
             },
         };
@@ -219,7 +175,7 @@ async function createApp(opts = {}) {
     // ── /api/v1/submissions — clips, art, ideas and reports for community review ──
     app.use('/api/v1/submissions', v1.cors(config.apiCorsOrigins), createSubmissionsApi({ submissions, viewers, limits }));
 
-    // ── /api/v1: comments, forum, Pulse, relay admin ─────────
+    // ── /api/v1: comments and Pulse ─────────
     // Opening a thread writes a row: browsers get 300 resolves per 10 minutes per address.
     const resolveLimiter = rateLimit({
         windowMs: 10 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false,
@@ -230,15 +186,11 @@ async function createApp(opts = {}) {
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter, limits }));
     app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers, limits }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
-    const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, vipCache: vip && vip.cache, revocations, accountSend: config.oauth && config.oauth.clientSecret ? require('./identity/account-data').createSender({ config }) : null, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
+    const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, revocations, accountSend: config.oauth && config.oauth.clientSecret ? require('./identity/account-data').createSender({ config }) : null, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
     app.locals.pulseConsumer = pulseConsumer;
     // Never per-actor limited: Events pushes at its own pace (a 429 only makes it retry and fall behind),
     // and these deliveries carry token cutoffs and account deletions.
     app.use('/internal/events', pulseConsumer.router);
-    app.use('/api/v1/spaces', createSpacesApi({ forum, viewers, limits }));
-    app.use('/api/v1/posts', createPostsApi({ forum, viewers, limits }));
-    app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers, limits }));
-    app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports (a same-origin
@@ -246,7 +198,7 @@ async function createApp(opts = {}) {
     release.mount(app, { registry: metrics.registry });
     // Readiness reports what is actually served: 503 only without the database; the Network key
     // and Media failures degrade (server/observability.js).
-    const readiness = require('./observability').createCommunityReadiness({ db, auth, config, relay, release: release.release, fetchImpl: opts.fetchImpl, valkey });
+    const readiness = require('./observability').createCommunityReadiness({ db, auth, config, release: release.release, fetchImpl: opts.fetchImpl, valkey });
     app.get('/api/ready', readiness.handler);
 
     // ── Static assets (content-hashed ?v= → immutable) ───────
@@ -295,20 +247,19 @@ async function createApp(opts = {}) {
 
     app.get('/updates', (req, res) => html(res, pages.updatesPage()));
 
-    // Threads and pastes through OpenVibe.Search (server/search/query.js); the paste filter below works without it.
+    // Pastes through OpenVibe.Search (server/search/query.js); the paste filter below works without it.
     const searchQuery = opts.searchQuery || require('./search/query').createSearchQuery({ baseUrl: config.searchInternalUrl });
     app.get('/search', withUser, wrap(async (req, res) => {
         const q = String(req.query.q || '').trim().slice(0, 200);
-        const type = ['thread', 'paste'].includes(req.query.type) ? req.query.type : '';
         const { searchPage } = require('./render/search');
-        if (!q) return html(res, searchPage({ q, type }));
+        if (!q) return html(res, searchPage({ q }));
         try {
-            const out = await searchQuery.search({ q, type, cursor: String(req.query.cursor || '') });
-            html(res, searchPage({ q, type, results: out.results, nextCursor: out.next_cursor }));
+            const out = await searchQuery.search({ q, cursor: String(req.query.cursor || '') });
+            html(res, searchPage({ q, results: out.results, nextCursor: out.next_cursor }));
         } catch (err) {
             if (!err || !err.unavailable) throw err;
             console.warn('[Search] /search:', err.message);
-            html(res, searchPage({ q, type, unavailable: true }), 503);
+            html(res, searchPage({ q, unavailable: true }), 503);
         }
     }));
 
@@ -438,8 +389,8 @@ async function createApp(opts = {}) {
         }
     }));
 
-    // ── Forum and Pulse pages ────────────────────────────────
-    app.use(createForumRoutes({ forum, viewers, config }));
+    // Space serves these paths.
+    app.get(['/s', '/s/*'], (req, res) => res.redirect(301, `https://openvibe.space${req.originalUrl}`));
     app.use(createCommentPages({ comments, viewers, config }));
     app.use(createSubmissionPages({ submissions, viewers, config }));
     app.get('/pulse', viewers.middleware({ services: false }), wrap(async (req, res) => {

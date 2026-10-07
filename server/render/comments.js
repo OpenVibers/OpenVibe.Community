@@ -10,11 +10,11 @@ const config = require('../config');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { timeTag, fmtDate, num } = require('./pages');
-const { who } = require('./forum');
+const { who } = require('./who');
 
 const REF_NAMES = {
     'live/vod': 'VOD', 'live/clip': 'clip', 'live/stream': 'stream', 'live/channel': 'channel',
-    'wiki/page': 'wiki page', 'blog/post': 'blog post', 'community/paste': 'paste', 'community/post': 'post',
+    'wiki/page': 'wiki page', 'blog/post': 'blog post', 'community/paste': 'paste',
 };
 const PRODUCTS = { live: 'OpenVibe.Live', wiki: 'OpenVibe.Wiki', blog: 'OpenVibe.Blog', community: 'OpenVibe.Community', media: 'OpenVibe.Media', reviews: 'OpenVibe.Reviews' };
 

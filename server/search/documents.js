@@ -1,19 +1,5 @@
 'use strict';
-/**
- * Community's threads and pastes in OpenVibe.Search (roadmap WS-O task 10; Contracts 0.44.0
- * community.index_document.upserted|deleted): one document per public forum thread (a public, open
- * space and an open thread) and per public paste, published through Community's outbox (../events.js)
- * in a transaction with the push record, and a tombstone once it is deleted, made private, unlisted or
- * members-only, or burns after reading. Search takes them through its '*.index_document.*' subscription.
- *
- *   scan()     every minute: every thread (a space's visibility has no timestamp, and there are few),
- *              and the pastes changed or deleted since the previous scan
- *   refresh()  hourly: every paste, and a tombstone for any sent paste that no longer exists
- *
- * A document is sent only when what Search should hold changed (search_doc_pushes keeps a hash and the
- * revision, which grows by one with every document or tombstone). NSFW pastes and crossposts are
- * indexed noindex, as their pages are or should be. Off while the outbox is off (EVENTS_URL unset).
- */
+/** Publish Community's public paste documents to Search through the Events outbox. */
 const crypto = require('crypto');
 const config = require('../config');
 const events = require('../events');
@@ -39,7 +25,7 @@ const plain = (md) => String(md || '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^[ \t]*(#{1,6}|>|[-*+]|\d+\.)[ \t]+/gm, '')
     .replace(/[*_~`]+/g, '');
-const AUTHORSHIP = { ai: 'ai_generated', imported: 'imported', discord: 'imported' };
+const AUTHORSHIP = { ai: 'ai_generated', imported: 'imported' };
 const hashOf = (doc) => crypto.createHash('sha256').update(JSON.stringify(doc)).digest('hex').slice(0, 32);
 const sqlTime = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 
@@ -50,34 +36,6 @@ function createSearchDocuments({ db }) {
 
     // search_doc_pushes is in migrations/0001_initial.sql.
     const enabled = () => !!events.status().enabled;
-
-    /** The document for one thread, `{ deleted: true }` when Search must not hold it. */
-    async function threadDocument(threadId) {
-        const t = await db.prepare(`SELECT t.*, s.slug AS space_slug, s.name AS space_name, s.visibility AS space_visibility,
-                                     s.members_only_owner AS space_members_only, c.slug AS category_slug
-                              FROM threads t JOIN spaces s ON s.id = t.space_id LEFT JOIN categories c ON c.id = t.category_id
-                              WHERE t.id = ?`).get(threadId);
-        if (!t || t.deleted_at || t.space_visibility !== 'public' || t.space_members_only || t.members_only_owner) return { deleted: true };
-        const posts = await db.prepare('SELECT body_markdown, is_opening FROM posts WHERE thread_id = ? AND deleted_at IS NULL ORDER BY is_opening DESC, id ASC').all(t.id);
-        const opening = posts.find((p) => p.is_opening);
-        const facets = { space: t.space_slug, kind: t.kind || 'discussion', replies: Number(t.reply_count) || 0, score: Number(t.score) || 0 };
-        if (t.status) facets.status = String(t.status).slice(0, 200);
-        if (t.category_slug) facets.category = t.category_slug;
-        if (t.crosspost_of) facets.crosspost = true;
-        const doc = {
-            owner: 'community', type: 'thread', id: String(t.id), deleted: false, visibility: 'public',
-            canonical_url: `${config.baseUrl}/s/${encodeURIComponent(t.space_slug)}/t/${encodeURIComponent(t.slug)}`,
-            title: clean(t.title, 500) || 'Thread',
-            summary: clean(plain(opening && opening.body_markdown), 300) || `A thread in ${t.space_name} on OpenVibe.Community.`,
-            body: posts.map((p) => clean(plain(p.body_markdown), 8000)).filter(Boolean).join('\n').slice(0, 40000),
-            facets, authorship: AUTHORSHIP[t.origin] || 'human', publication_state: 'published',
-            published_at: iso(t.created_at), updated_at: iso(t.last_activity_at || t.created_at),
-            indexability: t.crosspost_of ? { decision: 'noindex', reasons: ['crosspost'] } : { decision: 'index' },
-        };
-        if (!doc.body) delete doc.body;
-        if (!doc.updated_at) delete doc.updated_at;
-        return doc;
-    }
 
     /** The document for one paste (by row), `{ deleted: true }` when Search must not hold it. */
     function pasteDocument(p) {
@@ -122,7 +80,6 @@ function createSearchDocuments({ db }) {
         return 'sent';
     }
 
-    const publishThread = async (threadId) => await send('thread', String(threadId), await threadDocument(threadId));
     async function publishPaste(row) {
         if (!row || !SLUG_RE.test(String(row.slug || ''))) return 'skipped';
         return await send('paste', pasteDocId(row), pasteDocument(row));
@@ -133,13 +90,11 @@ function createSearchDocuments({ db }) {
         if (!enabled()) return 0;
         const from = lastScan || sqlTime(now - 10 * 60 * 1000);
         const to = sqlTime(now);
-        const threads = await db.prepare('SELECT id FROM threads').all();
-        for (const t of threads) await guard(async () => await publishThread(t.id));
         const pastes = await db.prepare('SELECT * FROM pastes WHERE (updated_at >= @from AND updated_at < @to) OR (deleted_at >= @from AND deleted_at < @to) OR (created_at >= @from AND created_at < @to)').all({ from, to });
         for (const p of pastes) await guard(async () => await publishPaste(p));
         lastScan = to;
         stats.lastScanAt = new Date(now).toISOString();
-        return threads.length + pastes.length;
+        return pastes.length;
     }
 
     async function refresh() {
@@ -169,7 +124,7 @@ function createSearchDocuments({ db }) {
     }
     function stop() { for (const t of timers) { clearTimeout(t); clearInterval(t); } timers = []; }
 
-    return { threadDocument, pasteDocument, publishThread, publishPaste, scan, refresh, start, stop, stats: () => ({ ...stats }) };
+    return { pasteDocument, publishPaste, scan, refresh, start, stop, stats: () => ({ ...stats }) };
 }
 
 module.exports = { createSearchDocuments };

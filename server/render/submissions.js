@@ -10,7 +10,7 @@ const { renderPage, abs } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { renderMarkdown, markdownToText } = require('./markdown');
 const { timeTag } = require('./pages');
-const { who } = require('./forum');
+const { who } = require('./who');
 
 const KIND_LABELS = { clip: 'Clip', art: 'Art', idea: 'Idea', report: 'Report' };
 const STATUS_LABELS = { pending: 'Pending review', accepted: 'Accepted', rejected: 'Not accepted', withdrawn: 'Withdrawn' };

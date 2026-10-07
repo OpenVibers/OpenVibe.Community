@@ -52,7 +52,7 @@ module.exports = {
     mediaInternalUrl: (process.env.OV_MEDIA_INTERNAL_URL || 'http://127.0.0.1:4100').replace(/\/$/, ''),
 
     // PostgreSQL (ADR-035) for Community's own data: pastes (Community is their only authority),
-    // comments, the forum, Pulse and the relay's bookkeeping. DATABASE_URL serves (PgBouncer);
+    // comments, Pulse and submissions. DATABASE_URL serves (PgBouncer);
     // DATABASE_DIRECT_URL migrates (owner). Without them,
     // development uses an embedded PGlite database in data/pglite.
     db: { url: process.env.DATABASE_URL || '', directUrl: process.env.DATABASE_DIRECT_URL || '' },
@@ -64,55 +64,9 @@ module.exports = {
     apiCorsOrigins: (process.env.API_CORS_ORIGINS || 'https://openvibe.live,https://openvibe.media,https://openvibe.network,https://openvibe.tools,https://openvibe.games')
         .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean),
 
-    // OpenVibe.VIP — members-only spaces and threads (forum/service.js). Every answer comes from
-    // VIP's POST /api/v1/policies/evaluate (capability vip.resource.policy.evaluate, client
-    // credentials of client `community`), cached per viewer: a "yes" at most ttlMs (the convergence
-    // bound after VIP stops granting), a "no" denyTtlMs, a failure unavailableTtlMs. Without a
-    // client secret or with VIP down, nobody but the owner and discussion moderators gets in.
-    vip: {
-        internalUrl: (process.env.OV_VIP_INTERNAL_URL || 'http://127.0.0.1:4620').replace(/\/$/, ''),
-        publicUrl: (process.env.OV_VIP_URL || 'https://openvibe.vip').replace(/\/$/, ''),
-        timeoutMs: parseInt(process.env.VIP_TIMEOUT_MS, 10) || 2000,
-        ttlMs: parseInt(process.env.VIP_CACHE_TTL_MS, 10) || 30_000,
-        denyTtlMs: parseInt(process.env.VIP_CACHE_DENY_TTL_MS, 10) || 10_000,
-        unavailableTtlMs: parseInt(process.env.VIP_CACHE_UNAVAILABLE_TTL_MS, 10) || 2_000,
-    },
-
     // IndexNow (openvibe-shared/indexnow): when INDEXNOW_KEY is set, the key file is served at
     // /<key>.txt and a public, indexable page appearing, changing or going away pings the engines.
     // Unset: off — nothing is mounted and nothing is sent.
     indexnow: { key: process.env.INDEXNOW_KEY || '' },
 
-    // OpenVibe.Chat — a space can attach a chat room (server/chat-rooms.js). Community asks Chat, with the
-    // signed-in person's own Network token, whether they manage the room; the space page links it.
-    chat: {
-        url: (process.env.OV_CHAT_URL || 'https://openvibe.chat').replace(/\/$/, ''),
-        internalUrl: (process.env.OV_CHAT_INTERNAL_URL || 'http://127.0.0.1:4400').replace(/\/$/, ''),
-        timeoutMs: parseInt(process.env.CHAT_TIMEOUT_MS, 10) || 4000,
-    },
-
-    // Discord relay (server/relay; docs/discord-relay.md). Off by default, and inert without an owner's
-    // webhook variables, mappings and (for inbound) bot token.
-    //   out  threads and replies in mapped public spaces → the mapping's Discord webhook; edits and deletes follow
-    //   in   replies on Discord → posts (the gateway; DISCORD_RELAY_INBOUND=on and DISCORD_BOT_TOKEN)
-    // Webhook URLs live in environment variables named by relay_mappings.webhook_url_ref.
-    discordRelay: {
-        enabled: /^(1|true|yes|on)$/i.test(process.env.DISCORD_RELAY_ENABLED || ''),
-        pollMs: parseInt(process.env.DISCORD_RELAY_POLL_MS, 10) || 30_000,
-        backoffMs: parseInt(process.env.DISCORD_RELAY_BACKOFF_MS, 10) || 30_000,
-        maxAttempts: parseInt(process.env.DISCORD_RELAY_MAX_ATTEMPTS, 10) || 6,
-        // The only variables a mapping may name (comma-separated exact names); unset = DISCORD_WEBHOOK_*.
-        webhookVars: (process.env.DISCORD_RELAY_WEBHOOK_VARS || '').split(',').map((s) => s.trim()).filter(Boolean),
-        // The Events worker queues creates from community.thread.* / community.post.* (needs EVENTS_URL and
-        // OV_OAUTH_CLIENT_SECRET, capability events.event.read); 'off' leaves them to the forum.
-        events: !/^(0|false|no|off)$/i.test(process.env.DISCORD_RELAY_EVENTS || ''),
-        eventsUrl: (process.env.EVENTS_URL || '').replace(/\/+$/, '') || null,
-        eventsPollMs: parseInt(process.env.DISCORD_RELAY_EVENTS_POLL_MS, 10) || 5000,
-        // Inbound through the Discord gateway (a bot in the server with the MESSAGE CONTENT intent).
-        inbound: /^(1|true|yes|on)$/i.test(process.env.DISCORD_RELAY_INBOUND || ''),
-        botToken: process.env.DISCORD_BOT_TOKEN || '',
-        gatewayUrl: process.env.DISCORD_GATEWAY_URL || 'wss://gateway.discord.gg/?v=10&encoding=json',
-        inboundPerMinute: parseInt(process.env.DISCORD_RELAY_INBOUND_PER_MINUTE, 10) || 6,
-        inboundMaxChars: parseInt(process.env.DISCORD_RELAY_INBOUND_MAX_CHARS, 10) || 4000,
-    },
 };

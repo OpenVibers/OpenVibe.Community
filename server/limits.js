@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Per-person write limits for comments and the forum (in memory, per process — the same model
+ * Per-person write limits for comments (in memory, per process — the same model
  * as the paste service's comment limits). Keyed by the acting subject, so a person is limited
  * the same whether they write from a browser or through a service naming them in X-OV-Subject.
  *

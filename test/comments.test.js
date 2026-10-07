@@ -87,15 +87,12 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(browserLabel.json().thread.ref.label, undefined);
     });
 
-    await check('resolve: Community refs must exist — pastes (not private) and posts in public spaces', async () => {
+    await check('resolve: Community paste refs must exist and be visible', async () => {
         const pub = (await t.app.locals.pastes.createText({ kind: 'user', subject: alex.subject_id, origin: 'user' }, { content: 'hello', visibility: 'public' })).slug;
         const priv = (await t.app.locals.pastes.createText({ kind: 'user', subject: alex.subject_id, origin: 'user' }, { content: 'secret', visibility: 'private' })).slug;
         assert.strictEqual((await resolve({ service: 'community', type: 'paste', id: pub })).status, 201);
         assert.strictEqual((await resolve({ service: 'community', type: 'paste', id: priv })).status, 404);
         assert.strictEqual((await resolve({ service: 'community', type: 'paste', id: 'no-such-paste-1' })).status, 404);
-        const { post: op } = await t.app.locals.forum.createThread({ kind: 'user', subject: alex.subject_id, origin: 'user' }, 'general', { title: 'A thread', body: 'first' });
-        assert.strictEqual((await resolve({ service: 'community', type: 'post', id: String(op.id) })).status, 201);
-        assert.strictEqual((await resolve({ service: 'community', type: 'post', id: '999999' })).status, 404);
     });
 
     await check('comment: signed-in author from the JWT (body identity ignored), projection names, count kept', async () => {

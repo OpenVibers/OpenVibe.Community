@@ -14,7 +14,7 @@
  *       write is anonymous, unless X-OV-Origin: ai says it is AI output (never attributed to a
  *       person: subject stays null). X-OV-Source-Ref may carry a JSON EntityRef (e.g. the stream).
  *       X-OV-Staff: 1 vouches that the acting person is staff; it needs community.paste.moderate
- *       (pastes) or community.comment.moderate (comments and the forum).
+ *       (pastes) or community.comment.moderate (comments).
  *       Developer-app (app:…) and module (mod:…) tokens act only for the person in their
  *       on_behalf_of claim: X-OV-Subject naming anyone else is refused, and sandbox tokens are too.
  *

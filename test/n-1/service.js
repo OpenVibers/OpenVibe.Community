@@ -26,7 +26,8 @@ module.exports = {
     service: 'community',
 
     clientFiles(dir) {
-        return readTree(dir, ['public/js', 'server/render', 'node_modules/openvibe-sdk/src/community.js'], ['.js']);
+        return readTree(dir, ['public/js', 'server/render', 'node_modules/openvibe-sdk/src/community.js'], ['.js'])
+            .filter((f) => !/^server\/render\/(forum|board)\.js$/.test(f.name));
     },
     callers: [
         { name: 'api' },
@@ -34,14 +35,12 @@ module.exports = {
         { name: 'call', object: true },
     ],
     forms: true,
-    keep: () => true,
+    keep: (pathname) => !/^\/s(?:\/|$)/.test(pathname),
     /** Pages an open tab may hold (anonymous): every link, script and form in them is replayed too. */
-    crawl: ['/', '/pastes', '/p/{@paste}', '/s/general', '/s/general/t/n-1-thread', '/c/{@comment_access}', '/search', '/pulse', '/new', '/my'],
+    crawl: ['/', '/pastes', '/p/{@paste}', '/c/{@comment_access}', '/search', '/pulse', '/new', '/my'],
     origins: ['https://openvibe.community'],
     /** Values for template expressions, first match wins; '@name' is a seeded row (boot-child.js ids). */
     samples: [
-        [/space/i, 'general'],
-        [/thread\.slug/i, 'n-1-thread'],
         [/access_?id/i, '@comment_access'],
         [/comment_?id/i, '1'],
         [/slug|data-copy-content|data-delete/i, '@paste'],

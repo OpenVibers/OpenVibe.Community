@@ -2,7 +2,7 @@
 /**
  * Runs inside a Community release (its directory is the cwd): starts that release's own Live, Network
  * and Media mocks (test/helpers/mock-*.js), then the app as production runs it (pastes authority
- * community, a migrated PostgreSQL test database of its own), seeds a thread, a paste and a comment
+ * community, a migrated PostgreSQL test database of its own), seeds a paste and a comment
  * through the API, and prints one line `{"n1": { url, token, ids }}`. SIGTERM stops it.
  */
 const http = require('http');
@@ -39,7 +39,6 @@ const path = require('path');
         db: pgDb,
         valkey: null,
         pasteLimits: { cooldownSeconds: 0 },
-        forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 },
         commentLimits: { comments: { cooldownSec: 0, perMinute: 1000 } },
     });
     const server = await new Promise((resolve) => { const s = http.createServer(app); s.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -53,13 +52,11 @@ const path = require('path');
         if (!res.ok) process.stderr.write(`[n-1] seed ${method} ${p}: ${res.status} ${JSON.stringify(body).slice(0, 200)}\n`);
         return body || {};
     };
-    const thread = (await call('/api/v1/spaces/general/threads', { method: 'POST', json: { title: 'N-1 thread', body: 'Seeded for the N-1 test' } })).thread;
-    if (thread) await call(`/api/v1/threads/${thread.id}/posts`, { method: 'POST', json: { body: 'A reply from N-1' } });
     const paste = (await call('/api/pastes', { method: 'POST', json: { title: 'N-1 paste', content: 'console.log("n-1")', language: 'javascript' } })).paste;
     const ref = { service: 'live', type: 'stream', id: '123' };
     const commentThread = (await call('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref } })).thread;
-    if (commentThread) await call(`/api/v1/comments/threads/${commentThread.id}/comments`, { method: 'POST', json: { body: 'A comment from N-1' } });
+    if (commentThread) await call(`/api/v1/comments/threads/${commentThread.id}/comments`, { method: 'POST', json: { message: 'A comment from N-1' } });
 
     process.on('SIGTERM', async () => { server.close(); try { await pgDb.close(); } catch { /* */ } process.exit(0); });
-    process.stdout.write(`${JSON.stringify({ n1: { url, token, ids: { thread: thread && thread.id, thread_slug: thread && thread.slug, paste: paste && paste.slug, comment_thread: commentThread && commentThread.id, comment_access: commentThread && (commentThread.access_id || commentThread.id) } } })}\n`);
+    process.stdout.write(`${JSON.stringify({ n1: { url, token, ids: { paste: paste && paste.slug, comment_thread: commentThread && commentThread.id, comment_access: commentThread && (commentThread.access_id || commentThread.id) } } })}\n`);
 })().catch((err) => { process.stderr.write(`${err.stack || err.message}\n`); process.exit(1); });

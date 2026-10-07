@@ -1,6 +1,6 @@
 'use strict';
 /**
- * The forum's Markdown renderer: the supported subset renders, and nothing a post contains can
+ * The submission Markdown renderer: the supported subset renders, and nothing a submission contains can
  * become markup of its own — raw HTML, dangerous link schemes, attribute breakouts, entity tricks.
  */
 const assert = require('assert');
@@ -20,7 +20,7 @@ const { check, done } = require('./helpers/app');
         assert.ok(md('```python\ndef f(): pass\n```').includes('<span class="hljs-keyword">def</span>'));
         assert.strictEqual(md('[OpenVibe](https://openvibe.network/a?b=1&c=2)'), '<p><a href="https://openvibe.network/a?b=1&amp;c=2" rel="nofollow ugc noopener">OpenVibe</a></p>');
         assert.strictEqual(md('see https://openvibe.live/x.'), '<p>see <a href="https://openvibe.live/x" rel="nofollow ugc noopener">https://openvibe.live/x</a>.</p>');
-        assert.strictEqual(md('[home](/s/general) [top](#post-1) [mail](mailto:a@b.c)'), '<p><a href="/s/general" rel="nofollow ugc noopener">home</a> <a href="#post-1" rel="nofollow ugc noopener">top</a> <a href="mailto:a@b.c" rel="nofollow ugc noopener">mail</a></p>');
+        assert.strictEqual(md('[home](/p/example) [top](#comment-1) [mail](mailto:a@b.c)'), '<p><a href="/p/example" rel="nofollow ugc noopener">home</a> <a href="#comment-1" rel="nofollow ugc noopener">top</a> <a href="mailto:a@b.c" rel="nofollow ugc noopener">mail</a></p>');
         assert.strictEqual(md('snake_case_name stays'), '<p>snake_case_name stays</p>');
         assert.strictEqual(md('**`code` in bold**'), '<p><strong><code>code</code> in bold</strong></p>');
     });

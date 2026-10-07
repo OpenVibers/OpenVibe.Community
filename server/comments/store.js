@@ -2,7 +2,7 @@
 
 /**
  * Comment store — pure SQL over comment_threads / comments (server/db.js). No HTTP, identity or
- * policy: service.js decides who may do what. Votes live in server/votes.js.
+ * policy: service.js decides who may do what. Votes live in server/comments/votes.js.
  *
  * A thread belongs to one foreign entity (EntityRef service/type/id) and is created on first
  * resolve. Comments nest one level: a reply's parent is always a top-level comment. Deletes are
@@ -54,7 +54,7 @@ async function getComment(db, id) {
 
 /**
  * Is the thread's item known to be public? Only Community's own can be checked: a public paste that is
- * not deleted and does not burn, or a live post in a public space outside members-only. Anything else (a
+ * not deleted and does not burn, or nothing else. Anything else (a
  * Live VOD or clip may be private; only Live knows) is not, so its comment events stay internal.
  */
 async function refIsPublic(db, t) {
@@ -62,11 +62,7 @@ async function refIsPublic(db, t) {
     if (t.ref_type === 'paste') {
         return !!await db.prepare("SELECT 1 FROM pastes WHERE slug = ? AND deleted_at IS NULL AND visibility = 'public' AND burn_after_read = 0").get(String(t.ref_id));
     }
-    if (t.ref_type === 'post' && /^\d{1,15}$/.test(String(t.ref_id))) {
-        return !!await db.prepare(`SELECT 1 FROM posts p JOIN threads th ON th.id = p.thread_id JOIN spaces s ON s.id = th.space_id
-                             WHERE p.id = ? AND p.deleted_at IS NULL AND th.deleted_at IS NULL AND s.visibility = 'public'
-                               AND s.members_only_owner IS NULL AND th.members_only_owner IS NULL`).get(Number(t.ref_id));
-    }
+
     return false;
 }
 

@@ -2,7 +2,7 @@
   "name": "openvibe-community",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenVibe.Community \u2014 the people of OpenVibe. Home of pastes, the forum (spaces, threads, posts), the comment threads other OpenVibe products embed, Pulse and submissions (clips, art, ideas and reports for community review). Part of the OpenVibe network (identity by OpenVibe.Network; Community is the only authority for pastes).",
+  "description": "OpenVibe.Community \u2014 pastes, embedded comment threads, Pulse and submissions. The forum lives at OpenVibe.Space.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
