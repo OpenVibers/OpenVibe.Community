@@ -157,7 +157,7 @@
     if (pulseEs) { pulseEs.close(); pulseEs = null; }
     var pulse = document.querySelector('[data-pulse-live]');
     if (pulse && typeof EventSource !== 'undefined') {
-      var topics = ['community.paste.created', 'community.thread.created', 'community.post.created', 'live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published'];
+      var topics = ['community.paste.created', 'live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published'];
       var bar = pulse.querySelector('.pulse-new'), show = pulse.querySelector('[data-pulse-show]'), fresh = 0;
       var es = new EventSource('https://events.openvibe.network/realtime/stream?topics=' + encodeURIComponent(topics.join(',')));
       pulseEs = es;

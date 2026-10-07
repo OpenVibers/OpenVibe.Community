@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenVibe.Community — The people of OpenVibe (pastes; forums and submissions to follow)
+Description=OpenVibe.Community — The people of OpenVibe (pastes, comments, Pulse and submissions)
 # Live (openvibe-live) and Network (openvibe-network) should be up first, but
 # Community degrades gracefully if they aren't (paste pages answer 502, sign-in retries).
 After=network.target postgresql.service pgbouncer.service valkey-server.service

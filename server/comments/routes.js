@@ -9,7 +9,7 @@
  * Only the unguessable access id (cth_…) opens a page — the one Community hands out on resolve and
  * owner products link to — so pages cannot be walked either. Hidden threads are 404. Form posts
  * carry the ov_token cookie (SameSite=Lax) and an Origin from another site is refused, as in the
- * forum.
+ * submissions.
  */
 const express = require('express');
 const pages = require('../render/pages');

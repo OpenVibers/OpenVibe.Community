@@ -1,11 +1,5 @@
 'use strict';
-/**
- * network.subject.merged in Community (roadmap WS-B task 5, ADR-029): a signed delivery makes the folded-in subject's
- * pastes, comments, threads, posts and pulse items the survivor's; per-item likes, votes and
- * reactions move unless the survivor has one there (then the other is dropped and the cached count or score is
- * recomputed); game progress and blocks keep the survivor's, and blocking oneself is dropped. A redelivery changes
- * nothing; another source or a malformed payload is ignored. Community subscribes to the topic.
- */
+/** Network subject merges keep pastes, comments, Pulse, game progress and blocks consistent. */
 const assert = require('assert');
 const http = require('http');
 const express = require('express');
@@ -35,11 +29,6 @@ let SECRET, db, app, KEEP, FOLD, OTHER, MERGE, evt;
     await db.prepare("INSERT INTO comment_threads (id, ref_service, ref_type, ref_id) OVERRIDING SYSTEM VALUE VALUES (1, 'live', 'vod', '9')").run();
     await db.prepare("INSERT INTO comments (id, thread_id, message, author_subject, score, upvotes, downvotes) OVERRIDING SYSTEM VALUE VALUES (1, 1, 'hi', ?, 2, 2, 0)").run(OTHER);
     await db.prepare('INSERT INTO comment_votes (comment_id, subject_id, value) VALUES (1, ?, 1), (1, ?, 1)').run(FOLD, KEEP);
-    await db.prepare("INSERT INTO spaces (id, slug, name) OVERRIDING SYSTEM VALUE VALUES (901, 'merge-test', 'Merge test')").run();
-    await db.prepare("INSERT INTO threads (id, space_id, slug, title, author_subject, score) OVERRIDING SYSTEM VALUE VALUES (1, 901, 't1', 'T1', ?, 1)").run(FOLD);
-    await db.prepare('INSERT INTO thread_votes (thread_id, subject_id, value) VALUES (1, ?, 1)').run(FOLD);
-    await db.prepare("INSERT INTO posts (id, thread_id, body_markdown, author_subject) OVERRIDING SYSTEM VALUE VALUES (1, 1, 'hello', ?)").run(FOLD);
-    await db.prepare("INSERT INTO post_reactions (post_id, subject_id, reaction) VALUES (1, ?, 'fire'), (1, ?, 'heart')").run(FOLD, KEEP);
     await db.prepare("INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, 3, '2026-09-27'), (?, 5, '2026-09-27')").run(FOLD, KEEP);
     await db.prepare('INSERT INTO network_blocks (blocker_subject, blocked_subject, active, revision, updated_at) VALUES (?, ?, 1, 1, 0), (?, ?, 1, 1, 0)').run(FOLD, OTHER, FOLD, KEEP);
     assert.ok(TOPICS.includes('network.subject.merged'), 'Community subscribes to merges');
@@ -58,15 +47,11 @@ let SECRET, db, app, KEEP, FOLD, OTHER, MERGE, evt;
         assert.deepStrictEqual([r.status, r.json.outcome], [200, 'merge:applied']);
         const owner = async (sql, ...a) => await db.prepare(sql).get(...a);
         assert.strictEqual((await owner('SELECT owner_subject AS s FROM pastes WHERE id = 1')).s, KEEP);
-        assert.strictEqual((await owner('SELECT author_subject AS a FROM threads WHERE id = 1')).a, KEEP);
-        assert.strictEqual((await owner('SELECT author_subject AS a FROM posts WHERE id = 1')).a, KEEP);
         // Likes: paste 1 had both (one dropped, count 1); paste 2's like moved.
         assert.deepStrictEqual((await db.prepare('SELECT paste_id AS p, subject_id AS s FROM paste_likes ORDER BY p').all()).map((x) => [x.p, x.s]), [[1, KEEP], [2, KEEP]]);
         assert.strictEqual((await owner('SELECT likes FROM pastes WHERE id = 1')).likes, 1, 'the cached count follows the rows');
-        // Votes: comment 1 had both (score recomputed to 1); thread 1's vote moved.
+        // Votes: comment 1 had both (score recomputed to 1).
         assert.deepStrictEqual(await owner('SELECT score, upvotes, downvotes FROM comments WHERE id = 1'), { score: 1, upvotes: 1, downvotes: 0 });
-        assert.deepStrictEqual((await db.prepare('SELECT subject_id AS s FROM thread_votes').all()).map((x) => x.s), [KEEP]);
-        assert.deepStrictEqual(await db.prepare('SELECT subject_id AS s, reaction FROM post_reactions').all(), [{ s: KEEP, reaction: 'heart' }], 'the survivor\'s reaction stays');
         assert.deepStrictEqual(await db.prepare('SELECT subject_id AS s, level FROM game_progress').all(), [{ s: KEEP, level: 5 }]);
         assert.deepStrictEqual(await db.prepare('SELECT blocker_subject AS a, blocked_subject AS b FROM network_blocks').all(), [{ a: KEEP, b: OTHER }], 'moved; blocking oneself dropped');
         assert.strictEqual((await db.prepare('SELECT COUNT(*) AS n FROM pastes WHERE owner_subject = ?').get(FOLD)).n + (await db.prepare('SELECT COUNT(*) AS n FROM paste_likes WHERE subject_id = ?').get(FOLD)).n, 0);

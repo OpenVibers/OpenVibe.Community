@@ -4,13 +4,12 @@
  * Community's own database: PostgreSQL (ADR-035, roadmap WS-X2). The schema is migrations/NNNN_*.sql, applied at boot.
  *
  * Community is the only authority for pastes: pastes, their edit
- * history, likes and comments live here. Typed comment threads, the forum (spaces, threads,
- * posts), the Discord relay's bookkeeping and Pulse live here too. People are referenced by Network subject ids
+ * history, likes and comments live here. Typed comment threads and Pulse live here too. People are referenced by Network subject ids
  * (usr_… / gst_…), never by a service-local integer; subject_projection is only a display cache
  * of what the Network says about them.
  *
  * Timestamps are text ('YYYY-MM-DD HH:MM:SS', UTC): the schema defines ov_now(), datetime() and julianday()
- * with those semantics, and ov_hot() for the forum's hot rank.
+ * with those semantics.
  */
 const crypto = require('crypto');
 const fs = require('fs');

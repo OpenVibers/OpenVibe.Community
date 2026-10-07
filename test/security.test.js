@@ -16,18 +16,17 @@ const { boot, check, done } = require('./helpers/app');
     const t = await boot({
         authority: 'community',
         pasteLimits: { cooldownSeconds: 0, commentCooldownSeconds: 0 },
-        appOpts: { forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 } },
     });
     const net = t.network;
     const alex = net.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex' });
     const sam = net.addUser({ network_user_id: 9, username: 'sam', display_name: 'Sam' });
     const alexJwt = net.sign({ id: 7, subject_id: alex.subject_id, username: 'alex', display_name: 'Alex', role: 'user' });
     const samJwt = net.sign({ id: 9, subject_id: sam.subject_id, username: 'sam', display_name: 'Sam', role: 'user' });
-    const CREATE = 'community.paste.create', WRITE = 'community.paste.write', POST = 'community.post.create';
+    const CREATE = 'community.paste.create', WRITE = 'community.paste.write';
     const APP = 'app:app_01HZX3K5V7Q9M2N4P6R8T0W2Y4';
     // An app token carries its developer project and env, as Network's do (identity.service-token-claims 1.2.0).
     const PROJECT = 'prj_01J8ZQ4Y7N3M2K1H0G9F8E7D6C';
-    const appToken = ({ cap = [CREATE, POST], env = 'production', onBehalfOf = null, sub = APP, actorType = 'app' } = {}) => net.signService({
+    const appToken = ({ cap = [CREATE], env = 'production', onBehalfOf = null, sub = APP, actorType = 'app' } = {}) => net.signService({
         sub, actorType, cap, extra: { env, project_id: PROJECT, ns: [PROJECT], ...(onBehalfOf ? { on_behalf_of: onBehalfOf } : {}) },
     });
 
@@ -44,24 +43,11 @@ const { boot, check, done } = require('./helpers/app');
     const priv = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'alex private notes', visibility: 'private' } });
     assert.strictEqual(priv.status, 201, priv.text);
     const privSlug = priv.json().slug;
-    const thread = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: alexJwt, json: { title: 'Alex thread', body: 'original words' } });
-    assert.strictEqual(thread.status, 201, thread.text);
-    const alexPostId = thread.json().post.id;
-
     await check('an app token naming a victim in X-OV-Subject cannot read their private paste', async () => {
         const r = await call(`/api/pastes/${privSlug}`, { token: appToken(), headers: { 'x-ov-subject': alex.subject_id } });
         assert.notStrictEqual(r.status, 200, `private paste leaked to a third-party app: ${r.text}`);
         const list = await call('/api/pastes?username=alex&include_unlisted=1', { token: appToken(), headers: { 'x-ov-subject': alex.subject_id } });
         assert.ok(list.status !== 200 || !list.json().pastes.some((p) => p.slug === privSlug), 'private paste listed to a third-party app');
-    });
-
-    await check('an app token naming a victim in X-OV-Subject cannot edit their forum post or post as them', async () => {
-        const r = await call(`/api/v1/posts/${alexPostId}`, { method: 'PUT', token: appToken(), headers: { 'x-ov-subject': alex.subject_id }, json: { body: 'defaced' } });
-        assert.notStrictEqual(r.status, 200, `post edited by a third-party app: ${r.text}`);
-        const post = await t.db.prepare('SELECT body_markdown FROM posts WHERE id = ?').get(alexPostId);
-        assert.strictEqual(post.body_markdown, 'original words');
-        const p = await call('/api/pastes', { method: 'POST', token: appToken(), headers: { 'x-ov-subject': alex.subject_id }, json: { content: 'written as alex' } });
-        assert.strictEqual(p.status, 403, p.text);
     });
 
     await check('an app token acts for the person who authorized it (on_behalf_of), and only for them', async () => {

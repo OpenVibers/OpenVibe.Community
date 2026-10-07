@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * A small, safe Markdown renderer for forum posts.
+ * A small, safe Markdown renderer for comments and submissions.
  *
  * Safety model: the source is never trusted as HTML. Every piece of text is HTML-escaped first;
  * the only tags in the output are the fixed ones this file writes (p, br, h3–h6, blockquote,

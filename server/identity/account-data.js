@@ -1,23 +1,5 @@
 'use strict';
-/**
- * Account export and deletion → Community (roadmap WS-B task 7, ADR-033; Contracts 0.71.0). Both arrive at the pulse
- * consumer (POST /internal/events) and are applied once per export or deletion (account_data_events); the delivery is
- * answered after Network took the part or the confirmation, so a failure is redelivered without erasing twice.
- *
- *   network.account.export_requested  Community's part (POST /internal/account-exports/:id/parts with a service token):
- *                                     pastes (with their content), paste comments, comments, threads, posts,
- *                                     attachments, likes, votes and reactions, game progress, blocks, activity and
- *                                     the spaces they moderate.
- *   network.account.deleted           what the subject (and the accounts merged into it) wrote goes. An item with
- *                                     someone else's reply anywhere beneath it stays as an authorless tombstone
- *                                     ("[deleted]"), so the replies keep their place:
- *                                     - a paste others commented on;
- *                                     - a comment or paste comment others answered;
- *                                     - a thread others posted in, and its opening post.
- *                                     Likes, votes and reactions go and cached counts are recomputed. Game progress,
- *                                     blocks both ways, activity items, the cached profile and their place as a space's
- *                                     moderator go. Spaces the person created, and moderators they added, stay without them. Community then confirms with counts.
- */
+/** Account export and deletion for pastes, comments, Pulse, submissions, blocks and game progress. */
 const SUBJECT_RE = /^usr_[0-9A-HJKMNP-TV-Z]{26}$/;
 const EXPORT_RE = /^exp_[0-9A-HJKMNP-TV-Z]{26}$/;
 const DELETION_RE = /^del_[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -34,11 +16,9 @@ const inList = (xs) => `(${xs.map(() => '?').join(',')})`;
 
 const EXPORTS = [
     ['pastes.json', 'pastes', 'owner_subject'], ['paste_comments.json', 'paste_comments', 'author_subject'], ['comments.json', 'comments', 'author_subject'],
-    ['threads.json', 'threads', 'author_subject'], ['posts.json', 'posts', 'author_subject'], ['attachments.json', 'attachments', 'owner_subject'],
-    ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'], ['thread_votes.json', 'thread_votes', 'subject_id'],
-    ['post_reactions.json', 'post_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
+    ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'],
+    ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
-    ['space_moderators.json', 'space_moderators', 'subject_id'],
 ];
 
 async function exportPart(db, subject) {
@@ -53,7 +33,7 @@ async function exportPart(db, subject) {
         if (rows.length > ROW_LIMIT) truncated.push(name);
         files.push({ name, content: rows.slice(0, ROW_LIMIT) });
     }
-    return { files, truncated, note: 'Paste screenshots and attachments are downloaded from their URLs.' };
+    return { files, truncated, note: 'Paste screenshots are downloaded from their URLs.' };
 }
 
 // ── Deletion ───────────────────────────────────────────────────
@@ -77,9 +57,9 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
     const add = (o, k, n) => { if (n) o[k] = (o[k] || 0) + n; };
     const S = inList(subjects);
     await db.tx(async () => {
-        // Likes, votes and reactions first, so the counts recomputed below see only what stays.
+        // Likes and votes first, so the counts recomputed below see only what stays.
         const recount = [];
-        for (const [table, item] of [['paste_likes', 'paste_id'], ['comment_votes', 'comment_id'], ['thread_votes', 'thread_id'], ['post_reactions', 'post_id']]) {
+        for (const [table, item] of [['paste_likes', 'paste_id'], ['comment_votes', 'comment_id']]) {
             if (!await hasTable(db, table)) continue;
             const items = (await db.prepare(`SELECT DISTINCT ${item} AS i FROM ${table} WHERE subject_id IN ${S}`).all(...subjects)).map((r) => r.i);
             add(erased, table, (await db.prepare(`DELETE FROM ${table} WHERE subject_id IN ${S}`).run(...subjects)).changes);
@@ -113,23 +93,6 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             add(retained, 'tombstones', keep.length);
             if (table === 'comments') await db.prepare('UPDATE comments SET reply_count = (SELECT COUNT(*) FROM comments c WHERE c.parent_id = comments.id) WHERE reply_count != (SELECT COUNT(*) FROM comments c WHERE c.parent_id = comments.id)').run();
         }
-        // Threads: gone with their posts, unless someone else posted; then the thread and its opening post are tombstones.
-        if (await hasTable(db, 'threads')) {
-            for (const t of await db.prepare(`SELECT id FROM threads WHERE author_subject IN ${S}`).all(...subjects)) {
-                const others = await db.prepare(`SELECT 1 FROM posts WHERE thread_id = ? AND (author_subject IS NULL OR author_subject NOT IN ${S}) LIMIT 1`).get(t.id, ...subjects);
-                if (others) { await db.prepare('UPDATE threads SET author_subject = NULL, title = ? WHERE id = ?').run(TOMBSTONE, t.id); add(retained, 'tombstones', 1); }
-                else { await db.prepare('DELETE FROM threads WHERE id = ?').run(t.id); add(erased, 'threads', 1); }
-            }
-        }
-        if (await hasTable(db, 'posts')) {
-            for (const p of await db.prepare(`SELECT id, thread_id, is_opening FROM posts WHERE author_subject IN ${S}`).all(...subjects)) {
-                const others = p.is_opening && await db.prepare(`SELECT 1 FROM posts WHERE thread_id = ? AND id != ? AND (author_subject IS NULL OR author_subject NOT IN ${S}) LIMIT 1`).get(p.thread_id, p.id, ...subjects);
-                if (others) { await db.prepare('UPDATE posts SET author_subject = NULL, relay_author = NULL, body_markdown = ?, deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE id = ?').run(TOMBSTONE, now, now, p.id); add(retained, 'tombstones', 1); }
-                else { await db.prepare('DELETE FROM posts WHERE id = ?').run(p.id); add(erased, 'posts', 1); }
-            }
-            if (await hasColumn(db, 'threads', 'reply_count')) await db.prepare("UPDATE threads SET reply_count = (SELECT COUNT(*) FROM posts p WHERE p.thread_id = threads.id AND p.is_opening = 0)").run();
-        }
-        if (await hasTable(db, 'attachments')) add(erased, 'attachments', (await db.prepare(`DELETE FROM attachments WHERE owner_subject IN ${S}`).run(...subjects)).changes);
         // Their submissions go (Pulse items with them, below); a decision they made stays, unsigned.
         if (await hasTable(db, 'submissions')) {
             for (const r of await db.prepare(`SELECT slug FROM submissions WHERE author_subject IN ${S}`).all(...subjects)) {
@@ -140,13 +103,12 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
         }
         for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
             ['subject_projection', `subject_id IN ${S}`, 'profile'], ['profile_module_pushes', `subject_id IN ${S}`, 'profile'],
-            ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks'], ['space_moderators', `subject_id IN ${S}`, 'space_moderators']]) {
+            ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks']]) {
             if (!await hasTable(db, table)) continue;
             const params = where.includes(' OR ') ? [...subjects, ...subjects] : subjects;
             add(erased, key, (await db.prepare(`DELETE FROM ${table} WHERE ${where}`).run(...params)).changes);
         }
-        for (const table of ['spaces', 'comment_threads']) if (await hasColumn(db, table, 'created_by')) await db.prepare(`UPDATE ${table} SET created_by = NULL WHERE created_by IN ${S}`).run(...subjects);
-        if (await hasColumn(db, 'space_moderators', 'added_by')) await db.prepare(`UPDATE space_moderators SET added_by = NULL WHERE added_by IN ${S}`).run(...subjects);
+        if (await hasColumn(db, 'comment_threads', 'created_by')) await db.prepare(`UPDATE comment_threads SET created_by = NULL WHERE created_by IN ${S}`).run(...subjects);
         // The cached counts and scores follow the rows that stay.
         for (const [table, items] of recount) {
             for (const i of items) {
@@ -154,7 +116,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
                 else if (table === 'comment_votes') {
                     const a = await db.prepare('SELECT COALESCE(SUM(value), 0)::bigint AS s, COUNT(*) FILTER (WHERE value = 1) AS u, COUNT(*) FILTER (WHERE value = -1) AS d FROM comment_votes WHERE comment_id = ?').get(i);
                     await db.prepare('UPDATE comments SET score = ?, upvotes = ?, downvotes = ? WHERE id = ?').run(a.s, a.u, a.d, i);
-                } else if (table === 'thread_votes') await db.prepare('UPDATE threads SET score = (SELECT COALESCE(SUM(value), 0)::bigint FROM thread_votes WHERE thread_id = ?) WHERE id = ?').run(i, i);
+                }
             }
         }
     });

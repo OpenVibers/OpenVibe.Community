@@ -1,16 +1,5 @@
 'use strict';
-/**
- * community.profile on OpenVibe.Network (openvibe-contracts 0.41.0 user module, roadmap WS-B task 9):
- * a person's Community activity for other sites — threads, posts (replies; a thread's opening post is its
- * thread), comments and pastes they wrote and did not delete, and when they were first and last active.
- * Community's rows stay the truth. Written as the owning service (grant community network.modules.write on
- * community.profile), unconditionally, and only when it changed (profile_module_pushes keeps a hash).
- *
- *   scan()  every 5 minutes: authors with a thread, post, comment or paste created, edited or deleted
- *           since the previous scan
- *
- * Off without the OAuth client secret or with COMMUNITY_PROFILE_MODULE=off; only usr_ subjects.
- */
+/** Publish a person's Community paste and comment activity to their Network profile. */
 const crypto = require('crypto');
 
 const NS = 'community.profile';
@@ -28,16 +17,14 @@ const sqlTime = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19
 /** The record for one person, or null when they wrote nothing. */
 async function summarize(db, subject) {
     const one = async (sql) => await db.prepare(sql).get(subject);
-    const threads = await one("SELECT COUNT(*) AS n, MIN(created_at) AS first, MAX(created_at) AS last FROM threads WHERE author_subject = ? AND deleted_at IS NULL AND origin = 'user'");
-    const posts = await one("SELECT COUNT(*) AS n, MIN(created_at) AS first, MAX(created_at) AS last FROM posts WHERE author_subject = ? AND deleted_at IS NULL AND is_opening = 0 AND origin = 'user'");
     const comments = await one("SELECT COUNT(*) AS n, MIN(created_at) AS first, MAX(created_at) AS last FROM comments WHERE author_subject = ? AND deleted_at IS NULL AND origin = 'user'");
     const pastes = await one("SELECT COUNT(*) AS n, MIN(created_at) AS first, MAX(created_at) AS last FROM pastes WHERE owner_subject = ? AND deleted_at IS NULL AND origin = 'user' AND visibility = 'public'");
-    const all = [threads, posts, comments, pastes];
+    const all = [comments, pastes];
     if (!all.some((r) => r.n)) return null;
     const firsts = all.map((r) => r.first).filter(Boolean).sort();
     const lasts = all.map((r) => r.last).filter(Boolean).sort();
     return {
-        threads: threads.n, posts: posts.n, comments: comments.n, pastes: pastes.n,
+        threads: 0, posts: 0, comments: comments.n, pastes: pastes.n,
         first_active_at: toIso(firsts[0]), last_active_at: toIso(lasts[lasts.length - 1]),
     };
 }
@@ -82,8 +69,6 @@ function createProfileModule({ db, config, fetchImpl = globalThis.fetch, log = c
         const to = sqlTime(now);
         const changed = (table, col, cols) => cols.map((c) => `SELECT ${col} AS s FROM ${table} WHERE ${c} >= @from AND ${c} < @to`).join(' UNION ');
         const sql = [
-            changed('threads', 'author_subject', ['created_at', 'deleted_at']),
-            changed('posts', 'author_subject', ['created_at', 'updated_at', 'deleted_at']),
             changed('comments', 'author_subject', ['created_at', 'updated_at', 'deleted_at']),
             changed('pastes', 'owner_subject', ['created_at', 'updated_at', 'deleted_at']),
         ].join(' UNION ');

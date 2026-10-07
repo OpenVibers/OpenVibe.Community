@@ -1,7 +1,7 @@
 {
   "name": "OpenVibe.Community",
   "short_name": "Community",
-  "description": "Pastes, posts and people on the open network",
+  "description": "Pastes, comments and people on the open network",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

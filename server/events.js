@@ -3,7 +3,6 @@
  * Community → OpenVibe.Events (contracts community.*@1, openvibe-contracts 0.35.0).
  *
  *   community.paste.created | updated | deleted     server/pastes/store.js
- *   community.thread.created, community.post.created server/forum/store.js
  *   community.comment.created                        server/comments/store.js
  *
  * Each event is written to Community's own outbox inside the SAME transaction as the change (the SDK
@@ -85,22 +84,6 @@ async function pasteUpdated(p, changed) {
 async function pasteDeleted(slug) {
     return await record('community.paste.deleted', { type: 'paste', id: slug }, { paste_id: slug }, { isPublic: true });
 }
-// A thread or post is public only in a public space and outside a members-only thread (staff spaces count as members).
-const forumVisibility = (thread, spaceVisibility) => (thread.members_only_owner || spaceVisibility !== 'public' ? 'members' : 'public');
-async function threadCreated(thread, spaceSlug, spaceVisibility = 'public') {
-    const visibility = forumVisibility(thread, spaceVisibility);
-    return await record('community.thread.created', { type: 'thread', id: String(thread.id) }, {
-        thread_id: Number(thread.id), space: spaceSlug, author: subjectRef(thread.author_subject), visibility,
-        url: visibility === 'public' ? `${config.baseUrl}/s/${encodeURIComponent(spaceSlug)}/t/${encodeURIComponent(thread.slug)}` : null,
-    }, { isPublic: visibility === 'public', actor: actorOf(thread.author_subject) });
-}
-async function postCreated(post, thread, spaceSlug, spaceVisibility = 'public') {
-    const visibility = forumVisibility(thread, spaceVisibility);
-    return await record('community.post.created', { type: 'post', id: String(post.id) }, {
-        post_id: Number(post.id), thread_id: Number(thread.id), space: spaceSlug, author: subjectRef(post.author_subject), visibility,
-        url: visibility === 'public' ? `${config.baseUrl}/s/${encodeURIComponent(spaceSlug)}/t/${encodeURIComponent(thread.slug)}#p${post.id}` : null,
-    }, { isPublic: visibility === 'public', actor: actorOf(post.author_subject) });
-}
 /**
  * Public only when the item the thread belongs to is known to be public (itemPublic: comments/store.js
  * refIsPublic): the thread's access id and its ref (an unlisted paste's slug, a private VOD's id) are
@@ -148,4 +131,4 @@ function stop() {
 }
 function _reset() { if (outbox) outbox.stop(); outbox = null; outboxDb = null; stats.queued = 0; stats.lastError = null; }
 
-module.exports = { init, record, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, backlog, stop, _reset };
+module.exports = { init, record, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, commentCreated, status, backlog, stop, _reset };

@@ -9,7 +9,7 @@ const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { timeTag } = require('./pages');
-const { who } = require('./forum');
+const { who } = require('./who');
 
 const FILTERS = [['', 'Everything'], ['user', 'People'], ['ai', 'AI'], ['system', 'System']];
 const SERVICE_NAMES = { community: 'Community', live: 'Live', media: 'Media', network: 'Network', tools: 'Tools', games: 'Games', wiki: 'Wiki', blog: 'Blog', reviews: 'Reviews' };
@@ -44,7 +44,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null }) {
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Pulse</span></nav>
   <h1>Pulse</h1>
-  <p class="muted">Public activity from across OpenVibe as it happens: new pastes, threads and replies here, and what the other sites share. Only public things appear, and anything made by AI is labelled as AI.</p>
+  <p class="muted">Public activity from across OpenVibe as it happens: new pastes and submissions here, and what the other sites share. Only public things appear, and anything made by AI is labelled as AI.</p>
 </header>
 <nav class="tabs sort-tabs" aria-label="Filter by origin">${tabs}</nav>
 <section data-results${after ? '' : ' data-pulse-live'}>
@@ -54,12 +54,11 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null }) {
 </section>`;
     return renderPage({
         title: `Pulse${origin ? ` — ${FILTERS.find(([id]) => id === origin)[1]}` : ''}`,
-        description: 'The pulse of the OpenVibe network: new public pastes, threads, replies and what the other OpenVibe sites share, with AI-made items labelled as AI.',
+        description: 'The pulse of the OpenVibe network: new public pastes, submissions and what the other OpenVibe sites share, with AI-made items labelled as AI.',
         canonicalPath: href(origin, after),
         // The first page of each filter is worth indexing; deep cursors are not.
         robots: after ? 'noindex,follow' : 'index,follow',
         active: 'pulse',
-        feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pulse', url: '/pulse' }])],
         body,
     });

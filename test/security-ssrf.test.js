@@ -1,19 +1,5 @@
 'use strict';
-/**
- * SSRF (roadmap WS-R task 5). Community fetches no URL a user chooses: no link previews, unfurls,
- * avatar or image imports, user webhooks or screenshots of URLs. Every outbound call goes to a base URL
- * from the owner's environment (Network, Media, Events, VIP, Chat, Search, a Discord webhook
- * variable the owner allowlisted, Discord's gateway), so there is no egress guard to test. Two
- * things keep it that way:
- *
- *   1. A ratchet over server/: every outbound call site (fetch, http(s).request/get, WebSocket, net/tls,
- *      dns, child_process, and the SDK clients that make requests) is counted per file and must match
- *      the classified inventory below. A new one fails this test until someone writes down where it goes
- *      and why the URL is not the user's (and, if it is, routes it through openvibe-shared/egress).
- *   2. Everywhere a person or a service can hand Community a URL (a Pulse item's url, links and image
- *      syntax in posts and comments, paste content, a screenshot's page_url, a chat room reference, a relay
- *      mapping), a canary server on loopback must never be called.
- */
+/** Community fetches configured Network, Media, Events and Search URLs, never a URL supplied in content. */
 const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
@@ -24,7 +10,6 @@ const { boot, check, done } = require('./helpers/app');
 const INVENTORY = {
     'server/app.js': [1, 'createAuthClient(config): the Network JWKS (OV_NETWORK_INTERNAL_URL)'],
     'server/auth/routes.js': [4, 'createAuthClient, JWKS, /oauth/token, /oauth/revoke: OV_NETWORK_INTERNAL_URL, fixed paths'],
-    'server/chat-rooms.js': [1, 'OV_CHAT_INTERNAL_URL /api/chat/rooms/<slug>/attachments; the slug must match ROOM_SLUG and is encoded'],
     'server/events.js': [3, 'service token (Network) and the outbox publisher: EVENTS_URL'],
     'server/identity/network.js': [3, 'Network /internal/identity/resolve-batch and /internal/identity/resolve?username= with a service token (configured base, never a user URL)'],
     'server/render/pages.js': [1, 'not a call: the home page shows a fetch() sample as text (never executed)'],
@@ -34,11 +19,7 @@ const INVENTORY = {
     'server/media/objects.js': [2, 'OV_MEDIA_INTERNAL_URL Object API v2, service token'],
     'server/observability.js': [1, '/api/ready probes of the configured Media health URL'],
     'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
-    'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],
-    'server/relay/discord.js': [1, 'a Discord webhook URL read from an environment variable the owner allowlisted; mappings name the variable, never a URL'],
-    'server/relay/events-worker.js': [3, 'Events pull API (EVENTS_URL) with a service token'],
     'server/search/query.js': [1, 'OV_SEARCH_INTERNAL_URL /api/v1/search, the query in URLSearchParams'],
-    'server/vip/index.js': [2, 'OV_VIP_INTERNAL_URL policy evaluate, service token'],
 };
 const PATTERNS = [
     /\b(?:fetch|fetchImpl)\s*\(/g, /\bhttps?\.(?:request|get)\s*\(/g, /\bnew\s+WebSocket\w*\s*\(/g, /\b(?:net|tls)\.(?:connect|createConnection)\s*\(/g,
@@ -84,11 +65,9 @@ function inventory() {
     const C = `http://127.0.0.1:${canary.address().port}`;
     const t = await boot({
         authority: 'community',
-        env: { OV_CHAT_INTERNAL_URL: 'http://127.0.0.1:9', OV_VIP_INTERNAL_URL: 'http://127.0.0.1:9', OV_SEARCH_INTERNAL_URL: 'http://127.0.0.1:9' },
+        env: { OV_SEARCH_INTERNAL_URL: 'http://127.0.0.1:9' },
         pasteLimits: { cooldownSeconds: 0, commentCooldownSeconds: 0 },
         appOpts: {
-            startRelay: false,
-            forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 },
             commentLimits: { comments: { cooldownSec: 0, perMinute: 1000 } },
         },
     });
@@ -106,14 +85,10 @@ function inventory() {
         return { status: res.status, text: await res.text() };
     };
 
-    await check('URLs people and services hand in (Pulse items, post links and images, comments, pastes, page_url, chat rooms, relay mappings) are never fetched', async () => {
+    await check('URLs people and services hand in (Pulse items, comments, pastes and page_url) are never fetched', async () => {
         const urls = [`${C}/pulse`, `${C}/post`, `${C}/img.png`, 'http://169.254.169.254/latest/meta-data/', `${C}/comment`, `${C}/paste`, `${C}/page`, `${C}/r/room-one`];
         const r1 = await send('POST', '/api/v1/pulse/items', { token: net.signService({ sub: 'svc:live', cap: ['community.pulse.write'] }), json: { ref: { service: 'live', type: 'stream', id: '5' }, title: 'live now', url: urls[0] } });
         assert.strictEqual(r1.status, 201, r1.text);
-        const th = await send('POST', '/api/v1/spaces/general/threads', { json: { title: 'links', body: `see [this](${urls[1]}) and ![img](${urls[2]}) and <img src="${urls[3]}"> ${urls[1]}` } });
-        assert.strictEqual(th.status, 201, th.text);
-        const slug = JSON.parse(th.text).thread.slug;
-        assert.strictEqual((await send('GET', `/s/general/t/${slug}`)).status, 200);
         const p = await send('POST', '/api/pastes', { json: { title: urls[5], content: `curl ${urls[5]}\n![x](${urls[2]})` } });
         assert.strictEqual(p.status, 201, p.text);
         assert.strictEqual((await send('GET', `/p/${JSON.parse(p.text).slug}`)).status, 200);
@@ -124,11 +99,7 @@ function inventory() {
         assert.strictEqual((await send('POST', '/api/pastes/screenshot', { body: f })).status, 201);
         const cth = JSON.parse((await send('POST', '/api/v1/comments/threads/resolve', { json: { ref: { service: 'community', type: 'paste', id: JSON.parse(p.text).slug } } })).text).thread;
         await send('POST', `/api/v1/comments/threads/${cth.id}/comments`, { json: { message: `![x](${urls[2]}) ${urls[4]}` } });
-        await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'general'").run(u.subject_id);
-        await send('PUT', '/api/v1/spaces/general/chat-room', { json: { room: urls[7] } });
-        const map = await send('POST', '/api/v1/relay/mappings', { cookie: bossJwt, json: { space: 'general', webhook_url_ref: `${C}/hook` } });
-        assert.strictEqual(map.status, 400, 'a mapping names a variable, never a URL');
-        for (const page of ['/', '/pulse', '/api/v1/pulse', '/s/general', '/feed.xml', '/s/feed.xml', '/sitemap.xml']) await send('GET', page);
+        for (const page of ['/', '/pulse', '/api/v1/pulse', '/feed.xml', '/sitemap.xml']) await send('GET', page);
         await new Promise((r) => setTimeout(r, 200));
         assert.deepStrictEqual(hits, [], 'Community fetched a URL it was handed');
     });

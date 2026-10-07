@@ -73,7 +73,7 @@ function raw(base, path, headers = {}) {
         assert.match(b.checks.network_jwks.error, /not loaded/);
     });
 
-    await check('Media down: still ready (pastes, comments, forum and Pulse are served), media degraded', async () => {
+    await check('Media down: still ready (pastes, comments and Pulse are served), media degraded', async () => {
         await t.media.close();
         await new Promise((r) => setTimeout(r, 20));
         // The Media probe is cached for 15 s; a fresh app instance sees the outage immediately.

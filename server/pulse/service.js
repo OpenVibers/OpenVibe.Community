@@ -5,8 +5,7 @@
  *
  * Sources:
  *   - Community's own public activity, recorded at write time (the hooks below): new public
- *     pastes written by a person (not burn-after-read, not NSFW), new threads and replies in
- *     public spaces, and submissions when they are accepted. Deletes and visibility changes take items out again, and listItems()
+ *     pastes written by a person (not burn-after-read, not NSFW) and submissions when accepted. Deletes and visibility changes take items out again, and listItems()
  *     re-checks Community's own items at read time as well.
  *   - Other services, through POST /api/v1/pulse/items with community.pulse.write: an EntityRef
  *     of their own (ref.service must be the calling service), title, url, origin, occurred_at.
@@ -75,27 +74,11 @@ function createPulse({ db, network = null, config = {} } = {}) {
             if (p.deleted_at || p.visibility !== 'public' || Number(p.is_nsfw)) await forgetLocal('paste', p.slug);
         },
         async pasteGone(slug) { await forgetLocal('paste', slug); },
-        async threadCreated(thread, space) {
-            if (!thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return;
-            await recordLocal('thread', thread.id, {
-                title: thread.title, path: `/s/${space.slug}/t/${thread.slug}`,
-                actor: thread.author_subject, origin: thread.origin === 'ai' ? 'ai' : (thread.origin === 'system' ? 'system' : 'user'), at: thread.created_at,
-            });
-        },
-        async postCreated(post, thread, space) {
-            if (!post || !thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner || post.is_opening) return;
-            await recordLocal('post', post.id, {
-                title: `Re: ${thread.title}`, path: `/s/${space.slug}/t/${thread.slug}#post-${post.id}`,
-                actor: post.author_subject, origin: post.origin === 'ai' ? 'ai' : 'user', at: post.created_at,
-            });
-        },
         async submissionAccepted(s) {
             if (!s || s.status !== 'accepted') return;
             await recordLocal('submission', s.slug, { title: s.title, path: `/submissions/${encodeURIComponent(s.slug)}`, actor: s.author_subject, origin: 'user', at: s.reviewed_at });
         },
         async submissionGone(slug) { await forgetLocal('submission', slug); },
-        async threadGone(id) { await forgetLocal('thread', id); },
-        async postGone(id) { await forgetLocal('post', id); },
 
         /** POST /api/v1/pulse/items (a service with community.pulse.write). → { item, created } */
         async ingest(v, body = {}) {

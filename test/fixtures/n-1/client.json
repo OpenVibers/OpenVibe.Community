@@ -2,7 +2,7 @@
  "service": "community",
  "release": "8f021e6e7a443b5c61340a826ac54c47269b6560",
  "recorded_at": "2026-09-28T19:42:43.241Z",
- "note": "N-1 fixture: written by `npm run n-1:record`, replayed by test/n-1.test.js",
+ "note": "N-1 fixture: retained Community calls from `npm run n-1:record`; forum calls moved to OpenVibe.Space and are excluded",
  "manifest": {
   "service": "community",
   "release": "8f021e6e7a44",
@@ -489,17 +489,6 @@
   },
   {
    "method": "GET",
-   "path": "/s",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "html",
-   "from": [
-    "page /"
-   ]
-  },
-  {
-   "method": "GET",
    "path": "/new",
    "auth": "anon",
    "accept": "html",
@@ -546,17 +535,6 @@
   {
    "method": "GET",
    "path": "/pastes?sort=views",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "html",
-   "from": [
-    "page /"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/s/general",
    "auth": "anon",
    "accept": "html",
    "status": 200,
@@ -633,73 +611,6 @@
   },
   {
    "method": "GET",
-   "path": "/s/discuss?paste={@paste}",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "html",
-   "from": [
-    "page /p/{@paste}"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/s/general/feed.xml",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "other",
-   "from": [
-    "page /s/general"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/s/general/new",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "html",
-   "from": [
-    "page /s/general"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/s/general/t/{@thread_slug}",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "html",
-   "from": [
-    "page /s/general"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/s/general/t/n-1-thread",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "html",
-   "from": [
-    "page"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/auth/login?next=%2Fs%2Fgeneral%2Ft%2F{@thread_slug}",
-   "auth": "anon",
-   "accept": "html",
-   "status": 302,
-   "kind": "html",
-   "location": "/oauth/authorize",
-   "from": [
-    "page /s/general/t/n-1-thread"
-   ]
-  },
-  {
-   "method": "GET",
    "path": "/c/{@comment_access}",
    "auth": "anon",
    "accept": "html",
@@ -730,17 +641,6 @@
    "location": "/oauth/authorize",
    "from": [
     "page /c/{@comment_access}"
-   ]
-  },
-  {
-   "method": "GET",
-   "path": "/s/feed.xml",
-   "auth": "anon",
-   "accept": "html",
-   "status": 200,
-   "kind": "other",
-   "from": [
-    "page /pulse"
    ]
   },
   {
@@ -940,153 +840,6 @@
    "kind": "html",
    "from": [
     "server/render/pages.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/new-space",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/board.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/chat-room",
-   "auth": "anon",
-   "status": 303,
-   "kind": "empty",
-   "location": "/auth/login",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/chat-room/detach",
-   "auth": "anon",
-   "status": 303,
-   "kind": "empty",
-   "location": "/auth/login",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/new",
-   "auth": "anon",
-   "status": 303,
-   "kind": "empty",
-   "location": "/auth/login",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/settings",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/board.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/category",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/crosspost",
-   "auth": "anon",
-   "status": 303,
-   "kind": "empty",
-   "location": "/auth/login",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/delete",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/members-only",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/react",
-   "auth": "anon",
-   "status": 303,
-   "kind": "empty",
-   "location": "/auth/login",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/reply",
-   "auth": "anon",
-   "status": 303,
-   "kind": "empty",
-   "location": "/auth/login",
-   "from": [
-    "server/render/board.js",
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/state",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/status",
-   "auth": "anon",
-   "status": 403,
-   "kind": "html",
-   "from": [
-    "server/render/forum.js"
-   ]
-  },
-  {
-   "method": "POST",
-   "path": "/s/general/t/n-1-thread/vote",
-   "auth": "anon",
-   "status": 400,
-   "kind": "html",
-   "from": [
-    "server/render/forum.js"
    ]
   }
  ]

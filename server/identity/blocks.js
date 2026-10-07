@@ -2,9 +2,7 @@
 /**
  * Platform blocks (roadmap WS-E task 5; Contracts 0.49.0 network.block.changed).
  *
- * People block each other once, on OpenVibe.Network, and Community honours it: nobody replies in a forum
- * thread whose author blocked them, replies to a comment whose author blocked them, or comments on a paste
- * (or a forum post's comment thread) whose owner blocked them. Network announces every change as
+ * People block each other once, on OpenVibe.Network, and Community honours it: nobody replies to a comment whose author blocked them or comments on a paste whose owner blocked them. Network announces every change as
  * network.block.changed (blocker, blocked, active, a per-pair revision); ../pulse/consumer.js applies each
  * one here, keeping only the newest revision per (blocker, blocked), so a late or replayed event never
  * undoes a newer one. Moderation (hide, lock, delete, statuses) is never affected by a block.

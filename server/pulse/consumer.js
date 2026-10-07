@@ -19,9 +19,6 @@
  * And revocation (WS-B task 4): network.user.token_valid_after (source network) moves the person's token
  * cutoff (openvibe-sdk createPgRevocationStore); the viewer resolver refuses their older tokens.
  *
- * And VIP convergence: vip.membership.changed (source vip) drops the member's cached members-only
- * answers for that creator at once (the VIP gate's cache handleEvent) instead of waiting out its TTL.
- *
  * And platform blocks (WS-E task 5): network.block.changed (source network) updates the network_blocks
  * projection (../identity/blocks.js; the newest revision per pair wins) that replies and comments honour.
  *
@@ -37,7 +34,7 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged', 'network.account.export_requested', 'network.account.deleted']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged', 'network.account.export_requested', 'network.account.deleted']);
 const GAME_NAMESPACE = 'games.progress.summary';
 const GAME_MILESTONE = 5;
 const GAME_URL = 'https://openvibe.games/';
@@ -100,7 +97,7 @@ async function applyGameProgress(db, g) {
     return r.created ? 'pulse:created' : 'pulse:updated';
 }
 
-function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = null, accountSend = null, now = () => Date.now(), log = console } = {}) {
+function createPulseConsumer({ db, secrets = [], revocations = null, accountSend = null, now = () => Date.now(), log = console } = {}) {
     const keys = (secrets || []).filter((s) => typeof s === 'string' && s.length >= 32);
     // Receipts (community_event_inbox) are in migrations/0001_initial.sql.
     const inbox = createPgInbox(db, { table: 'community_event_inbox', now });
@@ -164,12 +161,6 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
                 log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
                 return problem(500, 'community.event_failed', 'processing failed; it will be retried');
             }
-        }
-        if (event.event_type === 'vip.membership.changed') {
-            if (event.source !== 'vip' || !vipCache) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: event.source !== 'vip' ? 'ignored:source' : 'ignored:no_gate' }); }
-            const r = await inbox.once(CONSUMER, event.event_id, () => ({ outcome: vipCache.handleEvent(event) ? 'vip:invalidated' : 'vip:unchanged' }));
-            if (r.duplicate) stats.duplicates++; else stats.applied++;
-            return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
         }
         if (event.event_type === 'network.module.updated') {
             const g = gameProgressOf(event);
