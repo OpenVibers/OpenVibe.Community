@@ -44,3 +44,9 @@ Copy `.env.example` to `.env` for local development. Set the Network OAuth clien
 ## Development
 
 Run `npm start` after installing dependencies. Use `ov test <files>` for targeted suites; CI runs the full suite. The test helper creates a migrated PGlite database by default. Tests that boot an HTTP server require local loopback listeners.
+
+<!-- versions:start -->
+- openvibe-contracts: v0.112.0
+- openvibe-sdk: v0.26.0
+- openvibe-shared: v2.13.0
+<!-- versions:end -->
