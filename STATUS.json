@@ -7,7 +7,7 @@
   "runtime": "node 22, express, PostgreSQL 18 (openvibe-sdk/db, async) + Valkey 9",
   "port": 4200,
   "domain": "openvibe.community",
-  "contracts": "openvibe-contracts v0.76.0",
+  "contracts": "openvibe-contracts v0.86.0",
   "capabilities": [
     "community.paste.create",
     "community.paste.write",
@@ -41,5 +41,5 @@
     "N-1 compatibility tests",
     "per-actor limits (openvibe-sdk/limits)"
   ],
-  "updated": "2026-10-04"
+  "updated": "2026-10-07"
 }
