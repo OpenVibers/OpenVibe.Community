@@ -11,7 +11,7 @@ const mockMedia = require('./mock-media');
  *                 database of its own (./db.js: PGlite, or the PostgreSQL containers under npm run
  *                 test:pg, with Valkey for the limit counters).
  * opts.pasteLimits  overrides for service.js limits (e.g. { cooldownSeconds: 0 }).
- * opts.appOpts      passed through to createApp (commentLimits, submissionLimits, actorLimits, …).
+ * opts.appOpts      passed through to createApp (commentLimits, forumLimits, relayOptions, …).
  * opts.env          environment set after the defaults, before the app loads (its OV_OAUTH_CLIENT_SECRET
  *                   is also the one the Network mock accepts).
  */

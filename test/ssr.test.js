@@ -31,7 +31,7 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, '/shared/theme-loader.js?v=');
         has(r.text, '/shared/navbar.js?v=');
         has(r.text, '/shared/footer.js?v=');
-        has(r.text, '<h1>Share it with a link.<span class="sc-accent"> Talk about it in Space.</span></h1>');
+        has(r.text, '<h1>Share it with a link.<span class="sc-accent"> Talk about it here.</span></h1>');
         has(r.text, '/shared/showcase.css?v=');
         has(r.text, 'id="api"');
         has(r.text, '<h2>Latest pastes</h2>');
@@ -46,7 +46,7 @@ const { boot, check, done } = require('./helpers/app');
         // Navbar/footer init payload matches the shared-chrome contract.
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
         assert.strictEqual(cfg.navbar.service, 'community');
-        assert.deepStrictEqual(cfg.navbar.links.map((l) => l.href), ['/pastes', 'https://openvibe.space', '/pulse', '/search', '/new']);
+        assert.deepStrictEqual(cfg.navbar.links.map((l) => l.href), ['/pastes', '/s', '/pulse', '/search', '/new']);
         assert.strictEqual(cfg.navbar.menu.after[0].href, '/my');
         assert.strictEqual(cfg.navbar.history.type, 'page');
         assert.strictEqual(cfg.navbar.silentLogin, 'https://openvibe.community/auth/login?silent=1&next={url}');

@@ -9,7 +9,7 @@
  *   media           optional  Media answers /healthz (screenshot and file uploads; paste text is local)
  *
  * Request metrics come from openvibe-shared/metrics in app.js. Content counts (pastes, comments,
- * submissions) are deliberately not metrics.
+ * threads) are deliberately not metrics.
  */
 const { createReadiness } = require('openvibe-shared/ready');
 
@@ -23,7 +23,7 @@ function probe(url, fetchImpl) {
     };
 }
 
-function createCommunityReadiness({ db, auth, config, release = null, fetchImpl = globalThis.fetch, valkey = null }) {
+function createCommunityReadiness({ db, auth, config, relay = null, release = null, fetchImpl = globalThis.fetch, valkey = null }) {
     const checks = [
         {
             name: 'db', required: true,
@@ -51,6 +51,16 @@ function createCommunityReadiness({ db, auth, config, release = null, fetchImpl 
         service: 'community',
         release,
         checks,
+        details: async (body) => {
+            const out = {};
+            if (relay && relay.enabled && body.checks.db.status === 'ok') {
+                // The queue by status (failed = dead letters), and whether the Events worker and the inbound gateway run.
+                const st = await relay.status();
+                const brief = (x) => (x.enabled ? { enabled: true, state: x.state || (x.running ? 'running' : 'stopped'), last_error: x.last_error || null, ...(x.lag != null ? { lag: x.lag } : {}) } : { enabled: false, reason: x.reason });
+                out.discord_relay = { enabled: true, deliveries: st.deliveries, creates_from: st.creates_from, events_worker: brief(st.events_worker), inbound: brief(st.inbound), inbound_failures: st.inbound_failures };
+            }
+            return out;
+        },
     });
 }
 

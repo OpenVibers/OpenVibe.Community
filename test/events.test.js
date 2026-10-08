@@ -9,11 +9,12 @@ const contracts = require('openvibe-contracts');
 const { testDb } = require('./helpers/db');
 const events = require('../server/events');
 const pastes = require('../server/pastes/store');
+const forum = require('../server/forum/store');
 const comments = require('../server/comments/store');
 
 (async () => {
     const db = await testDb();
-    // An outbox publisher that never publishes during the test: the rows stay in the outbox for inspection.
+    // A relay that never publishes during the test: the rows stay in the outbox for inspection.
     events.init(db, { eventsUrl: 'http://127.0.0.1:9', clientSecret: 'test-secret', intervalMs: 3_600_000, fetchImpl: async () => { throw new Error('offline'); } });
     const queued = async () => (await db.prepare("SELECT envelope FROM event_outbox ORDER BY id").all()).map((r) => (typeof r.envelope === 'string' ? (typeof r.envelope === 'string' ? (typeof r.envelope === 'string' ? JSON.parse(r.envelope) : r.envelope) : r.envelope) : r.envelope));
     const USR = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPQ';
@@ -43,6 +44,25 @@ const comments = require('../server/comments/store');
         const before = (await queued()).length;
         await assert.rejects(async () => await pastes.insertPaste(db, { slug: 'amber-fox-42', owner_subject: USR, type: 'paste', content: 'dup', visibility: 'public' }), /duplicate key/);
         assert.strictEqual((await queued()).length, before);
+    });
+
+    await check('threads and posts: public spaces only are public events; staff spaces are members-only', async () => {
+        await db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('general', 'General', 'public'), ('staff', 'Staff', 'staff') ON CONFLICT DO NOTHING").run();
+        const general = (await db.prepare("SELECT id FROM spaces WHERE slug = 'general'").get()).id;
+        const staff = (await db.prepare("SELECT id FROM spaces WHERE slug = 'staff'").get()).id;
+        const before = (await queued()).length;
+        const { thread } = await forum.createThread(db, { space_id: general, title: 'Hello there', author_subject: USR, body_markdown: 'first post body' });
+        await forum.addPost(db, { thread_id: thread.id, author_subject: USR, body_markdown: 'a reply body' });
+        await forum.createThread(db, { space_id: staff, title: 'Staff only', author_subject: USR, body_markdown: 'hidden body' });
+        const evs = (await queued()).slice(before);
+        assert.deepStrictEqual(evs.map((e) => e.event_type), ['community.thread.created', 'community.post.created', 'community.thread.created']);
+        evs.forEach(ok);
+        assert.strictEqual(evs[0].visibility, 'public');
+        assert.ok(/\/s\/general\/t\//.test(evs[0].payload.url));
+        assert.strictEqual(evs[2].visibility, 'internal');
+        assert.strictEqual(evs[2].payload.visibility, 'members');
+        assert.strictEqual(evs[2].payload.url, null);
+        assert.ok(!JSON.stringify(evs).includes('body'), 'no post body');
     });
 
     await check('a comment on a Live VOD queues community.comment.created with its ref', async () => {

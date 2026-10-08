@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Shared pieces of the /api/v1/* routers (comments, pulse, submissions): errors as RFC 9457
+ * Shared pieces of the /api/v1/* routers (comments, spaces, pulse, relay): errors as RFC 9457
  * problems (contracts errors.problem@1, which keeps the legacy { error } field), capability
  * guards for service tokens, JSON bodies, cursors and CORS for the embeddable read/write APIs.
  */

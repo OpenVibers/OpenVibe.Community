@@ -1,11 +1,10 @@
 'use strict';
 /**
  * N-1 (roadmap WS-P task 11, ADR-016): during a deploy, and for the 24-hour mixed-version window after
- * it, open tabs run the previous release's client against this release's server. Retained Community
- * features must keep working; forum requests moved to Space and are excluded from this fixture.
+ * it, open tabs run the previous release's client against this release's server. Both must keep working.
  *
- *   - An N-1 client against the N server: test/fixtures/n-1/client.json records retained Community
- *     calls the previous release's client code makes (found statically, made concrete with seeded values) with what that
+ *   - An N-1 client against the N server: test/fixtures/n-1/client.json is every call the previous
+ *     release's client code makes (found statically, made concrete with seeded values) with what that
  *     release answered: status, JSON or not, and the response fields the old client reads with their
  *     types. This checkout boots (test/n-1/service.js) and must answer each call compatibly: any 2xx
  *     for a 2xx, the same status otherwise (a 5xx only needs the route), JSON where there was JSON,

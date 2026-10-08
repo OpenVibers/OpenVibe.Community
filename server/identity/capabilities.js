@@ -16,7 +16,7 @@ function serviceHas(viewer, capabilityId) {
 }
 
 /**
- * Staff for discussions (comments): a browser holding staff.moderation.discussions, or a
+ * Staff for discussions (comments, forum, relay admin): a browser holding staff.moderation.discussions, or a
  * service that vouches for a staff person with X-OV-Staff: 1 and holds community.comment.moderate.
  */
 function discussionStaff(viewer) {
