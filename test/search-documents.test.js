@@ -66,5 +66,6 @@ const { createSearchDocuments } = require('../server/search/documents');
     });
 
     events._reset();
+    await db.close();
     console.log(`search documents: ${n} checks passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

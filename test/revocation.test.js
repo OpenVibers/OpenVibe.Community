@@ -50,6 +50,6 @@ let SECRET, db, revocations, app, ANN, BEN, at, evt;
         r = await post(evt({ event_id: 'evt_01JAB2C3D4E5F6G7H8J9K0MN02', source: 'live', payload: { subject: { type: 'user', id: BEN }, valid_after: new Date().toISOString(), reason: 'banned' } }));
         assert.strictEqual(r.json.outcome, 'ignored:source');
         assert.strictEqual((await who(claimsOf(BEN, at - 60000))).kind, 'user');
-    } finally { srv.close(); }
+    } finally { srv.close(); await db.close(); }
     console.log('revocation: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });
