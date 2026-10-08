@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * OpenVibe.Media Object API v2 client — screenshot pastes. Community keeps a
+ * OpenVibe.Media Object API v2 client — images on forum posts (WS-J task 2) and screenshot pastes. Community keeps a
  * `med_` reference and the public URL; the bytes live in Media under the `community` tenant, owned by
  * the person who attached them (X-OV-Subject), with Community's service token (media.object.upload,
  * namespace community):
@@ -43,14 +43,15 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
 
     /**
      * Store one image. → { id (med_…), url, size_bytes, mime }
-     * owner: the person (usr_…) the object belongs to, when there is one. The screenshot is
-     * unlisted and served to anyone with its unguessable object link.
+     * owner: the person (usr_…) the object belongs to, when there is one; kind: 'file' (post images) or
+     * 'screenshot' (screenshot pastes); visibility 'unlisted': served to anyone with the link (the object id is
+     * unguessable), never listed on openvibe.media — the post or paste decides who sees the link.
      */
-    async function uploadImage({ buffer, mime, filename, owner = null }) {
-        if (!configured) { const e = new Error('Screenshots need Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
+    async function uploadImage({ buffer, mime, filename, owner = null, kind = 'file', visibility = 'unlisted', source = 'community.attachment' }) {
+        if (!configured) { const e = new Error('Attachments need Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
         const init = await call('POST', '', {
-            json: { kind: 'screenshot', visibility: 'unlisted', size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, metadata: { source: 'community.paste' } },
+            json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, metadata: { source } },
             headers: /^usr_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(owner || '')) ? { 'X-OV-Subject': owner } : {},
         });
         const id = init.id || (init.object && init.object.id);

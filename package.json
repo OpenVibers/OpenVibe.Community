@@ -2,7 +2,7 @@
   "name": "openvibe-community",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenVibe.Community \u2014 pastes, embedded comment threads, Pulse and submissions. The forum lives at OpenVibe.Space.",
+  "description": "OpenVibe.Community \u2014 the people of OpenVibe. Home of pastes, the forum (spaces, threads, posts), the comment threads other OpenVibe products embed, Pulse and submissions (clips, art, ideas and reports for community review). Part of the OpenVibe network (identity by OpenVibe.Network; Community is the only authority for pastes).",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -28,7 +28,7 @@
     "highlight.js": "^11.11.1",
     "iovalkey": "^0.4.0",
     "multer": "^2.4.0",
-    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.112.0",
+    "openvibe-contracts": "https://codeload.github.com/OpenVibers/OpenVibe.Contracts/tar.gz/refs/tags/v0.118.0",
     "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.35.0",
     "openvibe-shared": "https://codeload.github.com/OpenVibers/OpenVibe.Shared/tar.gz/refs/tags/v2.15.0",
     "pg": "^8.23.0"

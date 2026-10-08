@@ -1,6 +1,7 @@
 'use strict';
 /**
- * Pulse: Community's own public activity enters at write time (public pastes by people) and leaves when it stops being public; other services publish
+ * Pulse: Community's own public activity enters at write time (public pastes by people, threads
+ * and replies in public spaces) and leaves when it stops being public; other services publish
  * with community.pulse.write (own refs only, public only, provenance kept); the list is cursor
  * paginated and filterable by origin; AI items are labelled and never name a person; /pulse
  * renders without JavaScript.
@@ -10,13 +11,14 @@ const { ids } = require('openvibe-contracts');
 const { boot, check, done } = require('./helpers/app');
 
 (async () => {
-    const t = await boot({ authority: 'community', pasteLimits: { cooldownSeconds: 0 }, appOpts: {} });
+    const t = await boot({ authority: 'community', pasteLimits: { cooldownSeconds: 0 }, appOpts: { forumLimits: { threads: { cooldownSec: 0 }, posts: { cooldownSec: 0 } } } });
     const net = t.network;
     const alex = net.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex' });
     const alexJwt = net.sign({ id: 7, subject_id: alex.subject_id, username: 'alex', display_name: 'Alex', role: 'user' });
     const asAlex = { kind: 'user', subject: alex.subject_id, staff: false, origin: 'user' };
     const anon = { kind: 'anonymous', subject: null, staff: false, origin: 'user' };
     const pastes = t.app.locals.pastes;
+    const forum = t.app.locals.forum;
     const svc = (cap, extra = {}) => net.signService({ cap, ...extra });
     const PULSE = 'community.pulse.write';
     const items = async () => await t.db.prepare('SELECT * FROM pulse_items ORDER BY id').all();
@@ -55,6 +57,22 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(await bySource('paste', c), 'row still there');
         const listed = (await call('/api/v1/pulse?limit=100')).json().items.map((i) => i.source.id);
         assert.ok(!listed.includes(c), 'but never listed');
+    });
+
+    await check('threads and replies in public spaces enter; members spaces never; deletes remove', async () => {
+        const { thread } = await forum.createThread(asAlex, 'general', { title: 'Pulse thread', body: 'hello' });
+        const it = await bySource('thread', thread.id);
+        assert.deepStrictEqual([it.title, it.url, it.actor_subject, it.origin], ['Pulse thread', 'https://openvibe.community/s/general/t/pulse-thread', alex.subject_id, 'user']);
+        const { post } = await forum.reply(asAlex, 'general', 'pulse-thread', { body: 'a reply' });
+        assert.strictEqual((await bySource('post', post.id)).title, 'Re: Pulse thread');
+        assert.strictEqual((await bySource('post', post.id)).url, `https://openvibe.community/s/general/t/pulse-thread#post-${post.id}`);
+        await t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members')").run();
+        const hidden = await forum.createThread(asAlex, 'insiders', { title: 'Members only', body: 'x' });
+        assert.strictEqual(await bySource('thread', hidden.thread.id), undefined);
+        await forum.deletePost(asAlex, post.id);
+        assert.strictEqual(await bySource('post', post.id), undefined);
+        await forum.deleteThread(asAlex, 'general', 'pulse-thread');
+        assert.strictEqual(await bySource('thread', thread.id), undefined);
     });
 
     await check('POST /items: services with community.pulse.write only; browsers and other caps refused', async () => {

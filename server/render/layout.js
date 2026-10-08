@@ -18,7 +18,7 @@ const { escapeHtml } = require('./highlight');
 
 const SITE_NAME = 'OpenVibe.Community';
 const NETWORK_URL = 'https://openvibe.network';
-const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, comments, Pulse and submissions. Free speech within the rules.';
+const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, spaces and threads, and submissions. Free speech within the rules.';
 const DEFAULT_OG_IMAGE = `${config.baseUrl}/og-default.png`;
 
 // Content-hashed asset URLs so browsers and nginx can cache them for a year and still pick up
@@ -61,7 +61,7 @@ function navbarInit(opts) {
         apiBase: NETWORK_URL,
         links: [
             { label: 'Pastes', href: '/pastes', active: opts.active === 'pastes' },
-            { label: 'Spaces', href: 'https://openvibe.space', active: opts.active === 'spaces' },
+            { label: 'Spaces', href: '/s', active: opts.active === 'spaces' },
             { label: 'Pulse', href: '/pulse', active: opts.active === 'pulse' },
             { label: 'Search', href: '/search', icon: 'fa-magnifying-glass', active: opts.active === 'search' },
             { label: 'New paste', href: '/new', icon: 'fa-plus', active: opts.active === 'new' },
@@ -90,7 +90,7 @@ function footerInit(opts) {
             heading: 'Community',
             items: [
                 { name: 'Pastes', url: '/pastes' },
-                { name: 'Spaces', url: 'https://openvibe.space' },
+                { name: 'Spaces', url: '/s' },
                 { name: 'Pulse', url: '/pulse' },
                 { name: 'New paste', url: '/new' },
                 { name: 'My pastes', url: '/my' },

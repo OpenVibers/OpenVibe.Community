@@ -2,7 +2,8 @@
 /**
  * Platform blocks in Community (WS-E task 5, Contracts 0.49.0 network.block.changed): a signed delivery
  * updates the projection (newest revision per pair wins; redeliveries, older revisions, other sources and
- * malformed payloads change nothing). While alex has blocked sam, sam cannot reply to alex's comments (directly, or through a reply that joins alex's comment), comment on alex's
+ * malformed payloads change nothing). While alex has blocked sam, sam cannot reply in alex's forum threads,
+ * reply to alex's comments (directly, or through a reply that joins alex's comment), comment on alex's
  * paste (comment threads and the paste API) or reply to alex's paste comments: 403 community.blocked in
  * the API, the plain message on the no-JS forms. Others are untouched; an unblock lifts it.
  */
@@ -19,6 +20,7 @@ const SECRET = `whsec_${'cd'.repeat(32)}`;
         authority: 'community', pasteLimits: { cooldownSeconds: 0, commentCooldownSeconds: 0 },
         appOpts: {
             commentLimits: { comments: { cooldownSec: 0, perMinute: 1000 } },
+            forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 },
         },
     });
     const net = t.network;
@@ -44,7 +46,7 @@ const SECRET = `whsec_${'cd'.repeat(32)}`;
         payload: { blocker, blocked, active, revision, at: new Date().toISOString() }, ...over,
     });
 
-    let alexPaste, kimPaste, streamThread, pasteThread, alexComment, kimReply;
+    let threadSlug, alexPaste, kimPaste, streamThread, pasteThread, alexComment, kimReply;
 
     await check('Community subscribes to network.block.changed; the projection keeps the newest revision per pair', async () => {
         assert.ok(require('../server/pulse/consumer').TOPICS.includes('network.block.changed'));
@@ -61,6 +63,27 @@ const SECRET = `whsec_${'cd'.repeat(32)}`;
         const blocks = require('../server/identity/blocks');
         assert.ok(await blocks.hasBlocked(t.db, alex.subject_id, sam.subject_id));
         assert.ok(!await blocks.hasBlocked(t.db, sam.subject_id, alex.subject_id), 'one direction');
+    });
+
+    await check('forum: no reply in a thread whose author blocked you (API problem and no-JS form); others reply', async () => {
+        const th = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: alexJwt, json: { title: 'Alex asks', body: 'what do you think?' } });
+        assert.strictEqual(th.status, 201, th.text);
+        threadSlug = th.json().thread.slug;
+        let r = await call(`/api/v1/spaces/general/threads/${threadSlug}/posts`, { method: 'POST', cookie: samJwt, json: { body: 'let me in' } });
+        assert.strictEqual(r.status, 403);
+        assert.match(r.headers.get('content-type'), /application\/problem\+json/);
+        assert.deepStrictEqual([r.json().code, r.json().detail], ['community.blocked', 'You cannot reply in this thread: its author blocked you']);
+        r = await call(`/api/v1/spaces/general/threads/${threadSlug}/posts`, { method: 'POST', cookie: kimJwt, json: { body: 'kim here' } });
+        assert.strictEqual(r.status, 201, r.text);
+        // The no-JS form: the thread page again, the plain message in the reply form, the draft kept.
+        r = await call(`/s/general/t/${threadSlug}/reply`, { method: 'POST', cookie: samJwt, form: { body: 'my <draft>' } });
+        assert.strictEqual(r.status, 403);
+        assert.ok(r.text.includes('<p class="alert alert-error" role="alert">You cannot reply in this thread: its author blocked you</p>'), 'the message in the form');
+        assert.ok(r.text.includes('my &lt;draft&gt;</textarea>'), 'the draft kept, escaped');
+        // Sam's own thread: alex (the blocker) is not blocked by sam, so alex may reply there.
+        const own = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: samJwt, json: { title: 'Sam asks', body: 'anyone?' } });
+        r = await call(`/api/v1/spaces/general/threads/${own.json().thread.slug}/posts`, { method: 'POST', cookie: alexJwt, json: { body: 'me' } });
+        assert.strictEqual(r.status, 201);
     });
 
     await check('comment threads: no reply to a comment whose author blocked you, nor to a reply that joins it', async () => {
@@ -110,6 +133,7 @@ const SECRET = `whsec_${'cd'.repeat(32)}`;
     await check('an unblock lifts it', async () => {
         const r = await deliver(block(alex.subject_id, sam.subject_id, false, 4));
         assert.strictEqual(r.json.outcome, 'blocks:unblocked');
+        assert.strictEqual((await call(`/api/v1/spaces/general/threads/${threadSlug}/posts`, { method: 'POST', cookie: samJwt, json: { body: 'hello again' } })).status, 201);
         assert.strictEqual((await call(`/api/v1/comments/threads/${streamThread.id}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'hi alex', parent_id: alexComment.id } })).status, 201);
         assert.strictEqual((await call(`/api/pastes/${alexPaste}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'hi alex' } })).status, 201);
         assert.strictEqual((await call(`/api/v1/comments/threads/${pasteThread.id}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'hi' } })).status, 201);

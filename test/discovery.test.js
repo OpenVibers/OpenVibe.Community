@@ -17,7 +17,7 @@ const { check, done } = require('./helpers/app');
 (async () => {
     await check('robots.txt keeps the disallow set for every crawler and names the sitemap', () => {
         const txt = seo.robotsTxt({ sitemaps: ['https://openvibe.community/sitemap.xml'], disallow: discovery.ROBOTS_DISALLOW });
-        assert.deepStrictEqual(discovery.ROBOTS_DISALLOW, ['/api/', '/auth/', '/my', '/new', '/*?sso=']);
+        assert.deepStrictEqual(discovery.ROBOTS_DISALLOW, ['/api/', '/auth/', '/my', '/new', '/s/*/new', '/*?sso=']);
         assert.ok(txt.startsWith('User-agent: *\nAllow: /\nDisallow: /api/\n'));
         assert.strictEqual(txt.split('Disallow: /*?sso=').length - 1, 2, 'the generic and the search/AI group both disallow');
         assert.ok(txt.endsWith('Sitemap: https://openvibe.community/sitemap.xml\n'));
@@ -26,8 +26,49 @@ const { check, done } = require('./helpers/app');
     await check('llms.txt sections link the site, the feeds and llms-full.txt', () => {
         const txt = seo.llmsTxt({ name: 'OpenVibe.Community', summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, sections: discovery.llmsSections() });
         assert.ok(txt.includes('## Browse\n\n- [Pastes](https://openvibe.community/pastes): public pastes, newest first'));
+        assert.ok(txt.includes('- [Latest threads (RSS)](https://openvibe.community/s/feed.xml)'));
         assert.ok(txt.includes('- [Full text for language models](https://openvibe.community/llms-full.txt)'));
         assert.ok(txt.includes('labelled as AI-generated'));
+    });
+
+    await check('llms-full.txt keeps opening posts past 4,000 characters', async () => {
+        const latest = catalog.latest;
+        catalog.latest = async () => [];
+        discovery.useForum({ recentPublic: async () => [{
+            title: 'Long thread', space_name: 'General', space_slug: 'general', slug: 'long-thread',
+            opening: 'First ' + 'x'.repeat(4100) + ' THREAD_END',
+        }] });
+        try {
+            const sections = await discovery.llmsFullSections();
+            assert.ok(sections[1].pages[0].text.endsWith('THREAD_END'));
+            assert.ok(sections[1].pages[0].text.length > 4000);
+        } finally {
+            discovery.useForum(null);
+            catalog.latest = latest;
+        }
+    });
+
+    await check('thread feed items use the 2.5.0 feedXml shape and keep the thread link as guid', () => {
+        const items = discovery.threadFeedItems([{ title: 'Hi <b>', space_slug: 'general', slug: 'hi-1', opening: 'Some **text**', created_at: '2026-09-15 10:00:00', last_activity_at: '2026-09-16 10:00:00' }]);
+        assert.deepStrictEqual(Object.keys(items[0]), ['title', 'link', 'guid', 'description', 'content', 'author', 'published', 'updated']);
+        assert.strictEqual(items[0].link, 'https://openvibe.community/s/general/t/hi-1');
+        assert.strictEqual(items[0].published, '2026-09-15T10:00:00.000Z');
+        assert.strictEqual(items[0].updated, '2026-09-16T10:00:00.000Z');
+        const xml = seo.feedXml({ title: 't', link: 'https://openvibe.community/s', description: 'd', selfUrl: 'https://openvibe.community/s/feed.xml', items }, { format: 'rss' });
+        assert.ok(xml.includes('<atom:link href="https://openvibe.community/s/feed.xml" rel="self" type="application/rss+xml"/>'));
+        assert.ok(xml.includes('<title>Hi &lt;b&gt;</title>'));
+        assert.ok(xml.includes('<pubDate>Tue, 15 Sep 2026 10:00:00 GMT</pubDate>'));
+    });
+
+    await check('JSON-LD: thread posting with comments, people linked to Live, AI never a person', () => {
+        const thread = { slug: 'hi-1', title: 'Hi', created_at: '2026-09-15 10:00:00', reply_count: 1, score: 2, author: { username: 'alex', display_name: 'Alex' } };
+        const posts = [{ id: 1, is_opening: true, body_markdown: 'open' }, { id: 2, body_markdown: 'reply', author: { is_ai: true, display_name: 'OpenVibe AI' }, created_at: '2026-09-15 11:00:00' }];
+        const out = ld.threadLd({ space: { slug: 'general', name: 'General' }, thread, posts, opening: posts[0], description: 'd' });
+        assert.strictEqual(out['@type'], 'DiscussionForumPosting');
+        assert.deepStrictEqual(out.author, { '@type': 'Person', name: 'Alex', url: 'https://openvibe.live/@alex' });
+        assert.deepStrictEqual(out.comment[0].author, { '@type': 'Organization', name: 'OpenVibe AI' });
+        assert.strictEqual(out.comment[0].url, 'https://openvibe.community/s/general/t/hi-1#post-2');
+        assert.strictEqual(ld.isoDate('nope'), null);
     });
 
     await check('page head: one canonical, og/twitter from headTags, ai-summary, article times, JSON-LD escaped', () => {
