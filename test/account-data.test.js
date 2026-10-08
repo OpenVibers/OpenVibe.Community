@@ -96,6 +96,7 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
         assert.strictEqual(sent.length, 2);
     } finally {
         srv.close();
+        await db.close();
     }
     console.log('community account export and deletion: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

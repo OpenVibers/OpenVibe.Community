@@ -31,7 +31,7 @@
   "features": [
     "pastes: code, text and screenshots, with versions, likes, comments, forks and burn-after-read",
     "typed comment threads embedded by other products",
-    "forum: spaces, threads, posts, categories and votes",
+    "forum: spaces, threads, posts, categories and votes (returned from OpenVibe.Space 2026-10-08, owner decision)",
     "per-space moderators (migration 0005)",
     "members-only spaces and threads gated by OpenVibe.VIP",
     "a space's chat room on OpenVibe.Chat",

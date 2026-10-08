@@ -1,12 +1,34 @@
 'use strict';
 
 /**
- * Capability checks for service tokens, through openvibe-contracts' manifests.
+ * Capability checks for service tokens, through openvibe-contracts' manifests, including the ids
+ * Community serves before the contracts library makes them active again.
+ *
+ * openvibe-contracts' capabilities.check() answers capability.unknown for an id outside its
+ * manifests, and for one it retired. The forum ids below were retired at 0.110.0, when the forum
+ * moved to OpenVibe.Space (plan T10 D3, `space.*`); the 2026-10-08 owner decision moved the forum
+ * back to Community and Contracts is updated separately to make `community.*` active again. Until
+ * that release a grant is decided here with the library's own matching rule (the exact id, or a
+ * `prefix.*` grant covering it). An id the library knows and has not retired always goes through
+ * the library, so the day the release lands nothing changes here.
  */
 const { capabilities } = require('openvibe-contracts');
 
+const REACTIVATING = new Set([
+    'community.post.create',
+    'community.space.manage',
+    'community.space.read',
+    'community.thread.read',
+]);
+
 /** → { allowed, code, reason } like capabilities.check(). */
 function checkCapability(claims, capabilityId) {
+    const manifest = capabilities.get(capabilityId);
+    if ((!manifest || manifest.status === 'retired') && REACTIVATING.has(capabilityId)) {
+        return capabilities.grants(claims && claims.cap, capabilityId)
+            ? { allowed: true, code: null, reason: null }
+            : { allowed: false, code: 'capability.denied', reason: `${capabilityId} not granted` };
+    }
     return capabilities.check(claims, capabilityId);
 }
 
