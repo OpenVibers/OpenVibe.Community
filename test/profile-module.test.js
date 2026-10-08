@@ -56,5 +56,6 @@ let ANN, BOB, db, now, at, DAY, ct;
     const off = createProfileModule({ db, config: { oauth: {} }, log: {} });
     assert.strictEqual(off.enabled, false); assert.strictEqual(off.start(), false);
     server.close();
+    await db.close();
     console.log('community.profile: all checks passed');
 })().catch((err) => { console.error(err); process.exit(1); });

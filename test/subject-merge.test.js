@@ -60,6 +60,7 @@ let SECRET, db, app, KEEP, FOLD, OTHER, MERGE, evt;
         assert.deepStrictEqual([r.status, r.json.duplicate], [200, true], 'a redelivery changes nothing');
     } finally {
         srv.close();
+        await db.close();
     }
     console.log('community subject merge: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });
