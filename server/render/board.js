@@ -12,7 +12,7 @@ const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
-const { timeTag, fmtDate, num, avatarUrl, authorHtml } = require('./pages');
+const { timeTag, fmtDate, num, avatarUrl, authorHtml, wearName } = require('./pages');
 const f = require('./forum');
 
 const STYLE_LABELS = { forum: 'Forum', feed: 'Feed' };
@@ -25,7 +25,7 @@ const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 function boardRow(sp) {
     const icon = sp.style === 'forum' ? 'fa-comments' : 'fa-fire';
     const last = sp.last_post
-        ? `<a href="${esc(sp.last_post.thread.url)}#post-${Number(sp.last_post.id)}">${esc(ld.clean(sp.last_post.thread.title, 48))}</a><span class="small muted">by ${esc(sp.last_post.author ? (sp.last_post.author.display_name || sp.last_post.author.username || 'someone') : 'someone')} · ${timeTag(sp.last_post.created_at)}</span>`
+        ? `<a href="${esc(sp.last_post.thread.url)}#post-${Number(sp.last_post.id)}">${esc(ld.clean(sp.last_post.thread.title, 48))}</a><span class="small muted">by ${sp.last_post.author ? wearName(sp.last_post.author, sp.last_post.author.display_name || sp.last_post.author.username || 'someone') : 'someone'} · ${timeTag(sp.last_post.created_at)}</span>`
         : '<span class="muted small">No posts yet</span>';
     const children = (sp.children || []).length ? `<p class="small board-children">Child boards: ${sp.children.map((c) => `<a href="/s/${esc(c.slug)}">${esc(c.name)}</a>`).join(', ')}</p>` : '';
     return `<tr>
@@ -82,7 +82,7 @@ function topicRow(t, space) {
     const base = `/s/${space.slug}/t/${t.slug}`;
     const icon = t.locked ? 'fa-lock' : t.pinned ? 'fa-thumbtack' : t.reply_count >= 15 ? 'fa-fire-flame-curved' : 'fa-comment';
     const label = t.locked ? 'Locked' : t.pinned ? 'Sticky' : t.reply_count >= 15 ? 'Hot topic' : 'Topic';
-    const who = (a) => esc(a ? (a.display_name || a.username || 'someone') : 'someone');
+    const who = (a) => (a ? wearName(a, a.display_name || a.username || 'someone') : 'someone');
     return `<tr class="${t.pinned ? 'sticky' : ''}">
       <td class="topic-icon" aria-hidden="true"><i class="fa-solid ${icon}" title="${label}"></i></td>
       <td class="topic-main">${t.pinned ? '<span class="badge badge-sticky">Sticky</span> ' : ''}<a class="topic-title" href="${esc(base)}">${esc(t.title)}</a>${f.statusBadge(t)}${f.categoryBadge(t, space)}${f.vipBadge(t)}
@@ -180,7 +180,7 @@ function authorPanel(p) {
     const st = p.author_stats;
     return `<aside class="postbit-author">
       ${pic ? `<img class="postbit-avatar" src="${esc(pic)}" alt="" width="64" height="64" loading="lazy">` : `<span class="postbit-avatar postbit-letter" aria-hidden="true">${initial}</span>`}
-      <span class="postbit-name">${a.username ? `<a href="https://openvibe.live/@${encodeURIComponent(a.username)}" rel="noopener">${esc(name)}</a>` : esc(name)}</span>
+      <span class="postbit-name">${a.username ? `<a href="https://openvibe.live/@${encodeURIComponent(a.username)}" rel="noopener">${wearName(a, name)}</a>` : wearName(a, name)}</span>
       ${a.is_ai ? '<span class="badge badge-ai" title="Written by AI, not by a person">AI</span>' : a.is_system ? '<span class="badge">OpenVibe</span>' : a.is_relay ? '<span class="badge badge-relay" title="Written on Discord and relayed here">Discord</span>' : ''}
       ${st ? `<dl class="postbit-stats"><div><dt>Posts</dt><dd>${num(st.posts)}</dd></div>${monthYear(st.first_post_at) ? `<div><dt>Since</dt><dd>${esc(monthYear(st.first_post_at))}</dd></div>` : ''}</dl>
       ${(st.ratings || []).length ? `<p class="postbit-ratings" aria-label="Ratings received">${st.ratings.map((r) => `<span title="${esc(r.label)}">${r.emoji} ${num(r.count)}</span>`).join(' ')}</p>` : ''}` : ''}

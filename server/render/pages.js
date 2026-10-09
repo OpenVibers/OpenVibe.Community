@@ -53,6 +53,15 @@ function avatarUrl(p, size = 96) {
     if (p.avatar_url) return /^https?:\/\//i.test(p.avatar_url) ? p.avatar_url : `${config.liveUrl}${p.avatar_url.startsWith('/') ? '' : '/'}${p.avatar_url}`;
     return p.username ? `${config.networkUrl}/avatar/${encodeURIComponent(p.username)}?s=${size}` : null;
 }
+// A person's Network subject: their name then wears what they wear (openvibe-shared items.js, loaded by community.js).
+const SUBJECT_RE = /^usr_[0-9A-HJKMNP-TV-Z]{26}$/;
+function wearerOf(p) {
+    if (!p || p.is_ai || p.is_relay || p.is_system || p.origin === 'ai') return null;
+    const s = p.subject || p.owner_subject || p.author_subject || null;
+    return SUBJECT_RE.test(String(s || '')) ? s : null;
+}
+/** A name as escaped text, inside a span marked with its person's subject when it has one (for items.js). */
+const wearName = (p, text) => { const w = wearerOf(p); return w ? `<span data-ov-subject="${esc(w)}">${esc(text)}</span>` : esc(text); };
 function authorHtml(p, { link = true } = {}) {
     const name = authorName(p);
     const initial = esc(name.trim()[0] || '?').toUpperCase();
@@ -63,7 +72,8 @@ function authorHtml(p, { link = true } = {}) {
     const avatar = (avatarSrc || netAvatar)
         ? `<img class="avatar" src="${esc(avatarSrc || netAvatar)}" alt="" loading="lazy" width="22" height="22">`
         : `<span class="avatar avatar-letter" aria-hidden="true">${initial}</span>`;
-    const inner = `${avatar}<span>${esc(name)}</span>`;
+    const wearer = wearerOf(p);
+    const inner = `${avatar}${wearer ? wearName(p, name) : `<span>${esc(name)}</span>`}`;
     if (!link || !p.username) return `<span class="author">${inner}</span>`;
     return `<a class="author" href="${esc(config.liveUrl)}/@${encodeURIComponent(p.username)}" rel="author">${inner}</a>`;
 }
@@ -436,4 +446,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl };
+module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, wearName };
