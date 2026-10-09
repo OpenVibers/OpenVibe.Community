@@ -46,7 +46,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(row.views, 2, 'one view per viewer per half hour');
         assert.strictEqual(row.last_post.author.username, 'sam');
         const page = (await call('/s/general')).text;
-        assert.ok(page.includes('class="board-table topic-table"') && page.includes('data-label="Views"') && page.includes('Started by Alex'));
+        assert.ok(page.includes('class="board-table topic-table"') && page.includes('data-label="Views"') && /Started by <span data-ov-subject="usr_[0-9A-HJKMNP-TV-Z]{26}">Alex<\/span>/.test(page), 'the starter\'s name is marked for what they wear');
         assert.ok(!page.includes('class="thread-score"'), 'no score column');
     });
 

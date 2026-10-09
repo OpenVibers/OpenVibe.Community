@@ -172,6 +172,28 @@
       window.addEventListener('pagehide', function () { es.close(); }, { signal });
     }
   }
+  // ── What people wear ───────────────────────────────────────
+  // Names marked data-ov-subject wear their owner's name effect (openvibe-shared items.js, OpenVibe.Inventory; plan
+  // T21). The script and its stylesheet load only on a page that shows someone, then every page move decorates again.
+  function wearItems() {
+    var meta = document.querySelector('meta[name="ov-items"]');
+    if (!meta || !document.querySelector('[data-ov-subject]')) return;
+    if (window.OpenVibeItems) { window.OpenVibeItems.decorate(document); return; }
+    if (document.getElementById('ov-items-js')) return;
+    var urls = (meta.getAttribute('content') || '').split(' ');
+    if (urls.length !== 2) return;
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = urls[1];
+    document.head.appendChild(css);
+    var s = document.createElement('script');
+    s.id = 'ov-items-js';
+    s.src = urls[0];
+    s.onload = function () { if (window.OpenVibeItems) window.OpenVibeItems.decorate(document); };
+    document.head.appendChild(s);
+  }
+
   wirePage();
-  document.addEventListener('ov:boost:load', wirePage);
+  wearItems();
+  document.addEventListener('ov:boost:load', function () { wirePage(); wearItems(); });
 })();

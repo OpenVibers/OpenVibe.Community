@@ -138,6 +138,8 @@ function renderPage(o) {
             `<link rel="stylesheet" href="${asset('css/community.css')}">`,
             '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">',
             `<script src="${asset('js/community.js')}" defer></script>`,
+            // openvibe-shared items.js + items.css: community.js loads them only on a page that shows someone.
+            `<meta name="ov-items" content="${escapeHtml(ovServe.url('items.js'))} ${escapeHtml(ovServe.url('items.css'))}">`,
             `<meta name="ov-boost" content="community@${escapeHtml(RELEASE)}">`,
             `<script src="${ovServe.url('boost.js')}" data-main="#main" defer></script>`,
         ].filter(Boolean).join('\n'),
