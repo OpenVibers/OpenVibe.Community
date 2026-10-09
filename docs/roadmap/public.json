@@ -3,8 +3,8 @@
   "items": [
     { "key": "openvibe-chat", "category": "launches", "status": "done", "title": "OpenVibe.Chat, on its own site",
       "summary": "Global chat, direct messages, rooms and your chat settings at [openvibe.chat](https://openvibe.chat), working with or without JavaScript and even while Live is down. Opened on 24 September 2026; rooms followed on 25 September." },
-    { "key": "openre-stream", "category": "launches", "status": "in_progress", "title": "OpenRe.Stream: stream once, restream everywhere",
-      "summary": "Send your stream to one ingest and let OpenRe.Stream forward it to every platform, with keys, destinations and output health in one place. The service is running; moving Live's stream slots onto it needs the new ingest address and a short switch-over window for each broadcaster." },
+    { "key": "openre-stream", "category": "launches", "status": "in_progress", "title": "OpenRestream: stream once, restream everywhere",
+      "summary": "Send your stream to one ingest and let OpenRestream forward it to every platform, with keys, destinations and output health in one place. The service is running; moving Live's stream slots onto it needs the new ingest address and a short switch-over window for each broadcaster." },
     { "key": "openvibe-tips-vip", "category": "launches", "status": "planned", "title": "OpenVibe.Tips and OpenVibe.VIP",
       "summary": "Tips, goals and paid messages for creators, and creator memberships with perks recognised on every site. Both are built; they open once all money moves through the network's billing ledger, so every tip and membership is recorded exactly once." },
     { "key": "openvibe-news-reviews", "category": "launches", "status": "planned", "title": "OpenVibe.News and OpenVibe.Reviews",
