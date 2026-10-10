@@ -645,6 +645,9 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         // ── staff (api.js has already checked the viewer is staff) ──
         async stats() { return { stats: await store.stats(db) }; },
 
+        /** Daily counts behind the paste total (Live's "over time" chart; Media's frozen copy stopped at the move). */
+        async statSeries(q = {}) { return await store.statSeries(db, intIn(q.days, 30, 1, 365)); },
+
         async forks(q = {}) {
             const limit = intIn(q.limit, 100, 1, 500);
             const offset = Math.max(parseInt(q.offset, 10) || 0, 0);

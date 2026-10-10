@@ -118,6 +118,7 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
     router.get('/config', anyCap, run(async (req) => await service.config(req.viewer)));
 
     router.get('/admin/stats', staffOnly, run(async () => await service.stats()));
+    router.get('/admin/stats/series', staffOnly, run(async (req) => await service.statSeries(req.query)));
     router.get('/admin/forks', staffOnly, run(async (req) => await service.forks(req.query)));
     router.delete('/admin/forks', staffOnly, staffWrite, run(async (req) => await service.deleteForks(req.viewer)));
     router.post('/bulk', staffOnly, staffWrite, json, jsonErrors, run(async (req) => await service.bulk(req.body || {}, req.viewer)));
