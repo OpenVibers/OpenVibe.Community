@@ -72,7 +72,8 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         const st = await worker.status();
         assert.deepStrictEqual([st.enabled, st.cursor, st.latest_seq, st.started_at_seq, st.lag], [true, 3, 3, 3, 0]);
         assert.strictEqual((await deliveries()).length, 0);
-        assert.deepStrictEqual(await db.prepare('SELECT name, cursor FROM relay_cursors').all(), [{ name: CURSOR, cursor: 3 }]);
+        assert.deepStrictEqual(await db.prepare('SELECT name, cursor, position FROM relay_cursors').all(), [{ name: CURSOR, cursor: 3, position: events.encode(3) }], 'the head, stored as the opaque latest_cursor');
+        assert.ok(events.calls.every((c) => !/[?&]after_seq=[1-9]/.test(c.path)), 'no numeric position is ever sent once a cursor is stored');
         before = events.calls.length;
     });
 
@@ -99,7 +100,7 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
     });
 
     await check('a replay (cursor moved back) queues nothing twice and posts nothing twice', async () => {
-        await db.prepare('UPDATE relay_cursors SET cursor = 3 WHERE name = ?').run(CURSOR);
+        await db.prepare('UPDATE relay_cursors SET position = ? WHERE name = ?').run(events.encode(3), CURSOR);
         assert.deepStrictEqual(await worker.tick(), { queued: 0 });
         await relay.drain();
         assert.strictEqual(hook.hits.length, 2);
@@ -143,8 +144,21 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         assert.strictEqual((await worker.status()).last_error, null);
     });
 
+    await check('a row from the previous release (numeric cursor, no position) reads on from it once, then by cursor', async () => {
+        await db.prepare('UPDATE relay_cursors SET cursor = 3, position = NULL WHERE name = ?').run(CURSOR);
+        const from = events.calls.length;
+        assert.deepStrictEqual(await worker.tick(), { queued: 0 }, 'what it read again was already queued');
+        const sent = events.calls.slice(from).map((c) => c.path);
+        assert.ok(sent.some((p) => /[?&]after_seq=3\b/.test(p)), 'the first read uses the numeric cursor it had');
+        const row = await db.prepare('SELECT cursor, position FROM relay_cursors WHERE name = ?').get(CURSOR);
+        assert.strictEqual(row.position, events.encode(events.log.length), 'and from then on the opaque cursor');
+        const again = events.calls.length;
+        await worker.tick();
+        assert.ok(events.calls.slice(again).every((c) => /[?&]after=c1\./.test(c.path)), 'later reads send the cursor');
+    });
+
     await check('a retention gap is logged and shown to staff; reading carries on after it', async () => {
-        await db.prepare('UPDATE relay_cursors SET cursor = 1 WHERE name = ?').run(CURSOR);
+        await db.prepare('UPDATE relay_cursors SET position = ? WHERE name = ?').run(events.encode(1), CURSOR);
         events.state.prunedThrough = 5;
         await worker.tick();
         assert.deepStrictEqual([(await worker.status()).last_gap.from_seq, (await worker.status()).last_gap.to_seq], [2, 5]);

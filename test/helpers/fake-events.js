@@ -4,7 +4,9 @@
  * the pull route the relay's Events worker reads.
  *
  *   POST /api/v1/events   one envelope or { events: [...] } → { event_id, seq, duplicate } | { results }
- *   GET  /api/v1/events?topic=a.*,b.*&after_seq=&limit=  → { events: [{ seq, event }], next_after_seq, latest_seq, gap? }
+ *   GET  /api/v1/events?topic=a.*,b.*&after=<cursor>|after_seq=&limit=
+ *        → { events: [{ seq, cursor, event }], next_after_seq, next_cursor, latest_seq, latest_cursor, gap? }
+ *   Cursors are opaque to the worker; here, as in Events, `c1.<epoch>.<base64url(seq)>` (one epoch, 0).
  *
  * Topic patterns follow Events (`*` is one or more whole segments). Every call needs a Bearer token.
  * `failNext` answers that many calls with 503; `prunedThrough` makes seq ≤ it look pruned (a gap).
@@ -14,6 +16,9 @@ const http = require('http');
 function matcher(pattern) {
     return new RegExp(`^${pattern.split('.').map((s) => (s === '*' ? '[a-z0-9_]+(?:\\.[a-z0-9_]+)*' : s)).join('\\.')}$`);
 }
+
+const encode = (seq) => `c1.0.${Buffer.from(String(seq), 'utf8').toString('base64url')}`;
+const decode = (c) => { const m = /^c1\.0\.([A-Za-z0-9_-]+)$/.exec(String(c)); return m ? Number(Buffer.from(m[1], 'base64url').toString('utf8')) : NaN; };
 
 function startEvents() {
     const log = [];      // { seq, event }
@@ -42,7 +47,9 @@ function startEvents() {
             }
             if (u.pathname === '/api/v1/events' && req.method === 'GET') {
                 const patterns = String(u.searchParams.get('topic') || '*').split(',').map(matcher);
-                const after = Number(u.searchParams.get('after_seq') || 0);
+                const cur = u.searchParams.get('after');
+                const after = cur ? decode(cur) : Number(u.searchParams.get('after_seq') || 0);
+                if (!Number.isFinite(after)) return json(400, { type: 'about:blank', code: 'events.bad_request', status: 400, detail: 'after must be an opaque cursor' });
                 const limit = Number(u.searchParams.get('limit') || 100);
                 const out = {};
                 let from = after;
@@ -55,9 +62,11 @@ function startEvents() {
                     if (patterns.some((re) => re.test(item.event.event_type))) rows.push(item);
                     if (rows.length >= limit) break;
                 }
-                out.events = rows;
+                out.events = rows.map((r) => ({ ...r, cursor: encode(r.seq) }));
                 out.next_after_seq = cursor;
+                out.next_cursor = encode(cursor);
                 out.latest_seq = log.length;
+                out.latest_cursor = encode(log.length);
                 return json(200, out);
             }
             return json(404, { type: 'about:blank', code: 'route.not_found', status: 404 });
@@ -66,7 +75,7 @@ function startEvents() {
     /** Put an event straight into the log (as if some producer had published it). → seq */
     function add(event) { log.push({ seq: log.length + 1, event }); return log.length; }
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({
-        url: `http://127.0.0.1:${server.address().port}`, log, calls, state, add,
+        url: `http://127.0.0.1:${server.address().port}`, log, calls, state, add, encode,
         close: () => new Promise((r) => server.close(r)),
     })));
 }
