@@ -55,7 +55,7 @@ function createCommunityReadiness({ db, auth, config, relay = null, release = nu
             if (relay && relay.enabled && body.checks.db.status === 'ok') {
                 // The queue by status (failed = dead letters), and whether the Events worker and the inbound gateway run.
                 const st = await relay.status();
-                const brief = (x) => (x.enabled ? { enabled: true, state: x.state || (x.running ? 'running' : 'stopped'), last_error: x.last_error || null, ...(x.lag != null ? { lag: x.lag } : {}) } : { enabled: false, reason: x.reason });
+                const brief = (x) => (x.enabled ? { enabled: true, state: x.state || (x.running ? 'running' : 'stopped'), last_error: x.last_error || null, ...(x.caught_up != null ? { caught_up: x.caught_up } : {}) } : { enabled: false, reason: x.reason });
                 out.discord_relay = { enabled: true, deliveries: st.deliveries, creates_from: st.creates_from, events_worker: brief(st.events_worker), inbound: brief(st.inbound), inbound_failures: st.inbound_failures };
             }
             return out;

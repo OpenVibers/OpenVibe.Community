@@ -466,7 +466,7 @@ token. Setup, owner steps, limits and operations: [docs/discord-relay.md](docs/d
   thread members-only) DELETE the Discord messages through the **external message map**
   (`relay_message_map`, unique both ways; WS-J task 5). Creates are queued by the relay's
   **Events worker** from Community's own `community.thread.*` / `community.post.*` read back from
-  OpenVibe.Events' pull API with a stored cursor (`relay_cursors`; WS-J task 6), or by the forum
+  OpenVibe.Events' pull API with a stored opaque cursor (`relay_cursors.position`; WS-J task 6), or by the forum
   itself when the worker is off (no `EVENTS_URL` / client secret, or `DISCORD_RELAY_EVENTS=off`).
   Dedupe keys in `relay_deliveries` mean nothing is queued or posted twice.
 - **In** (`DISCORD_RELAY_INBOUND=on`, `DISCORD_BOT_TOKEN`, `inbound: true` on the mapping): a
@@ -484,7 +484,7 @@ token. Setup, owner steps, limits and operations: [docs/discord-relay.md](docs/d
   retried with exponential backoff up to `DISCORD_RELAY_MAX_ATTEMPTS`, then the delivery is
   `failed` (the dead letter); other 4xx fail at once. Mentions are disabled on every message.
 - **Staff** (admin/global_mod browsers, or services with `community.comment.moderate`):
-  `GET /api/v1/relay/status` (queue, Events worker cursor/lag/errors/gaps, gateway state),
+  `GET /api/v1/relay/status` (queue, Events worker position/caught-up/errors/gaps, gateway state),
   `GET /api/v1/relay/deliveries?status=failed`, `POST /api/v1/relay/deliveries/:id/retry|drop`,
   `GET /api/v1/relay/inbound` and `POST /api/v1/relay/inbound/:id/dismiss` (inbound failures),
   `GET|POST /api/v1/relay/mappings`, `PUT /api/v1/relay/mappings/:id`.
