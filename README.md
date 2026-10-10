@@ -824,7 +824,7 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 - Games: https://openvibe.games (OpenVibers/OpenVibe.Games)
 
 <!-- versions:start -->
-- openvibe-contracts: v0.122.1
+- openvibe-contracts: v0.126.0
 - openvibe-sdk: v0.35.0
 - openvibe-shared: v2.20.0
 <!-- versions:end -->
