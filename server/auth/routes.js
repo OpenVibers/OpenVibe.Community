@@ -35,6 +35,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { OpenVibeAuthClient } = require('openvibe-shared/auth-client');
+const { createNetworkKeys, verifyUserToken } = require('openvibe-sdk/auth');
 const cache = require('openvibe-shared/cache-policy');
 
 const ACCESS_COOKIE = 'ov_token';
@@ -45,63 +46,46 @@ const NEXT_COOKIE = 'ov_oauth_next';
 const SILENT_COOKIE = 'ov_oauth_silent';
 
 /**
- * Create the auth client + JWKS fetcher shared by the whole app.
- * Verification is OFFLINE: we cache the Network's RS256 public key from
- * GET /api/.well-known/jwks and verify JWTs locally on every request.
+ * Create the auth client shared by the whole app: OAuth (code, jwt-bearer and refresh grants) through
+ * OpenVibeAuthClient, and OFFLINE session verification with openvibe-sdk/auth verifyUserToken against Network's keys
+ * (createNetworkKeys: the JWKS, retried every 30 s until it loads, refreshed every 15 minutes, a rotation followed on
+ * an unknown kid). A typed token (a FedCM assertion, a realtime ticket, an export token) or a service principal is
+ * never a session here.
+ *
+ *   auth.keys          Network's keys (keys.verifyOptions for the other verifiers, keys.loaded() for readiness)
+ *   auth.ensureKey()   the keys once loaded (fetching once if they are not), else null
+ *   auth.verify(token) claims | null
  */
 function createAuthClient(config) {
     const client = new OpenVibeAuthClient({
         clientId: config.oauth.clientId,
         clientSecret: config.oauth.clientSecret,
         redirectUri: config.oauth.redirectUri,
-        publicKey: null, // filled by ensureKey()
+        publicKey: null, // sessions are verified below, never by this client
         authBase: config.networkUrl,
         internalBase: config.networkInternalUrl,
     });
+    const keys = createNetworkKeys({ network: config.networkInternalUrl || config.networkUrl, log: console });
 
-    let lastFetch = 0;
-    let inflight = null;
     async function ensureKey() {
-        if (client.publicKey) return client.publicKey;
-        // A request that arrives while the key is being fetched waits for that fetch rather than
-        // being treated as signed out.
-        if (inflight) return inflight;
-        // Don't hammer the Network if it's down — retry at most every 30s
-        if (Date.now() - lastFetch < 30_000) return null;
-        lastFetch = Date.now();
-        inflight = fetchKey().finally(() => { inflight = null; });
-        return inflight;
-    }
-    async function fetchKey() {
-        for (const base of [config.networkInternalUrl, config.networkUrl]) {
-            if (!base) continue;
-            try {
-                const res = await fetch(`${base}/api/.well-known/jwks`, { signal: AbortSignal.timeout(5000) });
-                if (!res.ok) continue;
-                const jwks = await res.json();
-                if (jwks.public_key) {
-                    client.publicKey = jwks.public_key;
-                    console.log(`[Auth] Network public key loaded from ${base} (${jwks.algorithm || 'RS256'})`);
-                    return client.publicKey;
-                }
-            } catch (err) {
-                console.warn(`[Auth] JWKS fetch failed from ${base}: ${err.message}`);
-            }
-        }
-        return null;
+        if (!keys.loaded()) await keys.refresh();
+        return keys.loaded() ? keys : null;
     }
 
     /** Offline JWT verification. Returns decoded claims or null. */
     async function verify(token) {
         if (!token) return null;
-        await ensureKey();
-        return client.verifyToken(token);
+        try {
+            return await verifyUserToken(String(token), { ...keys.verifyOptions, issuer: config.networkUrl });
+        } catch {
+            return null;
+        }
     }
 
-    // Warm the key cache at boot (non-fatal if the Network is down)
-    ensureKey().catch(() => {});
+    // Load the keys now and keep them fresh (non-fatal if the Network is down; unref'd timers).
+    keys.start().catch(() => {});
 
-    return { client, ensureKey, verify };
+    return { client, keys, ensureKey, verify };
 }
 
 /** Token from Authorization header or the ov_token cookie. */

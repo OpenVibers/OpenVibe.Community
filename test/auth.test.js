@@ -87,6 +87,17 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(bad.status, 401, 'a present but invalid cookie');
     });
 
+    await check('a typed Network token (a FedCM assertion, a realtime ticket, an export token) is never a session', async () => {
+        // Network signs them with the session key; openvibe-sdk/auth verifyUserToken refuses `typ`/`purpose`.
+        const me = (token) => fetch(`${t.base}/auth/me`, { headers: { cookie: `ov_token=${token}` } });
+        for (const extra of [{ typ: 'fedcm', aud: 'community' }, { typ: 'realtime', purpose: 'realtime' }, { purpose: 'export' }]) {
+            const r = await me(t.network.sign({ id: 7, username: 'alex', subject_id: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR', ...extra }));
+            assert.strictEqual(r.status, 401, `${JSON.stringify(extra)} on /auth/me`);
+        }
+        const session = await me(t.network.sign({ id: 7, username: 'alex', subject_id: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR' }));
+        assert.strictEqual(session.status, 200, 'the session token itself signs in');
+    });
+
     await check('silent login with a valid ov_token skips the Network and 302s to next; non-silent and bad tokens still go', async () => {
         assert.ok(t.jar.has('ov_token'), 'precondition: signed in');
         const short = await t.get('/auth/login?silent=1&next=/pastes%3Fsort%3Dviews');

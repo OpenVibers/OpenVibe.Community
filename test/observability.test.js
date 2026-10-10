@@ -65,7 +65,7 @@ function raw(base, path, headers = {}) {
 
     await check('Network key not loaded: degraded, not down', async () => {
         const { createCommunityReadiness } = require('../server/observability');
-        const auth = { client: { publicKey: null }, ensureKey: async () => null };
+        const auth = { keys: { loaded: () => false }, ensureKey: async () => null };
         const b = await createCommunityReadiness({ db: t.app.locals.db, auth, config: { ...t.app.locals.config, mediaInternalUrl: t.media.url } }).run();
         assert.strictEqual(b.ready, true);
         assert.deepStrictEqual(b.degraded, ['network_jwks']);

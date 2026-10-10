@@ -25,7 +25,8 @@ const contracts = require('openvibe-contracts');
 const { extractToken, claimsToUser, decodeJwtPayload } = require('../auth/routes');
 const { checkCapability } = require('./capabilities');
 
-const { ids, capabilities, serviceAuth, http } = contracts;
+const { ids, capabilities, http } = contracts;
+const { verifyServiceToken } = require('openvibe-sdk/auth');
 const { staff: staffMap } = require('openvibe-contracts');
 // The roles that hold staff moderation today (kept for callers; gates ask staffMap.can instead).
 const STAFF_ROLES = new Set(['admin', 'global_mod']);
@@ -49,9 +50,9 @@ function hasCap(viewer, capabilityId) {
 
 function createViewerResolver({ auth, config, network, revocations = null }) {
     async function fromServiceToken(req, token) {
-        const publicKey = await auth.ensureKey();
-        if (!publicKey) throw new ViewerError(503, 'identity.unavailable', 'the Network signing key is not loaded yet');
-        const r = serviceAuth.verifyServiceToken(token, { publicKey, issuer: config.networkUrl, audience: AUDIENCE });
+        // openvibe-sdk/auth: the pinned contracts rules with the key the token's kid names.
+        const r = await verifyServiceToken(token, { ...auth.keys.verifyOptions, issuer: config.networkUrl, audience: AUDIENCE, contracts });
+        if (!r.ok && r.code === 'token.unavailable') throw new ViewerError(503, 'identity.unavailable', 'the Network signing key is not loaded yet');
         if (!r.ok) throw new ViewerError(401, r.code, r.reason);
         const claims = r.claims;
         // Developer apps (app:…) and modules (mod:…) are third parties: they act only for the person
