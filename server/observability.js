@@ -39,9 +39,8 @@ function createCommunityReadiness({ db, auth, config, relay = null, release = nu
         {
             name: 'network_jwks', required: false,
             check: () => {
-                if (auth.client.publicKey) return true;
-                // Not loaded: ask again (ensureKey throttles itself to one fetch per 30 s) and report now.
-                auth.ensureKey().catch(() => {});
+                if (auth.keys.loaded()) return true;
+                // Not loaded: createNetworkKeys retries every 30 s on its own; report now.
                 return 'Network signing key not loaded yet: sign-in and signed-in writes are unavailable';
             },
         },
