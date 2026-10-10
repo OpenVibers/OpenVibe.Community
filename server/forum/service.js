@@ -49,6 +49,7 @@ const { discussionModerator } = require('../identity/capabilities');
 const { renderMarkdown, markdownToText } = require('../render/markdown');
 const { isUserSubject } = require('../vip');
 const { stripImageMetadata } = require('../media/strip-metadata');
+const { sniffImage } = require('../media/sniff-image');
 const reactions = require('./reactions');
 const blocks = require('../identity/blocks');
 const STYLES = ['feed', 'forum'];
@@ -86,15 +87,6 @@ function parsePasteRefs(input) {
         if (!out.includes(slug)) out.push(slug);
     }
     return out;
-}
-/** The image type from its first bytes (never the name or the declared type), or null. */
-function sniffImage(b) {
-    if (!Buffer.isBuffer(b) || b.length < 12) return null;
-    if (b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG') return 'image/png';
-    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-    if (b.toString('latin1', 0, 4) === 'GIF8') return 'image/gif';
-    if (b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
-    return null;
 }
 const POSTS_PER_PAGE = 50;
 const TITLE_MIN = 3, TITLE_MAX = 200;

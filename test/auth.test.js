@@ -137,6 +137,22 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(evil.headers.get('location'), '/');
     });
 
+    await check('logout: a cross-site subresource GET is refused; the navbar and the Network sign-out-everywhere chain still sign out', async () => {
+        t.jar.set('ov_token', 'x'); t.jar.set('ov_refresh', 'refresh-3');
+        const img = await t.get('/auth/logout', { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-dest': 'image' } });
+        assert.strictEqual(img.status, 403, 'an <img src=/auth/logout> must not end the session');
+        const frame = await t.get('/auth/logout', { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-dest': 'iframe' } });
+        assert.strictEqual(frame.status, 403, 'nor a cross-site frame');
+        assert.ok(t.jar.has('ov_token') && t.jar.has('ov_refresh'), 'the session is untouched');
+        const fanout = await t.get('/auth/logout', { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-dest': 'document' } });
+        assert.strictEqual(fanout.status, 302, 'openvibe.network\'s sign-out-everywhere hop is a top-level navigation');
+        assert.ok(!t.jar.has('ov_token') && !t.jar.has('ov_refresh'));
+        t.jar.set('ov_token', 'x'); t.jar.set('ov_refresh', 'refresh-4');
+        const navbar = await t.get('/auth/logout', { headers: { 'sec-fetch-site': 'same-origin', 'sec-fetch-dest': 'document' } });
+        assert.strictEqual(navbar.status, 302, 'the navbar navigates with window.location.href');
+        assert.ok(!t.jar.has('ov_token') && !t.jar.has('ov_refresh'));
+    });
+
     await check('POST /auth/fedcm swaps a nonce-matching assertion for a session (jwt-bearer grant)', async () => {
         assert.ok(!t.jar.has('ov_token'), 'precondition: signed out');
         const post = (body, headers = {}) => t.get('/auth/fedcm', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });

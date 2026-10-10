@@ -364,7 +364,18 @@ function createAuthRoutes(config, auth) {
     });
 
     // ── GET /auth/logout ─────────────────────────────────────
+    // GET because the shared navbar signs out with a top-level navigation (render/layout.js sets
+    // logoutUrl '/auth/logout?next={path}'; navbar.js does `window.location.href = …`), and the
+    // Network's "sign out everywhere" is a chain of top-level redirects from openvibe.network
+    // (cross-site, but a navigation). What must not end the session is a cross-site subresource: an
+    // <img src="/auth/logout">, a frame or a fetch. Browsers label requests with fetch metadata, so
+    // those are refused; a client that sends none (an old browser, curl) is let through.
     router.get('/logout', async (req, res) => {
+        const site = req.get('sec-fetch-site');
+        const navigation = req.get('sec-fetch-dest') === 'document';    // only a top-level navigation is a document
+        if (site && site !== 'same-origin' && site !== 'none' && !navigation) {
+            return res.status(403).type('text/plain').send('Sign-out must come from this site.');
+        }
         // Best-effort refresh revocation. The Network's rotating refresh tokens
         // self-invalidate, so a failure here is harmless.
         const refresh = req.cookies?.[REFRESH_COOKIE];

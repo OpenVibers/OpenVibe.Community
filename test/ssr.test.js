@@ -216,6 +216,8 @@ const { boot, check, done } = require('./helpers/app');
         has(empty.text, 'content is empty');
         const anonPost = await t.get('/new', { method: 'POST', body: new URLSearchParams({ title: 'from anon', content: 'x' }).toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
         assert.strictEqual(anonPost.status, 303, 'anonymous posts create in the store too');
+        const foreign = await t.get('/new', { method: 'POST', body: new URLSearchParams({ title: 'Cross site', content: 'x' }).toString(), headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' } });
+        assert.strictEqual(foreign.status, 403, 'a form sent from another site is refused');
     });
 
     await check('404 page and API 404 JSON; health', async () => {
