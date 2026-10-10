@@ -337,6 +337,27 @@ async function stats(db) {
     };
 }
 
+/**
+ * Pastes made per UTC day over the last `days` days (deleted ones left out, as in stats()), for "over time" charts:
+ * { metric, days, points: [{ day, value }], total, before (made before the window), prev_total (the window before) }.
+ */
+async function statSeries(db, days) {
+    const now = Date.now();
+    const dayOf = (i) => new Date(now - i * 86400000).toISOString().slice(0, 10);
+    const since = dayOf(days - 1);
+    const rows = await db.prepare(`SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM pastes
+                                   WHERE deleted_at IS NULL AND created_at >= ? GROUP BY day`).all(since);
+    const byDay = new Map(rows.map((r) => [r.day, Number(r.n) || 0]));
+    const points = [];
+    for (let i = days - 1; i >= 0; i--) points.push({ day: dayOf(i), value: byDay.get(dayOf(i)) || 0 });
+    const count = async (sql, ...params) => Number((await db.prepare(sql).get(...params)).n) || 0;
+    return {
+        metric: 'pastes', days, points, total: points.reduce((n, p) => n + p.value, 0),
+        before: await count('SELECT COUNT(*) AS n FROM pastes WHERE deleted_at IS NULL AND created_at < ?', since),
+        prev_total: await count('SELECT COUNT(*) AS n FROM pastes WHERE deleted_at IS NULL AND created_at >= ? AND created_at < ?', dayOf(2 * days - 1), since),
+    };
+}
+
 async function listForks(db, limit, offset) {
     const forks = await db.prepare(`SELECT id, slug, owner_subject, type, title, forked_from, visibility, views, copies, likes, created_at
                               FROM pastes WHERE forked_from IS NOT NULL AND deleted_at IS NULL
@@ -403,7 +424,7 @@ module.exports = {
     generateSlug, sanitizeTitle, detectLanguage,
     getBySlug, getById, insertPaste, updatePaste, listVersions, softDelete, listPastes,
     countOwnerSince, lastPasteTime, hasLiked, toggleLike, incrementCopies, bumpViews, recordVisit, pruneVisits,
-    setAi, setScreenshot, setVisibility, stats, listForks, deleteAllForks,
+    setAi, setScreenshot, setVisibility, stats, statSeries, listForks, deleteAllForks,
     getProjections, upsertProjection, subjectsByUsername,
     mapGet, mapSet,
     SLUG_ADJECTIVES, SLUG_NOUNS,

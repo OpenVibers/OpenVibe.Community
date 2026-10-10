@@ -155,6 +155,14 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(bulkAdmin.json().stats.total > 0);
         const bulkSvc = await call('/api/pastes/admin/stats', { token: svc([WRITE]) });
         assert.strictEqual(bulkSvc.status, 403);
+        const series = await call('/api/pastes/admin/stats/series?days=7', { cookie: adminJwt });
+        assert.strictEqual(series.status, 200, series.text);
+        const sj = series.json();
+        assert.deepStrictEqual([sj.metric, sj.days, sj.points.length], ['pastes', 7, 7]);
+        assert.strictEqual(sj.points[6].day, new Date().toISOString().slice(0, 10), 'the last point is today (UTC)');
+        assert.ok(sj.points[6].value > 0 && sj.total >= sj.points[6].value, 'pastes made today are counted');
+        assert.strictEqual(sj.total + sj.before, bulkAdmin.json().stats.total, 'the window and what came before add up to the total');
+        assert.strictEqual((await call('/api/pastes/admin/stats/series', { token: svc([WRITE]) })).status, 403);
     });
 
     await check('AI work queue: needs_ai + POST /:slug/ai for moderate service tokens only', async () => {
