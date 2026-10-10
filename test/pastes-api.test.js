@@ -288,6 +288,29 @@ const { boot, check, done } = require('./helpers/app');
         assert.deepStrictEqual(failed.json(), { error: 'Media service unavailable' });
     });
 
+    await check('screenshot upload: the type comes from the bytes, not the declared Content-Type', async () => {
+        // A JPEG whose bytes still carry EXIF, uploaded as image/png. Trusting the declared type let it
+        // pass the type check and skip stripping (stripPng bails on the signature mismatch), so the GPS
+        // reached Media intact. The sniffed type must drive both stripping and the stored mime.
+        const fd = new FormData();
+        fd.append('screenshot', new Blob([jpeg], { type: 'image/png' }), 'lie.png');
+        const r = await call('/api/pastes/screenshot', { method: 'POST', cookie: alexJwt, body: fd });
+        assert.strictEqual(r.status, 201, r.text);
+        const up = t.media.uploads[t.media.uploads.length - 1];
+        assert.strictEqual(up.mime, 'image/jpeg', 'Media is told the sniffed type, not the lie');
+        assert.ok(!up.bytes.includes(Buffer.from('GPS')), 'EXIF/GPS is stripped from a mislabelled JPEG');
+        assert.ok(up.bytes.includes(Buffer.from('pixels')) && up.bytes.includes(Buffer.from('JFIF')));
+        assert.strictEqual(JSON.parse(r.json().paste.metadata).mime_type, 'image/jpeg');
+    });
+
+    await check('a burn-after-read paste gets a secret slug, not a short walkable one', async () => {
+        const burn = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'one-time secret', burn_after_read: true } });
+        assert.strictEqual(burn.status, 201, burn.text);
+        assert.match(burn.json().slug, /^[a-z]+-[a-z]+-[A-Za-z0-9]{16}$/, 'the slug is the burn paste\'s only protection');
+        const plain = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'listed' } });
+        assert.match(plain.json().slug, /^[a-z]+-[a-z]+-\d{2,4}$/, 'a public non-burn paste keeps its short slug');
+    });
+
     await check('/p/:slug/raw is served from the store (nosniff, private rules); /p/:slug/screenshot → stored URL', async () => {
         const raw = await call(`/p/${alexSlug}/raw`);
         assert.strictEqual(raw.status, 200);

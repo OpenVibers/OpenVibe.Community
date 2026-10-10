@@ -413,6 +413,10 @@ async function createApp(opts = {}) {
     // same anonymous-write budget.
     app.post('/new', withUser, anonWriteLimiter, express.urlencoded({ extended: false, limit: '1mb' }), wrap(async (req, res) => {
         const b = req.body || {};
+        // Same-site-only, like every other no-JS form post: SameSite=Lax already keeps the cookie off a
+        // cross-site POST, but a forged post would still create an anonymous paste (spam).
+        const origin = req.get('origin');
+        if (origin && origin !== 'null' && origin !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
         const values = {
             title: String(b.title || '').slice(0, 200),
             language: String(b.language || 'auto'),

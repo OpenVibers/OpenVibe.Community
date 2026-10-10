@@ -21,6 +21,7 @@ const store = require('./store');
 const commentStore = require('../comments/store');
 const { discussionModerator } = require('../identity/capabilities');
 const { stripImageMetadata } = require('../media/strip-metadata');
+const { sniffImage } = require('../media/sniff-image');
 const { capabilities } = require('openvibe-contracts');
 const blocks = require('../identity/blocks');
 
@@ -36,7 +37,6 @@ const DEFAULT_LIMITS = {
     viewCooldownSec: 6 * 3600,
     viewEventsPerMinPerIp: 60,
 };
-const IMAGE_MIME = /^image\/(png|jpeg|webp|gif)$/;
 const SERVICE_SLUG_RE = /^[A-Za-z0-9_-]{3,80}$/;
 // Literal /api/pastes/<word> routes: a paste with one of these slugs would be unreachable there.
 const RESERVED_SLUGS = new Set(['config', 'screenshot', 'bulk', 'admin', 'by-user']);
@@ -291,9 +291,12 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
      * A service may name the slug of a PUBLIC paste (Live's imports); otherwise it is generated. An
      * unlisted or private paste always gets a secret slug: its slug is its only protection, and a
      * service forwarding a person's request (Live's /api/pastes) passes their body through as-is.
+     * A burn-after-read paste is the same — it is never listed, so its short adj-noun-NN slug could be
+     * walked and the paste read (and burned) by a stranger before its intended reader.
      */
-    async function slugFor(v, body, visibility) {
-        if (!isService(v) || body.slug == null || body.slug === '' || visibility !== 'public') return await store.generateSlug(db, { secret: visibility !== 'public' });
+    async function slugFor(v, body, visibility, burnAfterRead = false) {
+        const secret = visibility !== 'public' || burnAfterRead;
+        if (!isService(v) || body.slug == null || body.slug === '' || secret) return await store.generateSlug(db, { secret });
         const slug = String(body.slug);
         if (!SERVICE_SLUG_RE.test(slug) || RESERVED_SLUGS.has(slug.toLowerCase())) fail(400, 'Invalid slug');
         if (await db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(slug)) fail(409, 'Slug already taken');
@@ -403,7 +406,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const metadata = serviceMetadata(v, body);
             const visibility = visibilityOf(body.visibility, !!v.subject);
             const row = await store.insertPaste(db, {
-                slug: await slugFor(v, body, visibility),
+                slug: await slugFor(v, body, visibility, truthy(body.burn_after_read)),
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'paste',
@@ -424,16 +427,19 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         async createScreenshot(v, body = {}, file, ctx = {}) {
             await pasteRateCheck(v);
             if (!file || !file.buffer) fail(400, 'No screenshot uploaded');
-            if (!IMAGE_MIME.test(file.mimetype || '')) fail(400, 'Only PNG, JPEG, WebP, or GIF images allowed');
+            // The type comes from the bytes, never the client's declared Content-Type: a JPEG declaring
+            // image/png would otherwise keep its EXIF/GPS (stripPng bails on the signature mismatch).
+            const mime = sniffImage(file.buffer);
+            if (!mime) fail(400, 'Only PNG, JPEG, WebP, or GIF images allowed');
             if (file.buffer.length > L.screenshotMaxSizeMb * 1024 * 1024) fail(400, `File too large (max ${L.screenshotMaxSizeMb} MB)`);
             if (!media) fail(503, 'Media service unavailable');
             const visibility = visibilityOf(body.visibility, !!v.subject);
-            const slug = await slugFor(v, body, visibility);
+            const slug = await slugFor(v, body, visibility, truthy(body.burn_after_read));
             const extra = serviceMetadata(v, body);
-            const bytes = stripImageMetadata(file.buffer, file.mimetype);
+            const bytes = stripImageMetadata(file.buffer, mime);
             let stored;
             try {
-                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime: file.mimetype, owner: v.subject || null });
+                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime, owner: v.subject || null });
             } catch (err) {
                 console.warn('[Pastes] screenshot upload failed:', err.message);
                 fail(502, 'Media service unavailable');
@@ -444,7 +450,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 user_agent: body.user_agent || ctx.userAgent || null,
                 original_name: file.originalname || null,
                 size_bytes: bytes.length,
-                mime_type: file.mimetype,
+                mime_type: mime,
             };
             const row = await store.insertPaste(db, {
                 slug,
@@ -681,11 +687,12 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!p) fail(404, 'Paste not found');
             if (p.type !== 'screenshot' || !p.screenshot_url) fail(400, 'Not a screenshot paste');
             if (!file || !file.buffer) fail(400, 'Censored image is required');
-            if (!/^image\/(png|jpeg|webp)$/.test(file.mimetype || '')) fail(400, 'Only PNG, JPEG, or WebP images allowed');
+            const mime = sniffImage(file.buffer);
+            if (!mime || mime === 'image/gif') fail(400, 'Only PNG, JPEG, or WebP images allowed');
             if (!media) fail(503, 'Media service unavailable');
             let stored;
             try {
-                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, file.mimetype), filename: file.originalname || 'censored.png', mime: file.mimetype, owner: p.owner_subject || null });
+                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, mime), filename: file.originalname || 'censored.png', mime, owner: p.owner_subject || null });
             } catch (err) {
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');
