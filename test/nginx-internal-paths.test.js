@@ -15,4 +15,6 @@ assert.match(conf, /location ~\* \^\/internal\(\/\|\$\) \{ return 404; \}/, '/in
 const catchAll = conf.lastIndexOf('location / {');
 assert.ok(conf.indexOf('location ~* ^/metrics(/|$)') < conf.indexOf('location ~ ^/(?!api/|auth/)'), 'the metrics block precedes the static-asset regex');
 assert.ok(conf.indexOf('location ~* ^/internal(/|$)') < conf.indexOf('location ~ ^/(?!api/|auth/)'), 'the internal block precedes the static-asset regex');
-console.log('nginx internal paths: /metrics and /internal/ are blocked in the vhost');
+assert.match(conf, /location ~\* \^\/api\/v1\/resources\(\/\|\$\) \{ return 404; \}/, 'the resource index (OpenVibe.Services, loopback) is never public');
+assert.ok(conf.indexOf('location ~* ^/api/v1/resources(/|$)') < conf.indexOf('location ~ ^/(?!api/|auth/)'), 'the resources block precedes the static-asset regex');
+console.log('nginx internal paths: /metrics, /internal/ and /api/v1/resources are blocked in the vhost');

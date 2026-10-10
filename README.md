@@ -152,6 +152,7 @@ API and machine endpoints:
 | `/api/v1/pulse/*` | Pulse — see [Pulse](#pulse) |
 | `/api/v1/submissions/*` | Submissions — see [Submissions](#submissions) |
 | `/api/v1/relay/*` | Discord relay administration (staff) — see [Discord relay](#discord-relay) |
+| `GET /api/v1/resources` | OpenVibe.Services' index of a person's pastes (`community.paste`) and the spaces they created (`community.space`): `common.resource-list-result@1`, filters `kind`, `owner`, `project` (always empty), `cursor`, `limit`. A service token with `community.resource.read` only; loopback (nginx answers 404 publicly). Summaries only, never paste content; deleted pastes left out; no OVRN (`/:ovrn` is 404) |
 | `GET /api/health`, `GET /api/ready` | Liveness / readiness (see below) |
 | `GET /metrics` | Prometheus text for direct loopback callers only (404 through nginx) |
 | `GET /release.json`, `POST /release-metrics` | What this server runs (ADR-016 release manifest, `metrics_url: /release-metrics`); open tabs' update reports (release-watch's same-origin beacon, no auth) |
@@ -575,6 +576,7 @@ same shape as its `manifests/capabilities`):
 | `community.pulse.write` | active in contracts (v0.7.0) | publishing to Pulse |
 | `community.post.create` | active in contracts (v0.7.0) | forum writes |
 | `community.space.read` / `.manage`, `community.thread.read`, `community.vote.set`, `community.pulse.read` | active in contracts | spaces, threads, votes and Pulse reads by services and apps |
+| `community.resource.read` | active in contracts (0.134.0) | OpenVibe.Services' resource index: a person's pastes and spaces in "Your resources" |
 
 This repository pins `openvibe-contracts` v0.86.0, which knows every id above, so they all go
 through the library's `capabilities.check`. `server/identity/capabilities.js` still decides an id
@@ -824,7 +826,7 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 - Games: https://openvibe.games (OpenVibers/OpenVibe.Games)
 
 <!-- versions:start -->
-- openvibe-contracts: v0.129.0
+- openvibe-contracts: v0.134.0
 - openvibe-sdk: v0.42.0
 - openvibe-shared: v3.0.1
 <!-- versions:end -->
