@@ -23,7 +23,7 @@ const { boot, check, done } = require('./helpers/app');
 // file → [call sites, where they go and why the URL is not a user's]
 const INVENTORY = {
     'server/app.js': [1, 'createAuthClient(config): the Network JWKS (OV_NETWORK_INTERNAL_URL)'],
-    'server/auth/routes.js': [4, 'createAuthClient, JWKS, /oauth/token, /oauth/revoke: OV_NETWORK_INTERNAL_URL, fixed paths'],
+    'server/auth/routes.js': [3, '/oauth/token, /oauth/revoke: OV_NETWORK_INTERNAL_URL, fixed paths (the signing keys come from openvibe-sdk/auth)'],
     'server/chat-rooms.js': [1, 'OV_CHAT_INTERNAL_URL /api/chat/rooms/<slug>/attachments; the slug must match ROOM_SLUG and is encoded'],
     'server/events.js': [3, 'service token (Network) and the outbox publisher: EVENTS_URL'],
     'server/identity/network.js': [3, 'Network /internal/identity/resolve-batch and /internal/identity/resolve?username= with a service token (configured base, never a user URL)'],
