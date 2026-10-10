@@ -9,10 +9,9 @@
  *   - Cursor: the relay_cursors row 'discord-relay:events', moved in the same transaction as the
  *     deliveries its page queued. A crash replays at most the page in progress, and the dedupe keys
  *     make that replay queue nothing twice. `position` is Events' opaque cursor (the page's next_cursor),
- *     the place the worker reads on from; `cursor` is the numeric seq, still written while Events sends it
- *     (a worker of the previous release, and the lag shown to staff). A row with no position yet (written
- *     by the previous release) is read on from its numeric cursor once, and has a position from then on.
- *   - First start (no cursor yet): it begins at Events' head (latest_cursor). Threads from before are never
+ *     the only place the worker reads on from; it is never parsed. Staff see whether the last read reached
+ *     the head (`caught_up`), not a numeric lag.
+ *   - First start (no position yet): it begins at Events' head (latest_cursor). Threads from before are never
  *     announced.
  *   - Events carry ids, never content: the worker reads the thread or post as it is now and the relay's
  *     rules decide (public spaces only, never members-only, never origin 'discord'). Redacted events
@@ -49,19 +48,21 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
         client = createEventsClient(core, { source: 'community' });
     }
     const on = !reason;
-    const stats = { seen: 0, queued: 0, pages: 0, last_error: null, last_error_at: null, last_ok_at: null, last_gap: null, started_at_seq: null };
+    const stats = { seen: 0, queued: 0, pages: 0, last_error: null, last_error_at: null, last_ok_at: null, last_gap: null, started_at_head: null, head: null };
     let timer = null;
     let running = null;
     let stopped = false;
 
     const iso = () => new Date(now()).toISOString();
-    const readCursor = async () => await db.prepare('SELECT cursor, position, latest_seq FROM relay_cursors WHERE name = ?').get(CURSOR) || null;
-    async function writeCursor(cursor, latest, position) {
-        await db.prepare(`INSERT INTO relay_cursors (name, cursor, latest_seq, position, updated_at) VALUES (?, ?, ?, ?, ov_now())
-                    ON CONFLICT(name) DO UPDATE SET cursor = excluded.cursor, latest_seq = excluded.latest_seq, position = excluded.position, updated_at = ov_now()`)
-            .run(CURSOR, cursor, latest == null ? null : latest, position || null);
+    const readPosition = async () => {
+        const row = await db.prepare('SELECT position FROM relay_cursors WHERE name = ?').get(CURSOR);
+        return row && row.position ? row.position : null;
+    };
+    async function writePosition(position) {
+        await db.prepare(`INSERT INTO relay_cursors (name, position, updated_at) VALUES (?, ?, ov_now())
+                    ON CONFLICT(name) DO UPDATE SET position = excluded.position, updated_at = ov_now()`)
+            .run(CURSOR, position);
     }
-    const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Number(v) : null);
 
     /** One event → deliveries queued (0 when it is not for the relay). */
     async function handle(ev) {
@@ -90,43 +91,36 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
         running = (async () => {
             let queuedNow = 0;
             try {
-                let cur = await readCursor();
-                if (!cur) {
-                    // First start: Events' head, as an opaque cursor (the numeric seq beside it while Events sends one).
+                let position = await readPosition();
+                if (!position) {
+                    // First start: Events' head, as an opaque cursor.
                     const head = await client.pull({ topic: TOPICS, limit: 1 });
-                    const latest = num(head.latest_seq) || 0;
-                    await writeCursor(latest, latest, head.latest_cursor || null);
-                    stats.started_at_seq = latest;
-                    console.log(`[Relay] Events worker starts at the head (seq ${latest}; earlier threads are not announced)`);
-                    cur = { cursor: latest, position: head.latest_cursor || null, latest_seq: latest };
+                    if (!head.latest_cursor) throw new Error('Events answered no latest_cursor');
+                    position = head.latest_cursor;
+                    await writePosition(position);
+                    stats.started_at_head = iso();
+                    stats.head = position;
+                    console.log('[Relay] Events worker starts at the head (earlier threads are not announced)');
                 }
-                let cursor = num(cur.cursor) || 0;
-                let position = cur.position || null;
                 for (let pages = 0; pages < MAX_PAGES_PER_TICK && !stopped; pages++) {
-                    // Read on from the opaque position; a row from the previous release has only the numeric cursor.
-                    const page = position
-                        ? await client.pull({ topic: TOPICS, after: position, limit: pageLimit })
-                        : await client.pull({ topic: TOPICS, afterSeq: cursor, limit: pageLimit });
+                    const page = await client.pull({ topic: TOPICS, after: position, limit: pageLimit });
                     if (stopped) break;
                     if (page.gap) {
                         stats.last_gap = { from_seq: page.gap.from_seq, to_seq: page.gap.to_seq, at: iso() };
                         console.warn(`[Relay] Events gap: seq ${page.gap.from_seq}..${page.gap.to_seq} were pruned before the relay read them; threads and replies in it are not relayed`);
                     }
                     const nextPosition = page.next_cursor || position;
-                    const next = num(page.next_after_seq);
-                    const nextCursor = next != null && next > cursor ? next : cursor;
-                    const latest = num(page.latest_seq);
                     const items = page.events || [];
                     queuedNow += await db.tx(async () => {
                         let n = 0;
                         for (const item of items) n += await handle(item && item.event);
-                        await writeCursor(nextCursor, latest, nextPosition);
+                        await writePosition(nextPosition);
                         return n;
                     });
                     stats.pages++;
-                    const moved = nextPosition !== position || nextCursor !== cursor;
+                    if (page.latest_cursor) stats.head = page.latest_cursor;
+                    const moved = nextPosition !== position;
                     position = nextPosition;
-                    cursor = nextCursor;
                     // A short page means the read reached the head (next_cursor already moved past what did not match).
                     if (!moved || items.length < pageLimit) break;
                 }
@@ -164,12 +158,13 @@ function createRelayEventsWorker({ db, relay, events = null, eventsUrl = null, c
 
     async function status() {
         if (!on) return { enabled: false, reason };
-        const cur = await readCursor();
+        const position = await readPosition();
         return {
             enabled: true, running: !!timer, topics: TOPICS,
-            cursor: cur ? cur.cursor : null, position: cur ? cur.position || null : null, latest_seq: cur ? cur.latest_seq : null,
-            lag: cur && cur.latest_seq != null ? Math.max(cur.latest_seq - cur.cursor, 0) : null,
-            events_seen: stats.seen, deliveries_queued: stats.queued, started_at_seq: stats.started_at_seq,
+            position,
+            // Whether the last read reached Events' head (both opaque cursors of one epoch: equal strings, equal place).
+            caught_up: position && stats.head ? position === stats.head : null,
+            events_seen: stats.seen, deliveries_queued: stats.queued, started_at_head: stats.started_at_head,
             last_ok_at: stats.last_ok_at, last_error: stats.last_error, last_error_at: stats.last_error_at, last_gap: stats.last_gap,
         };
     }

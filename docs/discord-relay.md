@@ -42,7 +42,7 @@ for the inbound half, a bot token.
 | --- | --- | --- |
 | Queue and sender | `server/relay/discord.js` | `relay_deliveries`: one row per dedupe key, actions `create`, `edit`, `delete`. Creates are sent with `?wait=true`, so Discord answers with the message and its id goes into the map. |
 | External message map (task 5) | `relay_message_map` | Every Discord message the relay knows, both ways (`out`: a thread or reply it sent; `in`: a reply that came from Discord). Unique both ways: a Discord message is one local object, and a local object is one message per mapping. Edits and deletes on either side find their counterpart here. |
-| Events worker (task 6) | `server/relay/events-worker.js` | Reads Community's own `community.thread.*` and `community.post.*` from OpenVibe.Events (`GET /api/v1/events`, capability `events.event.read`) and queues the creates. Its cursor (`relay_cursors`) moves in the same transaction as the deliveries a page queued; a replay queues nothing twice (dedupe keys), and nothing already in the map is sent twice. The first start begins at Events' head: older threads are never announced. |
+| Events worker (task 6) | `server/relay/events-worker.js` | Reads Community's own `community.thread.*` and `community.post.*` from OpenVibe.Events (`GET /api/v1/events`, capability `events.event.read`) and queues the creates. Its cursor (`relay_cursors.position`, Events' opaque cursor, never a number) moves in the same transaction as the deliveries a page queued; a replay queues nothing twice (dedupe keys), and nothing already in the map is sent twice. The first start begins at Events' head: older threads are never announced. |
 | Gateway | `server/relay/discord-gateway.js` | Discord gateway v10 over Node 22's built-in WebSocket: IDENTIFY/RESUME, heartbeats (a missing ACK means a zombied connection: resume), RECONNECT, INVALID_SESSION, backoff. Intents `GUILD_MESSAGES` and `MESSAGE_CONTENT`. |
 | Inbound | `server/relay/inbound.js` | `MESSAGE_CREATE`, `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_DELETE_BULK` for mapped channels only. |
 | Staff API | `server/relay/api.js` | `/api/v1/relay/*`, below. |
@@ -74,7 +74,7 @@ Staff only: an admin/global_mod browser session, or a service holding `community
 
 | Route | What |
 | --- | --- |
-| `GET /api/v1/relay/status` | The queue by status (`failed` = dead letters), the Events worker (cursor, latest seq, lag, last error, last gap), the gateway (state, reconnects, last error) and open inbound failures |
+| `GET /api/v1/relay/status` | The queue by status (`failed` = dead letters), the Events worker (position, whether the last read reached the head, last error, last gap), the gateway (state, reconnects, last error) and open inbound failures |
 | `GET /api/v1/relay/deliveries?status=&action=&limit=` | Deliveries; `status` pending, delivered, failed, dropped or skipped; `action` create, edit or delete |
 | `POST /api/v1/relay/deliveries/:id/retry` | Queue it again now, with a fresh attempt budget |
 | `POST /api/v1/relay/deliveries/:id/drop` | Give up on a pending or failed one (kept as `dropped`) |
@@ -128,7 +128,7 @@ Staff only: an admin/global_mod browser session, or a service holding `community
    reply to it on Discord (Reply, or in a thread on the message) → the reply appears in the
    thread with a Discord badge; edit and delete it on Discord → the post follows; reply and edit
    on the site → Discord follows; delete the thread → its messages leave Discord. Watch
-   `GET /api/v1/relay/status` (no dead letters, lag 0, gateway `ready`).
+   `GET /api/v1/relay/status` (no dead letters, the Events worker `caught_up`, gateway `ready`).
 
 **Off again**: unset `DISCORD_RELAY_ENABLED` and restart (nothing is sent or read; the tables stay),
 or per mapping `PUT /api/v1/relay/mappings/:id { "enabled": false }` (deletes still go out) or

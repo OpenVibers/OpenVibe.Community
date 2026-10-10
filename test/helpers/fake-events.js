@@ -4,8 +4,8 @@
  * the pull route the relay's Events worker reads.
  *
  *   POST /api/v1/events   one envelope or { events: [...] } → { event_id, seq, duplicate } | { results }
- *   GET  /api/v1/events?topic=a.*,b.*&after=<cursor>|after_seq=&limit=
- *        → { events: [{ seq, cursor, event }], next_after_seq, next_cursor, latest_seq, latest_cursor, gap? }
+ *   GET  /api/v1/events?topic=a.*,b.*[&after=<cursor>]&limit=
+ *        → { events: [{ seq, cursor, event }], next_cursor, latest_cursor, gap? } (after_seq is a 400, as in Events)
  *   Cursors are opaque to the worker; here, as in Events, `c1.<epoch>.<base64url(seq)>` (one epoch, 0).
  *
  * Topic patterns follow Events (`*` is one or more whole segments). Every call needs a Bearer token.
@@ -47,8 +47,9 @@ function startEvents() {
             }
             if (u.pathname === '/api/v1/events' && req.method === 'GET') {
                 const patterns = String(u.searchParams.get('topic') || '*').split(',').map(matcher);
+                if (u.searchParams.has('after_seq')) return json(400, { type: 'about:blank', code: 'events.bad_request', status: 400, detail: 'after_seq is retired: pass after=<cursor>' });
                 const cur = u.searchParams.get('after');
-                const after = cur ? decode(cur) : Number(u.searchParams.get('after_seq') || 0);
+                const after = cur ? decode(cur) : 0;
                 if (!Number.isFinite(after)) return json(400, { type: 'about:blank', code: 'events.bad_request', status: 400, detail: 'after must be an opaque cursor' });
                 const limit = Number(u.searchParams.get('limit') || 100);
                 const out = {};
@@ -63,9 +64,7 @@ function startEvents() {
                     if (rows.length >= limit) break;
                 }
                 out.events = rows.map((r) => ({ ...r, cursor: encode(r.seq) }));
-                out.next_after_seq = cursor;
                 out.next_cursor = encode(cursor);
-                out.latest_seq = log.length;
                 out.latest_cursor = encode(log.length);
                 return json(200, out);
             }

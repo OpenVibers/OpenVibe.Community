@@ -70,10 +70,12 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         await worker.tick();
         assert.strictEqual((await relay.status()).creates_from, 'events');
         const st = await worker.status();
-        assert.deepStrictEqual([st.enabled, st.cursor, st.latest_seq, st.started_at_seq, st.lag], [true, 3, 3, 3, 0]);
+        assert.deepStrictEqual([st.enabled, st.position, st.caught_up], [true, events.encode(3), true]);
+        assert.ok(st.started_at_head, 'it says it started at the head');
+        assert.ok(!('cursor' in st) && !('lag' in st) && !('latest_seq' in st), 'no numeric position in the status');
         assert.strictEqual((await deliveries()).length, 0);
-        assert.deepStrictEqual(await db.prepare('SELECT name, cursor, position FROM relay_cursors').all(), [{ name: CURSOR, cursor: 3, position: events.encode(3) }], 'the head, stored as the opaque latest_cursor');
-        assert.ok(events.calls.every((c) => !/[?&]after_seq=[1-9]/.test(c.path)), 'no numeric position is ever sent once a cursor is stored');
+        assert.deepStrictEqual(await db.prepare('SELECT name, cursor, position FROM relay_cursors').all(), [{ name: CURSOR, cursor: null, position: events.encode(3) }], 'the head, stored as the opaque latest_cursor and nothing numeric');
+        assert.ok(events.calls.every((c) => !/after_seq/.test(c.path)), 'no numeric position is ever sent');
         before = events.calls.length;
     });
 
@@ -96,7 +98,7 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         await settle(); await relay.drain(); await relay.drain();
         assert.deepStrictEqual(hook.hits.map((h) => h.method), ['POST', 'POST']);
         assert.match(hook.hits[1].body.content, /replied to \*\*From the stream\*\*/);
-        assert.deepStrictEqual([(await worker.status()).cursor, (await worker.status()).lag], [6, 0]);
+        assert.deepStrictEqual([(await worker.status()).position, (await worker.status()).caught_up], [events.encode(6), true]);
     });
 
     await check('a replay (cursor moved back) queues nothing twice and posts nothing twice', async () => {
@@ -104,7 +106,7 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         assert.deepStrictEqual(await worker.tick(), { queued: 0 });
         await relay.drain();
         assert.strictEqual(hook.hits.length, 2);
-        assert.strictEqual((await worker.status()).cursor, 6);
+        assert.strictEqual((await worker.status()).position, events.encode(6));
     });
 
     await check('the cursor survives a restart: a new worker carries on from it (no second "start at head")', async () => {
@@ -112,7 +114,7 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         events.add(threadEvent(t2));
         const again = createRelayEventsWorker({ db, relay, events: client, pollMs: 3_600_000 });
         assert.deepStrictEqual(await again.tick(), { queued: 1 });
-        assert.strictEqual((await again.status()).started_at_seq, null);
+        assert.strictEqual((await again.status()).started_at_head, null);
         assert.strictEqual((await deliveries()).pop().thread_id, t2.id);
     });
 
@@ -133,25 +135,25 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
     await check('Events down: the error shows, the cursor stays, and it catches up once Events answers', async () => {
         const t4 = await newThread('After the outage');
         events.add(threadEvent(t4));
-        const cursor = (await worker.status()).cursor;
+        const position = (await worker.status()).position;
         events.state.failNext = 1;
         assert.deepStrictEqual(await worker.tick(), { queued: 0 });
         const st = await worker.status();
         assert.ok(st.last_error, 'the error is shown');
-        assert.strictEqual(st.cursor, cursor);
-        assert.strictEqual(st.lag, st.latest_seq - cursor);
+        assert.strictEqual(st.position, position, 'the cursor stays');
         assert.deepStrictEqual(await worker.tick(), { queued: 1 });
         assert.strictEqual((await worker.status()).last_error, null);
     });
 
-    await check('a row from the previous release (numeric cursor, no position) reads on from it once, then by cursor', async () => {
+    await check('a row with no position (a numeric one only) starts at the head: a number is never read as a place', async () => {
         await db.prepare('UPDATE relay_cursors SET cursor = 3, position = NULL WHERE name = ?').run(CURSOR);
+        const t5 = await newThread('Before the restart at the head');
+        events.add(threadEvent(t5));
         const from = events.calls.length;
-        assert.deepStrictEqual(await worker.tick(), { queued: 0 }, 'what it read again was already queued');
-        const sent = events.calls.slice(from).map((c) => c.path);
-        assert.ok(sent.some((p) => /[?&]after_seq=3\b/.test(p)), 'the first read uses the numeric cursor it had');
-        const row = await db.prepare('SELECT cursor, position FROM relay_cursors WHERE name = ?').get(CURSOR);
-        assert.strictEqual(row.position, events.encode(events.log.length), 'and from then on the opaque cursor');
+        assert.deepStrictEqual(await worker.tick(), { queued: 0 }, 'nothing from before the head is announced');
+        assert.ok(events.calls.slice(from).every((c) => !/after_seq/.test(c.path)), 'never a numeric position');
+        const row = await db.prepare('SELECT position FROM relay_cursors WHERE name = ?').get(CURSOR);
+        assert.strictEqual(row.position, events.encode(events.log.length), 'the head, as an opaque cursor');
         const again = events.calls.length;
         await worker.tick();
         assert.ok(events.calls.slice(again).every((c) => /[?&]after=c1\./.test(c.path)), 'later reads send the cursor');
@@ -162,7 +164,7 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         events.state.prunedThrough = 5;
         await worker.tick();
         assert.deepStrictEqual([(await worker.status()).last_gap.from_seq, (await worker.status()).last_gap.to_seq], [2, 5]);
-        assert.strictEqual((await worker.status()).cursor, events.log.length);
+        assert.strictEqual((await worker.status()).position, events.encode(events.log.length));
         events.state.prunedThrough = 0;
         assert.strictEqual((await relay.status()).events_worker.last_gap.to_seq, 5);
     });
@@ -186,7 +188,7 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
             const call = (p, { method = 'GET', cookie, json } = {}) => t.get(p, { method, headers: json !== undefined ? { 'content-type': 'application/json' } : {}, body: json !== undefined ? JSON.stringify(json) : undefined, cookies: cookie ? [`ov_token=${cookie}`] : [] });
             const waitFor = async (fn, what) => { for (let i = 0; i < 200; i++) { if (await fn()) return; await new Promise((r) => setTimeout(r, 20)); } assert.fail(`timed out waiting for ${what}`); };
             assert.strictEqual((await call('/api/v1/relay/mappings', { method: 'POST', cookie: adminJwt, json: { space: 'general', webhook_url_ref: 'DISCORD_WEBHOOK_GENERAL' } })).status, 201);
-            await waitFor(async () => (await t.app.locals.relay.status()).events_worker.cursor != null, 'the worker\'s first read');
+            await waitFor(async () => (await t.app.locals.relay.status()).events_worker.position != null, 'the worker\'s first read');
             const st = (await call('/api/v1/relay/status', { cookie: adminJwt })).json();
             assert.deepStrictEqual([st.creates_from, st.events_worker.enabled], ['events', true]);
             const th = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: samJwt, json: { title: 'Round trip', body: 'through Events' } });
