@@ -239,6 +239,9 @@ async function createApp(opts = {}) {
     app.use('/api/v1/posts', createPostsApi({ forum, viewers, limits }));
     app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers, limits }));
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
+    // OpenVibe.Services reads a person's pastes and spaces here (community.resource.read, a service token on loopback;
+    // nginx answers 404 for the path on the public vhost).
+    app.use('/api/v1/resources', require('./registry/resource-index').router({ db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports (a same-origin
