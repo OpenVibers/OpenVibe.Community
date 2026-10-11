@@ -275,18 +275,20 @@ const { checkCapability } = require('../server/identity/capabilities');
         const call = (p, o = {}) => call0(p, { ip: ipOf(), ...o });
         const post = (id, json, who = {}) => call(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json, ...who });
         const resolve = (ref, who = {}) => call('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref }, ...who });
-        // A service resolves (Blog, Wiki, Deals, Live): it gets the sequential id it stores, plus the access id.
+        // A service resolves (Blog, Wiki, Deals, Live): it is handed the access id, as a browser is (C-14).
         const svcW = svc([WRITE]);
         const made = await resolve({ service: 'wiki', type: 'page', id: 'pg_private_space_1' }, { token: svcW });
         assert.strictEqual(made.status, 201, made.text);
         const th = made.json().thread;
-        assert.ok(Number.isInteger(th.id), 'services keep the sequential id');
         assert.match(th.access_id, /^cth_[A-Za-z0-9_-]{22}$/);
+        assert.strictEqual(th.id, th.access_id, 'services are handed the access id');
         assert.strictEqual((await post(th.id, { message: 'said by a service' }, { token: svcW, headers: { 'x-ov-subject': alex.subject_id } })).status, 201);
         const bySvc = await call(`/api/v1/comments/threads/${th.id}`, { token: svcW });
-        assert.strictEqual(bySvc.status, 200, 'services still read by sequential id');
-        assert.strictEqual(bySvc.json().comments[0].thread_id, th.id);
-        assert.strictEqual((await call(`/api/v1/comments/threads/${th.access_id}`, { token: svcW })).status, 200, 'and by access id');
+        assert.strictEqual(bySvc.status, 200, 'services read by access id');
+        assert.strictEqual(bySvc.json().comments[0].thread_id, th.access_id, 'and comments name the thread by it');
+        // Until the callers' stored rows are backfilled (C-14 step 3), a service may still send the sequential id.
+        const seq = (await t.db.prepare('SELECT id FROM comment_threads WHERE access_id = ?').get(th.access_id)).id;
+        assert.strictEqual((await call(`/api/v1/comments/threads/${seq}`, { token: svcW })).status, 200, 'a stored sequential id still reads');
 
         // Browsers walking ids 1..N find nothing, signed in or not, staff included.
         const max = (await t.db.prepare('SELECT MAX(id) AS m FROM comment_threads').get()).m;
@@ -297,9 +299,9 @@ const { checkCapability } = require('../server/identity/capabilities');
                 assert.strictEqual(r.json().code, 'thread.not_found');
             }
         }
-        assert.strictEqual((await post(th.id, { message: 'guessing' }, { cookie: samJwt })).status, 404);
-        assert.strictEqual((await post(th.id, { message: 'guessing' })).status, 404);
-        assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}/visibility`, { method: 'PUT', json: { visibility: 'locked' }, cookie: adminJwt })).status, 404);
+        assert.strictEqual((await post(seq, { message: 'guessing' }, { cookie: samJwt })).status, 404);
+        assert.strictEqual((await post(seq, { message: 'guessing' })).status, 404);
+        assert.strictEqual((await call(`/api/v1/comments/threads/${seq}/visibility`, { method: 'PUT', json: { visibility: 'locked' }, cookie: adminJwt })).status, 404);
         for (const bad of ['cth_short', `${th.access_id}x`, `cth_${'A'.repeat(22)}`, '0x1', ' 1']) {
             assert.strictEqual((await call(`/api/v1/comments/threads/${encodeURIComponent(bad)}`)).status, 404, bad);
         }
@@ -309,7 +311,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(byBrowser.status, 200, byBrowser.text);
         assert.strictEqual(byBrowser.json().thread.id, th.access_id);
         assert.strictEqual(byBrowser.json().comments[0].thread_id, th.access_id, 'no sequential id reaches a browser');
-        assert.ok(!byBrowser.text.includes(`"thread_id":${th.id}`));
+        assert.ok(!byBrowser.text.includes(`"thread_id":${seq}`));
         assert.strictEqual((await post(th.access_id, { message: 'with the handle' }, { cookie: samJwt })).status, 201);
         const again = await resolve({ service: 'live', type: 'stream', id: '123' }, { cookie: samJwt });
         assert.strictEqual(again.json().thread.id, vod.id, 'browser resolve hands out the access id');
@@ -351,7 +353,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         const r = await callL('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref: { service: 'live', type: 'vod', id: '7001', label: 'My VOD' } }, token: svcLive });
         assert.strictEqual(r.status, 201, r.text);
         liveVod = r.json().thread;
-        assert.ok(Number.isInteger(liveVod.id));
+        assert.strictEqual(liveVod.id, liveVod.access_id, 'Live is handed the access id (C-14)');
         assert.strictEqual(liveVod.ref.label, 'My VOD');
         const anon = await callL(`/api/v1/comments/threads/${liveVod.access_id}/comments`, { method: 'POST', json: { message: 'drive-by', anon_name: 'Ghost' } });
         assert.strictEqual(anon.status, 401, 'anonymous browser');
@@ -432,7 +434,8 @@ const { checkCapability } = require('../server/identity/capabilities');
         const foreign = await form('message=csrf', { cookie: samJwt, origin: 'https://evil.example' });
         assert.strictEqual(foreign.status, 403);
 
-        assert.strictEqual((await callL(`/c/${liveVod.id}`)).status, 404, 'the sequential id opens nothing');
+        const liveSeq = (await t.db.prepare('SELECT id FROM comment_threads WHERE access_id = ?').get(liveVod.access_id)).id;
+        assert.strictEqual((await callL(`/c/${liveSeq}`)).status, 404, 'the sequential id opens nothing');
         assert.strictEqual((await callL(`/c/cth_${'A'.repeat(22)}`)).status, 404);
         await callL(`/api/v1/comments/threads/${liveVod.id}/visibility`, { method: 'PUT', json: { visibility: 'hidden' }, token: svcLive });
         assert.strictEqual((await callL(`/c/${liveVod.access_id}`)).status, 404, 'hidden threads are missing');
