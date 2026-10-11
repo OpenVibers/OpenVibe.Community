@@ -18,6 +18,7 @@ const { boot, check, done } = require('./helpers/app');
     const kim = net.addUser({ network_user_id: 11, username: 'kim', display_name: 'Kim', avatar_url: '/avatar/kim' });
     const alexJwt = net.sign({ id: 7, subject_id: alex.subject_id, username: 'alex', display_name: 'Alex', role: 'user', profile_color: '#0af' });
     const samOldJwt = net.sign({ id: 9, username: 'sam', display_name: 'Sam', role: 'user' }); // pre-subject_id token
+    const samJwt = net.sign({ id: 9, subject_id: sam.subject_id, username: 'sam', display_name: 'Sam', role: 'user' });
     const adminJwt = net.sign({ id: 1, subject_id: ids.newId('user'), username: 'boss', display_name: 'Boss', role: 'admin' });
     const svc = (cap, extra = {}) => net.signService({ cap, ...extra });
     const CREATE = 'community.paste.create', WRITE = 'community.paste.write', MOD = 'community.paste.moderate';
@@ -50,17 +51,12 @@ const { boot, check, done } = require('./helpers/app');
         alexSlug = out.slug;
     });
 
-    await check('an older JWT without subject_id is resolved through the Network once, then cached', async () => {
+    await check('a JWT without subject_id is no identity (C-15): the paste is anonymous and nothing is looked up', async () => {
         const before = net.resolveCalls.length;
         const r = await call('/api/pastes', { method: 'POST', token: samOldJwt, json: { content: 'hello from sam' } });
         assert.strictEqual(r.status, 201, r.text);
-        assert.strictEqual(r.json().paste.owner_subject, sam.subject_id);
-        const lookups = net.resolveCalls.slice(before);
-        assert.deepStrictEqual(lookups[0], { system: 'network', type: 'user', ids: ['9'] });
-        await call('/api/pastes', { method: 'POST', token: samOldJwt, json: { content: 'again' } });
-        assert.strictEqual(net.resolveCalls.slice(before).filter((b) => b.system === 'network').length, 1, 'cached in legacy_id_map');
-        const grant = net.grants.find((g) => g.grant_type === 'client_credentials' && g.audience === 'openvibe.network');
-        assert.strictEqual(grant.scope, 'identity.subject.resolve');
+        assert.strictEqual(r.json().paste.owner_subject, null, 'filed under nobody, as with an expired token');
+        assert.strictEqual(net.resolveCalls.slice(before).filter((b) => b.system === 'network').length, 0, 'no pre-subject id lookup');
     });
 
     await check('service token: create as the acting subject (X-OV-Subject)', async () => {
@@ -138,7 +134,7 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('staff: X-OV-Staff needs community.paste.moderate; with it a service may delete anyone\'s comment', async () => {
-        const c = (await call(`/api/pastes/${alexSlug}/comments`, { method: 'POST', token: samOldJwt, json: { message: 'spam spam' } })).json().comment;
+        const c = (await call(`/api/pastes/${alexSlug}/comments`, { method: 'POST', token: samJwt, json: { message: 'spam spam' } })).json().comment;
         assert.strictEqual(c.username, 'sam');
         const notStaff = await call(`/api/pastes/${alexSlug}/comments/${c.id}`, { method: 'DELETE', token: svc([WRITE]), headers: { 'x-ov-subject': kim.subject_id } });
         assert.strictEqual(notStaff.status, 403);
@@ -345,7 +341,7 @@ const { boot, check, done } = require('./helpers/app');
         const like = await call(`/api/pastes/${alexSlug}/like`, { method: 'POST' });
         assert.strictEqual(like.status, 401);
         assert.deepStrictEqual(like.json(), { error: 'Authentication required' });
-        const liked = await call(`/api/pastes/${alexSlug}/like`, { method: 'POST', token: samOldJwt });
+        const liked = await call(`/api/pastes/${alexSlug}/like`, { method: 'POST', token: samJwt });
         assert.deepStrictEqual(liked.json(), { liked: true, likes: 1 });
         const viaSvc = await call(`/api/pastes/${alexSlug}/like`, { method: 'POST', token: svc([WRITE]), headers: { 'x-ov-subject': kim.subject_id } });
         assert.deepStrictEqual(viaSvc.json(), { liked: true, likes: 2 });
