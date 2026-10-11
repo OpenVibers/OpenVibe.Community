@@ -104,6 +104,10 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     ok(await send('PUT', `/api/v1/comments/threads/${hidden.access_id}/visibility`, { who: boss, json: { visibility: 'hidden' } }), 'hide the thread');
     const vod = ok(await send('POST', '/api/v1/comments/threads/resolve', { ...liveSvc, json: { ref: { service: 'live', type: 'vod', id: '502' } } }), 'vod thread').thread;
     const vodComment = ok(await send('POST', `/api/v1/comments/threads/${vod.id}/comments`, { ...liveSvc, headers: { 'x-ov-subject': alex.subject_id }, json: { message: M.VODCOMMENT } }), 'vod comment').comment;
+    // The sequential ids, which services stored before C-14 (they are handed the access id now): never a browser's way in.
+    const seqOf = async (accessId) => (await t.db.prepare('SELECT id FROM comment_threads WHERE access_id = ?').get(accessId)).id;
+    const vodSeq = await seqOf(vod.access_id);
+    const hiddenSeq = await seqOf(hidden.access_id);
     const unlThread = ok(await send('POST', '/api/v1/comments/threads/resolve', { who: alex, json: { ref: { service: 'community', type: 'paste', id: unl.slug } } }), 'unlisted paste thread').thread;
     ok(await send('POST', `/api/v1/comments/threads/${unlThread.id}/comments`, { who: alex, json: { message: 'on the unlisted paste' } }), 'unlisted paste comment');
     const pubThread = ok(await send('POST', '/api/v1/comments/threads/resolve', { who: alex, json: { ref: { service: 'community', type: 'paste', id: pub.slug } } }), 'public paste thread').thread;
@@ -188,7 +192,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
             const pairs = [[`/api/v1/comments/threads/${hidden.access_id}`, `/api/v1/comments/threads/${UNKNOWN_ACCESS}`], [`/c/${hidden.access_id}`, `/c/${UNKNOWN_ACCESS}`],
                 [`/api/v1/comments/${hiddenComment.id}`, '/api/v1/comments/999999'], [`/api/v1/comments/threads/${hidden.access_id}/comments`, `/api/v1/comments/threads/${UNKNOWN_ACCESS}/comments`, 'POST'],
                 [`/api/v1/comments/${hiddenComment.id}/votes`, '/api/v1/comments/999999/votes', 'POST']];
-            if (p.who || name === 'anonymous') pairs.push([`/api/v1/comments/threads/${vod.id}`, '/api/v1/comments/threads/999999'], [`/api/v1/comments/${vodComment.id}`, '/api/v1/comments/999998']);
+            if (p.who || name === 'anonymous') pairs.push([`/api/v1/comments/threads/${vodSeq}`, '/api/v1/comments/threads/999999'], [`/api/v1/comments/${vodComment.id}`, '/api/v1/comments/999998']);
             for (const [a, b, method = 'GET'] of pairs) {
                 const json = method === 'POST' ? { message: 'x', value: 1 } : undefined;
                 const ra = await send(method, a, { ...p, json }), rb = await send(method, b, { ...p, json });
@@ -199,7 +203,8 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
             if (p.who) assert.strictEqual((await send('POST', '/api/v1/comments/threads/resolve', { ...p, json: { ref: { service: 'live', type: 'vod', id: '502' } } })).status, 403);
         }
         assert.ok((await send('GET', `/api/v1/comments/threads/${hidden.access_id}`, { who: boss })).text.includes(M.HIDDENCOMMENT), 'moderators read hidden threads');
-        assert.ok((await send('GET', `/api/v1/comments/threads/${vod.id}`, liveSvc)).text.includes(M.VODCOMMENT), 'Live reads by the sequential id');
+        assert.ok((await send('GET', `/api/v1/comments/threads/${vod.id}`, liveSvc)).text.includes(M.VODCOMMENT), 'Live reads by the access id it is handed');
+        assert.ok((await send('GET', `/api/v1/comments/threads/${vodSeq}`, liveSvc)).text.includes(M.VODCOMMENT), 'and by the sequential id it stored before C-14');
         assert.ok((await send('GET', `/api/v1/comments/threads/${vod.access_id}`, { who: sam })).text.includes(M.VODCOMMENT), 'whoever Live gave the access id reads it');
     });
 
@@ -243,7 +248,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         slug: [priv.slug, privShot.slug, gated.thread.slug, gatedSpaceThread.thread.slug, staff.thread.slug, member.thread.slug, publicThread.thread.slug, UNKNOWN_SLUG],
         space: ['general', 'showcase', 'mods-room', 'members-lounge', 'no-such-space'],
         username: ['alex', 'cora', 'boss'],
-        id: [String(gatedReply.post.id), String(staff.post.id), String(member.post.id), String(gatedSpaceThread.post.id), hidden.access_id, String(hidden.id), String(vod.id), '999999'],
+        id: [String(gatedReply.post.id), String(staff.post.id), String(member.post.id), String(gatedSpaceThread.post.id), hidden.access_id, String(hiddenSeq), String(vodSeq), '999999'],
         accessId: [hidden.access_id, UNKNOWN_ACCESS],
         commentId: [String(privComment.comment.id), String(hiddenComment.id), String(vodComment.id), '999999'],
         category: ['no-such-category'], group: ['no-such-group'], service: ['community'], type: ['paste'], '*': ['x'],
