@@ -286,9 +286,9 @@ const { checkCapability } = require('../server/identity/capabilities');
         const bySvc = await call(`/api/v1/comments/threads/${th.id}`, { token: svcW });
         assert.strictEqual(bySvc.status, 200, 'services read by access id');
         assert.strictEqual(bySvc.json().comments[0].thread_id, th.access_id, 'and comments name the thread by it');
-        // Until the callers' stored rows are backfilled (C-14 step 3), a service may still send the sequential id.
+        // The sequential id opens nothing, for a service either (C-14).
         const seq = (await t.db.prepare('SELECT id FROM comment_threads WHERE access_id = ?').get(th.access_id)).id;
-        assert.strictEqual((await call(`/api/v1/comments/threads/${seq}`, { token: svcW })).status, 200, 'a stored sequential id still reads');
+        assert.strictEqual((await call(`/api/v1/comments/threads/${seq}`, { token: svcW })).status, 404, 'a sequential id opens nothing, for a service either');
 
         // Browsers walking ids 1..N find nothing, signed in or not, staff included.
         const max = (await t.db.prepare('SELECT MAX(id) AS m FROM comment_threads').get()).m;

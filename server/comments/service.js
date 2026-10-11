@@ -13,10 +13,9 @@
  *     Community pastes the viewer may not see (pastes/service.js's rule: a private paste is its
  *     owner's and staff's only, a deleted or burned one nobody's — 404, checked on every call, so a
  *     paste made private later takes its thread with it). Everyone is handed a thread's unguessable
- *     access_id (cth_…, what resolve answers as `id`), services too since compatibility register
- *     C-14. Browsers address a thread only by it, so nobody can walk thread ids and learn the refs
- *     (unlisted paste slugs, private pages) and comments of entities they were not given; services
- *     may still send the sequential id they stored before C-14 until those rows are backfilled.
+ *     access_id (cth_…, what resolve answers as `id`) and addresses the thread only by it, services
+ *     included (compatibility register C-14), so nobody can walk thread ids and learn the refs
+ *     (unlisted paste slugs, private pages) and comments of entities they were not given.
  *   - comment: people (browser or service X-OV-Subject), anonymous with an anon_name, or AI output
  *     from a service (origin ai, never attributed). Not on locked threads (moderators still may).
  *     Threads of the types in SIGNED_IN_ONLY take no anonymous comments (the owner product's rule).
@@ -124,13 +123,10 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
         return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v)));
     }
 
-    /** A thread by the id this viewer may use: the access id for anyone; a service may still send the sequential id
-     *  it stored before C-14 (refused once the callers' rows are backfilled, C-14 step 3). */
+    /** A thread by its access id, the only id anyone addresses a thread by (C-14). */
     async function threadById(v, id) {
         const s = String(id == null ? '' : id);
-        if (ACCESS_ID_RE.test(s)) return await store.getThreadByAccessId(db, s);
-        if (v && v.kind === 'service' && /^\d{1,15}$/.test(s)) return await store.getThread(db, Number(s));
-        return null;
+        return ACCESS_ID_RE.test(s) ? await store.getThreadByAccessId(db, s) : null;
     }
 
     /** The thread, or 404 — hidden threads look missing to everyone but moderators. */

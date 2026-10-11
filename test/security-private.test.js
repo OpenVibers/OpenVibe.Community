@@ -104,7 +104,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     ok(await send('PUT', `/api/v1/comments/threads/${hidden.access_id}/visibility`, { who: boss, json: { visibility: 'hidden' } }), 'hide the thread');
     const vod = ok(await send('POST', '/api/v1/comments/threads/resolve', { ...liveSvc, json: { ref: { service: 'live', type: 'vod', id: '502' } } }), 'vod thread').thread;
     const vodComment = ok(await send('POST', `/api/v1/comments/threads/${vod.id}/comments`, { ...liveSvc, headers: { 'x-ov-subject': alex.subject_id }, json: { message: M.VODCOMMENT } }), 'vod comment').comment;
-    // The sequential ids, which services stored before C-14 (they are handed the access id now): never a browser's way in.
+    // The sequential ids: nobody's way in (C-14), not a browser's and not a service's.
     const seqOf = async (accessId) => (await t.db.prepare('SELECT id FROM comment_threads WHERE access_id = ?').get(accessId)).id;
     const vodSeq = await seqOf(vod.access_id);
     const hiddenSeq = await seqOf(hidden.access_id);
@@ -204,7 +204,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         }
         assert.ok((await send('GET', `/api/v1/comments/threads/${hidden.access_id}`, { who: boss })).text.includes(M.HIDDENCOMMENT), 'moderators read hidden threads');
         assert.ok((await send('GET', `/api/v1/comments/threads/${vod.id}`, liveSvc)).text.includes(M.VODCOMMENT), 'Live reads by the access id it is handed');
-        assert.ok((await send('GET', `/api/v1/comments/threads/${vodSeq}`, liveSvc)).text.includes(M.VODCOMMENT), 'and by the sequential id it stored before C-14');
+        assert.strictEqual((await send('GET', `/api/v1/comments/threads/${vodSeq}`, liveSvc)).status, 404, 'the sequential id opens nothing, for Live either (C-14)');
         assert.ok((await send('GET', `/api/v1/comments/threads/${vod.access_id}`, { who: sam })).text.includes(M.VODCOMMENT), 'whoever Live gave the access id reads it');
     });
 
