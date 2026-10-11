@@ -109,13 +109,13 @@ function createViewerResolver({ auth, config, network, revocations = null }) {
         if (!claims || (typeof claims.sub === 'string' && PRINCIPAL_SUB.test(claims.sub))) return null;
         // Issued before Network's cutoff for this person (signed out everywhere, password changed, banned).
         if (revocations && revocations.isRevoked(claims)) return null;
-        let subject = ids.isSubjectId('user', claims.subject_id) ? claims.subject_id : null;
-        if (!subject && network && claims.sub != null) {
-            try { subject = await network.subjectForNetworkUser(claims.sub); } catch (err) { console.warn('[Identity] subject lookup failed:', err.message); }
-        }
-        if (subject && network) { try { await network.rememberClaims(subject, claims); } catch { /* display cache only */ } }
+        // Every Network user token carries subject_id (since Wave 1, 2026-09-22; access tokens live 7 days), so one
+        // without it is no usable identity: the caller is anonymous, as with an expired token. (The lookup of a
+        // pre-subject Network id went with compatibility register C-15.)
+        const subject = ids.isSubjectId('user', claims.subject_id) ? claims.subject_id : null;
+        if (!subject) return null;
+        if (network) { try { await network.rememberClaims(subject, claims); } catch { /* display cache only */ } }
         const user = claimsToUser(claims);
-        if (subject && !user.subject_id) user.subject_id = subject;
         // Staff powers come from the contracts staff map (ADR-022): the role, or Network's issued staff_caps.
         const staff = staffMap.can(claims, 'staff.moderation.pastes');
         const discussionStaff = staffMap.can(claims, 'staff.moderation.discussions');

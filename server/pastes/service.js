@@ -683,10 +683,9 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { done, skipped };
         },
 
-        /** POST /api/pastes/:slug/censor — replace a screenshot's image (slug or numeric id). */
-        async censor(v, slugOrId, file) {
-            let p = await store.getBySlug(db, String(slugOrId));
-            if (!p && /^\d+$/.test(String(slugOrId))) p = await store.getById(db, parseInt(slugOrId, 10));
+        /** POST /api/pastes/:slug/censor — replace a screenshot's image. (The numeric-id fallback went with C-15.) */
+        async censor(v, slug, file) {
+            const p = await store.getBySlug(db, String(slug));
             if (!p) fail(404, 'Paste not found');
             if (p.type !== 'screenshot' || !p.screenshot_url) fail(400, 'Not a screenshot paste');
             if (!file || !file.buffer) fail(400, 'Censored image is required');

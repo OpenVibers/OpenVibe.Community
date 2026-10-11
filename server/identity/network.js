@@ -87,21 +87,6 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
         return map;
     }
 
-    /**
-     * The subject of a Network account id, for user JWTs issued before tokens carried
-     * `subject_id`. Cached durably in legacy_id_map (network/user/<id> → subject).
-     */
-    async function subjectForNetworkUser(networkUserId) {
-        if (networkUserId == null || networkUserId === '') return null;
-        const hit = await store.mapGet(db, 'network', 'user', networkUserId);
-        if (hit && hit.target_type === 'subject') return hit.target_id;
-        const map = await resolveLegacy('network', [networkUserId]);
-        const p = map.get(String(networkUserId));
-        if (!p || !p.subject || p.subject.type !== 'user') return null;
-        await store.mapSet(db, 'network', 'user', networkUserId, 'subject', p.subject.id);
-        return p.subject.id;
-    }
-
     /** What a verified user JWT says about its holder is a fresh projection too. */
     async function rememberClaims(subjectId, claims) {
         if (!subjectId || !claims) return;
@@ -173,7 +158,7 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
         return map;
     }
 
-    return { resolveSubjects, resolveLegacy, subjectForNetworkUser, subjectForUsername, rememberClaims, projections, tokens };
+    return { resolveSubjects, resolveLegacy, subjectForUsername, rememberClaims, projections, tokens };
 }
 
 module.exports = { createNetworkIdentity, PROJECTION_TTL_MS };
