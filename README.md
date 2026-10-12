@@ -60,7 +60,7 @@ threads, 0 forum threads), and the Discord relay is off. A restore drill passed 
 | Screenshot / attachment bytes | **OpenVibe.Media** (`/api/v1/community/files`, objects v2) | service token (`media.object.upload`) |
 | Identity / SSO | **OpenVibe.Network** (OAuth2 + RS256 JWKS) | OAuth client `community` |
 | Raw text, screenshots | Community's own routes; bytes on Media's public host | served locally, or a 302 to the stored image |
-| Shared chrome, themes | `https://openvibe.network/shared/*.js` | loaded in every page |
+| OpenVibe Frame, themes | `https://openvibe.network/shared/*.js` | loaded in every page |
 | VIP memberships (members-only spaces/threads) | **OpenVibe.VIP** (`POST /api/v1/policies/evaluate`) | `OV_VIP_INTERNAL_URL`, service token (audience `openvibe.vip`, `vip.resource.policy.evaluate`) |
 | A space's chat room | **OpenVibe.Chat** (`POST/DELETE /api/chat/rooms/:room/attachments`) | `OV_CHAT_INTERNAL_URL`, the signed-in person's own Network token (no service grant) |
 
@@ -793,7 +793,7 @@ server/
   identity/authors.js author display from subject_projection; the AI label
   votes.js            race-safe up/down votes (comments, threads)
   limits.js           per-person write limits
-  render/layout.js    page shell: SEO head (openvibe-shared/seo), shared chrome, hashed assets
+  render/layout.js    page shell: SEO head (openvibe-shared/seo), OpenVibe Frame, hashed assets
   render/jsonld.js    JSON-LD builders (WebSite, breadcrumbs, paste, thread, authors)
   render/pages.js     home / browse / paste / new / my / error templates
   render/forum.js     spaces / threads / thread / new-thread / members-only teaser templates
