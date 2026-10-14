@@ -10,6 +10,10 @@
  *
  * The window is kept only LOCAL_TTL_MS — long enough that one page's latest/trending/languages
  * share a single query.
+ *
+ * Text pastes and images (screenshots) each have their own window too (recentOf): a run of screenshots
+ * filled the shared latest 200, and "most viewed", the language list and related pastes then showed no
+ * text paste at all ("0 pastes in the latest 200" beside 59 on the newest page).
  */
 const source = require('./source');
 
@@ -18,6 +22,7 @@ const LOCAL_TTL_MS = 2000;
 const PER_PAGE = 24;
 
 let _recent = { at: 0, promise: null, pastes: [] };
+const _byType = new Map();      // 'paste' | 'screenshot' → { at, promise, pastes }
 
 function _textOnlyPublic(rows) {
     return (rows || []).filter((p) => p && p.slug && (p.visibility === 'public' || p.visibility == null));
@@ -34,6 +39,19 @@ async function recent() {
     return _recent.promise;
 }
 
+/** The latest public pastes of one type, 'paste' (text) or 'screenshot' (cached like recent()). Never throws. */
+async function recentOf(type) {
+    const now = Date.now();
+    const cur = _byType.get(type) || { at: 0, promise: null, pastes: [] };
+    if (cur.promise) return cur.promise;
+    if (now - cur.at < LOCAL_TTL_MS) return cur.pastes;
+    cur.promise = source.listPastes({ limit: WINDOW, offset: 0, type })
+        .then((out) => { _byType.set(type, { at: Date.now(), promise: null, pastes: _textOnlyPublic(out && out.pastes) }); return _byType.get(type).pastes; })
+        .catch((err) => { console.warn(`[Catalog] recent ${type}s unavailable:`, err.message); _byType.set(type, { at: Date.now() - LOCAL_TTL_MS + 5000, promise: null, pastes: cur.pastes }); return cur.pastes; });
+    _byType.set(type, cur);
+    return cur.promise;
+}
+
 function byViews(a, b) { return (b.views || 0) - (a.views || 0) || (b.likes || 0) - (a.likes || 0) || String(b.created_at).localeCompare(String(a.created_at)); }
 function byNewest(a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); }
 
@@ -42,7 +60,7 @@ async function trending(n = 8) { return (await recent()).slice().sort(byViews).s
 
 /** Pastes in the same language first, then the newest, never the paste itself. */
 async function related(paste, n = 6) {
-    const rows = (await recent()).filter((p) => p.slug !== paste.slug);
+    const rows = (await recentOf(paste.type === 'screenshot' ? 'screenshot' : 'paste')).filter((p) => p.slug !== paste.slug);
     const lang = paste.language && paste.language !== 'text' ? paste.language : null;
     const same = lang ? rows.filter((p) => p.language === lang) : [];
     const rest = rows.filter((p) => !same.includes(p));
@@ -52,7 +70,8 @@ async function related(paste, n = 6) {
 /** [{ language, count }] over the recent window, most common first. */
 async function languages() {
     const counts = new Map();
-    for (const p of await recent()) {
+    const [text, images] = await Promise.all([recentOf('paste'), recentOf('screenshot')]);
+    for (const p of [...text, ...images]) {
         const l = p.type === 'screenshot' ? 'image' : (p.language || 'text');
         counts.set(l, (counts.get(l) || 0) + 1);
     }
@@ -89,8 +108,11 @@ async function browse(query = {}, ctx = {}) {
         if (q) {
             const out = await source.listPastes({ limit: WINDOW, offset: 0, search: q, type: 'paste' }, ctx);
             rows = _textOnlyPublic(out && out.pastes);
+        } else if (type === 'all') {
+            const [text, images] = await Promise.all([recentOf('paste'), recentOf('screenshot')]);
+            rows = [...text, ...images];
         } else {
-            rows = await recent();
+            rows = await recentOf(type === 'images' ? 'screenshot' : 'paste');
         }
         rows = rows.filter(_ofType(type));
         if (lang) rows = rows.filter((p) => (p.language || 'text') === lang);
@@ -104,6 +126,6 @@ async function browse(query = {}, ctx = {}) {
 }
 
 /** For tests and a hot reload after a write. */
-function reset() { _recent = { at: 0, promise: null, pastes: [] }; }
+function reset() { _recent = { at: 0, promise: null, pastes: [] }; _byType.clear(); }
 
-module.exports = { recent, latest, trending, related, languages, browse, normalizeBrowseQuery, reset, PER_PAGE, WINDOW };
+module.exports = { recent, recentOf, latest, trending, related, languages, browse, normalizeBrowseQuery, reset, PER_PAGE, WINDOW };
