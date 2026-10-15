@@ -41,7 +41,7 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - OpenVibe.Media (screenshot and attachment uploads), OpenVibe.VIP (members-only gates), OpenVibe.Chat
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
 - OpenVibe.Live only for old VOD/clip comment imports (it reads and writes no pastes here any more)
-- `openvibe-contracts` v0.112.0, `openvibe-sdk` v0.44.0 (events outbox, per-actor limits),
+- `openvibe-contracts` v0.112.0, `openvibe-sdk` v0.46.0 (events outbox, per-actor limits),
   `openvibe-shared` v4.2.1, pinned by release tarball
 
 ## How it fits the network
@@ -827,6 +827,6 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 
 <!-- versions:start -->
 - openvibe-contracts: v0.186.0
-- openvibe-sdk: v0.44.0
+- openvibe-sdk: v0.46.0
 - openvibe-shared: v4.2.1
 <!-- versions:end -->
