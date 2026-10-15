@@ -178,6 +178,15 @@ golden signals by route template (`http_requests_total{method,route,status_class
 `POST /release-metrics` (openvibe-shared `release.mount`); content counts (pastes, comments,
 threads) are deliberately not metrics.
 
+**Request telemetry (plan T1 step 10).** Each request is aggregated by route template, method and
+status class, never by raw URL. Once a minute one `http.request` sample per key, plus the
+active-requests, p95 latency and event-loop-lag gauges, is written to this service's own
+`telemetry_samples` table (openvibe-sdk 0.46 telemetry, the `platform.telemetry-sample@1` shape);
+rows older than 14 days are deleted daily. `/shared` files, static assets, health, readiness and
+`/metrics` are not counted. `server/app.js` mounts openvibe-sdk's `telemetryMiddleware` (a no-op
+until init); `server/index.js` calls `telemetry.init()` at production start, runs the 14-day
+retention and flushes on stop. The table is created by migration `0009_telemetry.sql`.
+
 Cookies are host-only for `openvibe.community`: `ov_token` (24 h access JWT, JS-readable so
 the shared navbar can use it), `ov_refresh` (httpOnly, `/auth`), `ov_sso_hint`
 (`account`/`guest`, 1 year, JS-readable — the navbar only tries a silent sign-in when it says
