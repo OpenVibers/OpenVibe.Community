@@ -241,6 +241,8 @@ async function createApp(opts = {}) {
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
     // OpenVibe.Services reads a person's pastes and spaces here (community.resource.read, a service token on loopback;
     // nginx answers 404 for the path on the public vhost).
+    // Control first (community.resource.control: delete a person's paste), then the index.
+    app.use('/api/v1/resources/control', require('./registry/resource-control').router({ db, viewers, pastes: app.locals.pastes }));
     app.use('/api/v1/resources', require('./registry/resource-index').router({ db, viewers }));
 
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
