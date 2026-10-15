@@ -31,9 +31,9 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
     });
     server.keepAliveTimeout = 65_000;
     // Request telemetry (openvibe-sdk/service, plan T1): one aggregated sample per route template, method and status
-    // class each 15 s, stored in this service's telemetry_samples table; rows older than 30 days go daily.
-    telemetry.init({ service: 'community', sink: createPgTelemetrySink({ db: require('./db').getDb(), log: console }), skipPrefixes: ['/shared'] });
-    const telemetryRetention = startTelemetryRetention({ db: require('./db').getDb(), log: console });
+    // class each minute, stored in this service's telemetry_samples table; rows older than 14 days go daily.
+    telemetry.init({ service: 'community', sink: createPgTelemetrySink({ db: require('./db').getDb(), log: console }), skipPrefixes: ['/shared'], intervalMs: 60_000 });
+    const telemetryRetention = startTelemetryRetention({ db: require('./db').getDb(), log: console, olderThanDays: 14 });
     // Subscribe Pulse to public activity at Events (idempotent; off without EVENTS_URL / COMMUNITY_EVENTS_SECRET).
     let subscriptions = null;
     try {
