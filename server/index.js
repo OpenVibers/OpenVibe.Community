@@ -6,6 +6,8 @@
  */
 const config = require('./config');
 const { createApp } = require('./app');
+const { telemetry } = require('openvibe-sdk/service');
+const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk/telemetry');
 
 (async () => {
     // PostgreSQL first (migrations run as the owner), then the app: its revocation cutoffs load before it serves.
@@ -28,6 +30,10 @@ const { createApp } = require('./app');
         console.log(`[Community] pastes: this site is the authority (PostgreSQL), identity via ${config.networkUrl}`);
     });
     server.keepAliveTimeout = 65_000;
+    // Request telemetry (openvibe-sdk/service, plan T1): one aggregated sample per route template, method and status
+    // class each 15 s, stored in this service's telemetry_samples table; rows older than 30 days go daily.
+    telemetry.init({ service: 'community', sink: createPgTelemetrySink({ db: require('./db').getDb(), log: console }), skipPrefixes: ['/shared'] });
+    const telemetryRetention = startTelemetryRetention({ db: require('./db').getDb(), log: console });
     // Subscribe Pulse to public activity at Events (idempotent; off without EVENTS_URL / COMMUNITY_EVENTS_SECRET).
     let subscriptions = null;
     try {
@@ -62,6 +68,7 @@ const { createApp } = require('./app');
             () => within(1000, profilesDone),
             () => within(1000, app.locals.relay && app.locals.relay.stop()),
             () => within(1500, require('./events').stop()),
+            async () => { if (telemetryRetention) await telemetryRetention.stop(); await telemetry.stop(); },
             async () => {
                 const ev = await require('./events').backlog().catch(() => require('./events').status());
                 let relay = 'off';

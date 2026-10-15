@@ -84,6 +84,7 @@ async function createApp(opts = {}) {
     // HTTP golden signals by route template, process metrics, release_info; GET /metrics answers
     // direct loopback callers only (Track O). Request metrics only: no content counts.
     const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'community', release: release.release });
+    app.use(require('openvibe-sdk/service').telemetryMiddleware);   // request telemetry: a no-op until server/index.js calls telemetry.init()
     app.locals.metrics = metrics.registry;
 
     app.use(helmet({
