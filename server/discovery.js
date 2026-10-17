@@ -13,7 +13,7 @@ const { isoDate, clean } = require('./render/jsonld');
 
 const SITEMAP_TTL_MS = 60 * 60 * 1000;
 const ROBOTS_DISALLOW = ['/api/', '/auth/', '/my', '/new', '/s/*/new', '/*?sso='];
-const SUMMARY = 'The discussion side of the OpenVibe network: pastes (text and screenshots), spaces with threads, and the Pulse feed of what is happening across the network.';
+const SUMMARY = 'The discussion side of the OpenVibe network: pastes (text and screenshots), forums with threads, and the Pulse feed of what is happening across the network.';
 const CONTENT_LABELS = 'Pastes made by the OpenVibe AI (moments caught from live streams) carry origin "ai" and are labelled as AI-generated; everything else was written by people.';
 
 // The forum service (server/forum/service.js), when the app has one: threads join the sitemap,
@@ -27,7 +27,7 @@ function llmsSections() {
     return [
         { title: 'Browse', links: [
             { title: 'Pastes', url: `${u}/pastes`, note: 'public pastes, newest first (?type=pastes|images|all, ?sort=views, ?lang=<language>)' },
-            { title: 'Spaces', url: `${u}/s`, note: 'open discussion spaces and their threads' },
+            { title: 'Forum', url: `${u}/s`, note: 'open discussion forums and their threads' },
             { title: 'Pulse', url: `${u}/pulse`, note: 'network activity' },
         ] },
         { title: 'Machine-readable', links: [

@@ -28,7 +28,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     await check('/s lists the public spaces with SEO head, breadcrumbs and the threads feed', async () => {
         const r = await t.get('/s');
         assert.strictEqual(r.status, 200);
-        has(r.text, '<title>Spaces · OpenVibe.Community</title>');
+        has(r.text, '<title>Forum · OpenVibe.Community</title>');
         has(r.text, '<link rel="canonical" href="https://openvibe.community/s">');
         has(r.text, '<meta name="robots" content="index,follow">');
         has(r.text, 'href="/s/feed.xml"');

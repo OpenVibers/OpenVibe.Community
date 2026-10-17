@@ -18,7 +18,7 @@ const f = require('./forum');
 const STYLE_LABELS = { forum: 'Forum', feed: 'Feed' };
 const monthYear = (iso) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : null; };
 const crumbs = (items) => `<nav class="crumbs" aria-label="Breadcrumb">${items.map(([label, href], i) => (i === items.length - 1 ? `<span aria-current="page">${esc(label)}</span>` : `<a href="${esc(href)}">${esc(label)}</a>`)).join(' › ')}</nav>`;
-const trail = (space) => [['Home', '/'], ['Spaces', '/s'], ...(space.group ? [[space.group.name, `/s#g-${space.group.slug}`]] : []), ...(space.parent ? [[space.parent.name, `/s/${space.parent.slug}`]] : [])];
+const trail = (space) => [['Home', '/'], ['Forum', '/s'], ...(space.group ? [[space.group.name, `/s#g-${space.group.slug}`]] : []), ...(space.parent ? [[space.parent.name, `/s/${space.parent.slug}`]] : [])];
 const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 
 /** One space as a board-index row: icon, name, description, child boards, topics, posts, last post. */
@@ -41,7 +41,7 @@ function boardRow(sp) {
 
 function boardTable(spaces, caption) {
     return `<table class="board-table"><caption class="sr-only">${esc(caption)}</caption>
-    <thead><tr><th scope="col">Space</th><th scope="col" class="num">Topics</th><th scope="col" class="num">Posts</th><th scope="col">Last post</th></tr></thead>
+    <thead><tr><th scope="col">Forum</th><th scope="col" class="num">Topics</th><th scope="col" class="num">Posts</th><th scope="col">Last post</th></tr></thead>
     <tbody>${spaces.map(boardRow).join('')}</tbody></table>`;
 }
 
@@ -49,24 +49,24 @@ function boardTable(spaces, caption) {
 function boardIndexPage({ groups = [], user, canModerate = false }) {
     const body = `
 <header class="page-head">
-  ${crumbs([['Home', '/'], ['Spaces', '/s']])}
-  <h1>Spaces</h1>
-  <p class="muted">Forums and feeds for the people of OpenVibe. Forum boards read like a classic forum, newest reply on top. Feeds rank posts by votes. Read without an account; sign in to post, rate and vote. See what is happening across the network on <a href="/pulse">Pulse</a>.</p>
-  ${canModerate ? '<p><a class="btn btn-sm" href="/s/new-space"><i class="fa-solid fa-plus" aria-hidden="true"></i> New space</a></p>' : ''}
+  ${crumbs([['Home', '/'], ['Forum', '/s']])}
+  <h1>Forum</h1>
+  <p class="muted">Forums for the people of OpenVibe. Classic forums read like a message board, newest reply on top. Feed forums rank posts by votes. Read without an account; sign in to post, rate and vote. See what is happening across the network on <a href="/pulse">Pulse</a>.</p>
+  ${canModerate ? '<p><a class="btn btn-sm" href="/s/new-space"><i class="fa-solid fa-plus" aria-hidden="true"></i> New forum</a></p>' : ''}
 </header>
 ${groups.length ? groups.map((g) => `<section class="board-group" id="g-${esc(g.slug || 'more')}" aria-labelledby="gh-${esc(g.slug || 'more')}">
   <h2 class="board-group-h" id="gh-${esc(g.slug || 'more')}">${esc(g.name)}</h2>
   ${g.description ? `<p class="muted small board-group-p">${esc(g.description)}</p>` : ''}
   ${boardTable(g.spaces, g.name)}
-</section>`).join('') : '<p class="empty">No spaces yet.</p>'}
+</section>`).join('') : '<p class="empty">No forums yet.</p>'}
 ${user ? '' : '<p class="muted small">Sign in with your OpenVibe account to post.</p>'}`;
     return renderPage({
-        title: 'Spaces',
-        description: 'Forums and feeds on OpenVibe.Community: general talk, help, feedback and feature requests, the roadmap, a showcase of what people make, and off-topic.',
+        title: 'Forum',
+        description: 'Forums on OpenVibe.Community: general talk, help, feedback and feature requests, the roadmap, a showcase of what people make, and off-topic.',
         canonicalPath: '/s',
         active: 'spaces',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
-        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }])],
         body,
     });
 }
@@ -96,11 +96,11 @@ function topicRow(t, space) {
 /** Moderators: the space's settings (style, votes, ratings, group, description), no JS. */
 function settingsForm(space, groups = []) {
     const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
-    return `<details class="space-settings"><summary><i class="fa-solid fa-gear" aria-hidden="true"></i> Space settings</summary>
+    return `<details class="space-settings"><summary><i class="fa-solid fa-gear" aria-hidden="true"></i> Forum settings</summary>
 <form class="paste-form" method="post" action="/s/${esc(space.slug)}/settings">
   <label class="field"><span>Name</span><input name="name" required minlength="2" maxlength="60" value="${esc(space.name)}"></label>
   <label class="field"><span>Description</span><input name="description" maxlength="300" value="${esc(space.description || '')}"></label>
-  <label class="field"><span>Style</span><select name="style">${opt('forum', 'Forum: newest reply first, author panels, quotes', space.style === 'forum')}${opt('feed', 'Feed: ranked by votes, hot/new/top', space.style !== 'forum')}</select></label>
+  <label class="field"><span>Style</span><select name="style">${opt('forum', 'Classic: newest reply first, author panels, quotes', space.style === 'forum')}${opt('feed', 'Feed: ranked by votes, hot/new/top', space.style !== 'forum')}</select></label>
   <label class="check"><input type="checkbox" name="votes" value="1"${space.votes ? ' checked' : ''}> Up and down votes</label>
   <label class="check"><input type="checkbox" name="reactions" value="1"${space.reactions ? ' checked' : ''}> Ratings on posts (Agree, Winner, Funny…)</label>
   <label class="field"><span>Group on the board index</span><select name="group">${opt('', 'None', !space.group)}${groups.map((g) => opt(g.slug, g.name, space.group && space.group.slug === g.slug)).join('')}</select></label>
@@ -122,7 +122,7 @@ function moderatorsBox(space, moderators = [], { me = null, error = null } = {})
     }).join('');
     return `<details class="space-settings" id="moderators"${error ? ' open' : ''}><summary><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Moderators (${moderators.length})</summary>
 ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
-${rows ? `<ul class="mod-list">${rows}</ul>` : '<p class="muted small">No one moderates this space yet; discussion staff do.</p>'}
+${rows ? `<ul class="mod-list">${rows}</ul>` : '<p class="muted small">No one moderates this forum yet; discussion staff do.</p>'}
 <form class="paste-form" method="post" action="/s/${slug}/moderators">
   <label class="field"><span>Add a moderator</span><input name="subject" required maxlength="41" placeholder="@username" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
   <div class="form-actions"><button class="btn btn-primary" type="submit">Add moderator</button></div>
@@ -165,7 +165,7 @@ ${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moder
         robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
-        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
         body,
     });
 }
@@ -255,7 +255,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [
             ...(gated ? [] : [ld.threadLd({ space, thread, posts, opening, description })]),
-            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Spaces', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
+            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
         ],
         body,
     });
@@ -266,22 +266,22 @@ function newSpacePage({ groups = [], error = null, values = {} }) {
     const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
     const body = `
 <header class="page-head">
-  ${crumbs([['Home', '/'], ['Spaces', '/s'], ['New space', '/s/new-space']])}
-  <h1>New space</h1>
-  <p class="muted">A forum board reads like a classic forum: the newest reply on top, author panels and quotes. A feed ranks posts by votes, like a subreddit. You can change the style later.</p>
+  ${crumbs([['Home', '/'], ['Forum', '/s'], ['New forum', '/s/new-space']])}
+  <h1>New forum</h1>
+  <p class="muted">A classic forum reads like a message board: the newest reply on top, author panels and quotes. A feed forum ranks posts by votes, like a subreddit. You can change the style later.</p>
 </header>
 <form class="paste-form" method="post" action="/s/new-space">
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   <label class="field"><span>Name</span><input name="name" required minlength="2" maxlength="60" value="${esc(values.name || '')}"></label>
   <label class="field"><span>Address (/s/…)</span><input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,39}" maxlength="40" value="${esc(values.slug || '')}" placeholder="music"></label>
   <label class="field"><span>Description</span><input name="description" maxlength="300" value="${esc(values.description || '')}"></label>
-  <label class="field"><span>Style</span><select name="style">${opt('forum', 'Forum', values.style !== 'feed')}${opt('feed', 'Feed', values.style === 'feed')}</select></label>
+  <label class="field"><span>Style</span><select name="style">${opt('forum', 'Classic', values.style !== 'feed')}${opt('feed', 'Feed', values.style === 'feed')}</select></label>
   <label class="check"><input type="checkbox" name="votes" value="1"${values.votes ? ' checked' : ''}> Up and down votes</label>
   <label class="check"><input type="checkbox" name="reactions" value="1"${values.reactions !== false ? ' checked' : ''}> Ratings on posts</label>
   <label class="field"><span>Group on the board index</span><select name="group">${opt('', 'None', !values.group)}${groups.map((g) => opt(g.slug, g.name, values.group === g.slug)).join('')}</select></label>
-  <div class="form-actions"><button class="btn btn-primary" type="submit">Create space</button></div>
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Create forum</button></div>
 </form>`;
-    return renderPage({ title: 'New space', canonicalPath: '/s/new-space', robots: 'noindex,nofollow', active: 'spaces', footerVariant: 'compact', body });
+    return renderPage({ title: 'New forum', canonicalPath: '/s/new-space', robots: 'noindex,nofollow', active: 'spaces', footerVariant: 'compact', body });
 }
 
 /** "Discuss in a space": pick where a paste should be talked about; each space's new-topic form attaches it. */
@@ -289,13 +289,13 @@ function discussPage({ groups = [], paste = '', user }) {
     const q = paste ? `?paste=${encodeURIComponent(paste)}` : '';
     const body = `
 <header class="page-head">
-  ${crumbs([['Home', '/'], ['Spaces', '/s'], ['Discuss', '/s/discuss']])}
-  <h1>Discuss${paste ? ' this paste' : ''} in a space</h1>
-  <p class="muted">Pick a space. Its new-topic form opens with ${paste ? `the paste <a href="/p/${esc(paste)}">${esc(paste)}</a>` : 'your paste'} attached.</p>
+  ${crumbs([['Home', '/'], ['Forum', '/s'], ['Discuss', '/s/discuss']])}
+  <h1>Discuss${paste ? ' this paste' : ''} in the forum</h1>
+  <p class="muted">Pick a forum. Its new-topic form opens with ${paste ? `the paste <a href="/p/${esc(paste)}">${esc(paste)}</a>` : 'your paste'} attached.</p>
   ${user ? '' : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/s/discuss${q}`)}">Sign in with your OpenVibe account</a> to start a topic.</p>`}
 </header>
 ${groups.map((g) => `<section class="board-group"><h2 class="board-group-h">${esc(g.name)}</h2><ul class="discuss-list">${g.spaces.filter((sp) => sp.thread_kind !== 'roadmap').map((sp) => `<li><a class="btn" href="/s/${esc(sp.slug)}/new${q}">${esc(sp.name)}</a> <span class="muted small">${esc(sp.description || '')}</span></li>`).join('')}</ul></section>`).join('')}`;
-    return renderPage({ title: 'Discuss in a space', canonicalPath: '/s/discuss', robots: 'noindex,follow', active: 'spaces', footerVariant: 'compact', body });
+    return renderPage({ title: 'Discuss in the forum', canonicalPath: '/s/discuss', robots: 'noindex,follow', active: 'spaces', footerVariant: 'compact', body });
 }
 
 module.exports = { boardIndexPage, forumSpacePage, forumTopicPage, newSpacePage, settingsForm, moderatorsBox, discussPage };

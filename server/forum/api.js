@@ -64,7 +64,7 @@ function createSpacesApi({ forum, viewers, limits }) {
         const v = req.viewer;
         if (v && v.kind === 'service') return serviceCap(MOD)(req, res, next);
         return forum.canModerate(v, p(req).space)
-            .then((ok) => (ok ? next() : contracts.http.sendProblem(res, 403, 'capability.denied', { detail: "Only this space's moderators", ctx: req.ov })))
+            .then((ok) => (ok ? next() : contracts.http.sendProblem(res, 403, 'capability.denied', { detail: "Only this forum's moderators", ctx: req.ov })))
             .catch(next);
     };
     // Per-actor limits (server/actor-limits.js): reads take the defaults. The person limits in service.js

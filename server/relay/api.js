@@ -79,7 +79,7 @@ function createRelayApi({ relay, db, viewers, inbound = null, limits }) {
     router.post('/mappings', manage, jsonBody, run(async (req) => {
         const b = req.body || {};
         const space = await forumStore.getSpace(db, String(b.space || ''));
-        if (!space) fail(400, 'relay.invalid_space', 'Unknown space');
+        if (!space) fail(400, 'relay.invalid_space', 'Unknown forum');
         const ref = String(b.webhook_url_ref || '');
         if (!relay.ENV_NAME.test(ref)) fail(400, 'relay.invalid_ref', 'webhook_url_ref is the NAME of an environment variable (A-Z, 0-9, _), never the URL');
         if (!relay.refAllowed(ref)) fail(400, 'relay.ref_not_allowed', 'webhook_url_ref must be an allowed webhook variable (DISCORD_RELAY_WEBHOOK_VARS, else DISCORD_WEBHOOK_*)');

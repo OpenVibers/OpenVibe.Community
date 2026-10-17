@@ -3,7 +3,8 @@
 /**
  * Server-rendered forum routes (the pages are in render/forum.js, the rules in service.js):
  *
- *   GET  /s                              spaces
+ *   GET  /s                              the Forum's board index (a forum is a `space` in code and the API)
+ *   GET  /forum, /forum/<rest>           301 → /s, /s/<rest> (query kept)
  *   GET  /s/feed.xml                     RSS: latest threads in public spaces
  *   GET  /s/:space                       threads (?sort=hot|new|top&page=)
  *   GET  /s/:space/feed.xml              RSS: latest threads of one public space
@@ -71,6 +72,13 @@ function createForumRoutes({ forum, viewers, config }) {
         next();
     }
 
+    // People call it the Forum (spaces are OpenVibe.Space's), so /forum and /forum/<rest> answer too: a 301 to the
+    // /s address every link, sitemap entry and Search document already uses.
+    router.use('/forum', (req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+        res.redirect(301, `/s${req.url === '/' || req.url.startsWith('/?') ? req.url.slice(1) : req.url}`);
+    });
+
     // The board index (vBulletin/SMF style): every space, grouped, with topics, posts and the last post.
     router.get('/s', withViewer, wrap(async (req, res, next) => {
         try { html(res, boardPages.boardIndexPage({ ...(await forum.listSpaces(req.viewer)), user: req.user, canModerate: forum.isModerator(req.viewer) })); } catch (err) { failPage(req, res, err, next); }
@@ -80,7 +88,7 @@ function createForumRoutes({ forum, viewers, config }) {
     router.get('/s/new-space', withViewer, wrap(async (req, res, next) => {
         try {
             if (!req.user) return login(res, '/s/new-space');
-            if (!forum.isModerator(req.viewer)) throw new ApiError(403, 'capability.denied', 'Only moderators create spaces');
+            if (!forum.isModerator(req.viewer)) throw new ApiError(403, 'capability.denied', 'Only moderators create forums');
             html(res, boardPages.newSpacePage({ groups: await forum.groups() }));
         } catch (err) { failPage(req, res, err, next); }
     }));
@@ -110,7 +118,7 @@ function createForumRoutes({ forum, viewers, config }) {
     const threadFeed = async (res, space) => res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.feedXml({
         title: space ? `${SITE_NAME} — ${space.name}` : `${SITE_NAME} — latest threads`,
         link: `${config.baseUrl}${space ? `/s/${space.slug}` : '/s'}`,
-        description: space ? (space.description || space.name) : 'New threads in the public spaces of OpenVibe.Community.',
+        description: space ? (space.description || space.name) : 'New threads in the public forums of OpenVibe.Community.',
         language: 'en',
         selfUrl: `${config.baseUrl}${space ? `/s/${space.slug}` : '/s'}/feed.xml`,
         items: discovery.threadFeedItems(await forum.recentPublic({ limit: 30, ...(space ? { space: space.slug } : {}) })),
