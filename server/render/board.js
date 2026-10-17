@@ -15,7 +15,7 @@ const { markdownToText } = require('./markdown');
 const { timeTag, fmtDate, num, avatarUrl, authorHtml, wearName } = require('./pages');
 const f = require('./forum');
 
-const STYLE_LABELS = { forum: 'Forum', feed: 'Feed' };
+const STYLE_LABELS = { forum: 'Classic', feed: 'Feed' };   // the two styles, as the Forum page and the settings name them
 const monthYear = (iso) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : null; };
 const crumbs = (items) => `<nav class="crumbs" aria-label="Breadcrumb">${items.map(([label, href], i) => (i === items.length - 1 ? `<span aria-current="page">${esc(label)}</span>` : `<a href="${esc(href)}">${esc(label)}</a>`)).join(' › ')}</nav>`;
 const trail = (space) => [['Home', '/'], ['Forum', '/s'], ...(space.group ? [[space.group.name, `/s#g-${space.group.slug}`]] : []), ...(space.parent ? [[space.parent.name, `/s/${space.parent.slug}`]] : [])];
