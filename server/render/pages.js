@@ -128,7 +128,7 @@ function homePage({ latest, trending, languages, user }) {
     const body = showcase.hero({
         eyebrow: 'OpenVibe.Community',
         title: 'Share it with a link.', accent: 'Talk about it here.',
-        lede: 'Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own, and talk things through in Spaces.',
+        lede: 'Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own, and talk things through in the Forum.',
         actions: [
             { label: 'Start a paste', href: '/new', primary: true, icon: 'fa-plus' },
             { label: 'Browse pastes', href: '/pastes', icon: 'fa-paste' },
