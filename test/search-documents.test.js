@@ -83,6 +83,17 @@ const { createSearchDocuments } = require('../server/search/documents');
         ok((await index()).at(-1)); assert.deepStrictEqual((await index()).at(-1).payload, { type: 'paste', id: 'amber-fox-42', revision: 2 });
     });
 
+    await check('an untitled paste is named after its AI summary, or its first line', async () => {
+        const row = async (id) => await db.prepare('SELECT * FROM pastes WHERE id = ?').get(id);
+        const a = await pastes.insertPaste(db, { slug: 'grand-river-59', owner_subject: USR, type: 'paste', title: '', content: 'yt mp3 limits', visibility: 'public' });
+        await db.prepare('UPDATE pastes SET ai_summary = ? WHERE id = ?').run('A note about a Tools tab offering YouTube MP3 downloaders with usage limits. It varies by level.', a.id);
+        const b = await pastes.insertPaste(db, { slug: 'quiet-moss-11', owner_subject: USR, type: 'paste', title: '', content: '\n\n  npm install openvibe-sdk  \nmore', visibility: 'public' });
+        assert.strictEqual(await docs.publishPaste(await row(a.id)), 'sent');
+        assert.strictEqual((await index()).at(-1).payload.title, 'A note about a Tools tab offering YouTube MP3 downloaders with usage limits');
+        assert.strictEqual(await docs.publishPaste(await row(b.id)), 'sent');
+        assert.strictEqual((await index()).at(-1).payload.title, 'npm install openvibe-sdk');
+    });
+
     await check('the scan finds a paste changed since the last scan; the refresh removes one that is gone', async () => {
         const now = Date.now();
         await docs.scan({ now });

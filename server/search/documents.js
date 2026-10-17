@@ -40,6 +40,18 @@ const plain = (md) => String(md || '')
     .replace(/^[ \t]*(#{1,6}|>|[-*+]|\d+\.)[ \t]+/gm, '')
     .replace(/[*_~`]+/g, '');
 const AUTHORSHIP = { ai: 'ai_generated', imported: 'imported', discord: 'imported' };
+// A paste saved without a title is stored as 'Untitled' (pastes/store.js), and Search showed "Untitled" as a result's
+// title (a YouTube-downloader search, 2026-10-17). Name it after the first sentence of its AI summary, or its first
+// line, at most 90 characters; only a paste with neither stays Untitled.
+function pasteTitle(p, shot) {
+    const own = clean(p.title, 500);
+    if (own && own !== 'Untitled') return own;
+    const sentence = clean(p.ai_summary, 400).split(/(?<=[.!?])\s/)[0];
+    const line = shot ? '' : clean(String(p.content || '').split('\n').map((l) => l.trim()).find(Boolean), 400);
+    const pick = (sentence || line).replace(/[.!?]+$/, '');
+    if (!pick) return shot ? 'Screenshot' : 'Untitled';
+    return pick.length <= 90 ? pick : `${pick.slice(0, 89).replace(/\s+\S*$/, '')}…`;
+}
 const hashOf = (doc) => crypto.createHash('sha256').update(JSON.stringify(doc)).digest('hex').slice(0, 32);
 const sqlTime = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 
@@ -91,7 +103,7 @@ function createSearchDocuments({ db }) {
         const doc = {
             owner: 'community', type: 'paste', id: pasteDocId(p), deleted: false, visibility: 'public',
             canonical_url: `${config.baseUrl}/p/${encodeURIComponent(p.slug)}`,
-            title: clean(p.title, 500) || (shot ? 'Screenshot' : 'Untitled'),
+            title: pasteTitle(p, shot),
             summary: clean(p.ai_summary, 4000) || clean(shot ? '' : p.content, 300) || `A ${shot ? 'screenshot' : 'paste'} on OpenVibe.Community.`,
             body: shot ? clean(p.ai_summary, 8000) : String(p.content || '').slice(0, 40000),
             facets, authorship: AUTHORSHIP[p.origin] || 'human', publication_state: 'published',
