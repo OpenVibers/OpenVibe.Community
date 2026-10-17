@@ -68,7 +68,8 @@ img { max-width: 100%; height: auto; }
 .card-nsfw .card-shot img, .card-nsfw .card-code { filter: blur(10px); }
 .card-title { margin: 0; padding: 12px 14px 4px; font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-title i { color: var(--accent-light); font-size: .8em; }
-.card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 14px 12px; font-size: .8rem; color: var(--text-secondary); margin-top: auto; }
+/* The author keeps their name: when the stats do not fit beside it (four cards across), they wrap under it. */
+.card-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; padding: 6px 14px 12px; font-size: .8rem; color: var(--text-secondary); margin-top: auto; }
 .card-right { display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
 .author { display: inline-flex; align-items: center; gap: 6px; color: inherit; min-width: 0; }
 .author span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
