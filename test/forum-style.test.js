@@ -56,7 +56,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(general.thread_count, 1); assert.strictEqual(general.post_count, 2);
         assert.strictEqual(general.last_post.thread.title, 'Welcome thread'); assert.strictEqual(general.last_post.author.username, 'sam');
         const html = (await call('/s')).text;
-        assert.ok(html.includes('id="g-openvibe"') && html.includes('id="g-community"') && html.includes('Off-topic') && html.includes('badge-style">Forum') && html.includes('badge-style">Feed'));
+        assert.ok(html.includes('id="g-openvibe"') && html.includes('id="g-community"') && html.includes('Off-topic') && html.includes('badge-style">Classic') && html.includes('badge-style">Feed'));
     });
 
     await check('ratings: one per person per post, toggle, replace, not your own; totals on the author panel', async () => {
