@@ -44,7 +44,7 @@ img { max-width: 100%; height: auto; }
 /* Home: the showcase kit (openvibe-shared/showcase.css) draws the hero, features, code and closing call; this is the terminal sample beside the hero. */
 /* The kit centres its sections at 1080px with their own gutter; here they share the page's column with the paste grids. */
 .page > .sc-hero, .page > .sc-sec, .page > .sc-cta { max-width: none; padding-left: 0; padding-right: 0; }
-.page > .sc-sec .sc-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.page > .sc-sec .sc-grid { grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
 .cm-hero-code { margin: 0; padding: 16px 18px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 13px; line-height: 1.65; overflow: auto; white-space: pre; }
 
 /* Sections */
