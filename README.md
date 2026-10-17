@@ -130,7 +130,7 @@ Pages (server-rendered HTML):
 | `GET /p/:slug/download` | The text as an attachment (`slug.ext`); screenshots bounce to the image |
 | `GET /new`, `POST /new` | Create (signed-in or anonymous). `?fork=slug` prefills. The POST is the no-JS fallback; with JS the form talks to `/api/pastes` |
 | `GET /my` | The signed-in user's pastes (public, unlisted and private); anonymous → sign-in |
-| `GET /s` | Spaces |
+| `GET /s` | The Forum (board index); `GET /forum[/…]` answers 301 → `/s[/…]` |
 | `GET /s/:space` | Threads — `?sort=hot\|new\|top`, `?page=` |
 | `GET /s/:space/t/:slug` | A thread with its posts (`?page=`), reply / vote / moderation forms |
 | `GET /s/:space/new`, `POST /s/:space/new` | Start a thread (signed in) |
@@ -313,7 +313,10 @@ await api(`/${comments[0].id}/votes`, { method: 'POST', body: JSON.stringify({ v
 
 Render `message` as text (it is plain text, never HTML).
 
-## Forum: spaces, threads, posts
+## Forum: forums, threads, posts
+
+People see **the Forum** and **forums** (renamed from "Spaces" on 2026-10-17: openvibe.space is a different product).
+In the code, the database and the API a forum is still a `space` (`spaces`, `/api/v1/spaces`, `community.space.*`).
 
 Spaces hold threads; a thread is its opening post plus replies (Markdown). Seeded spaces:
 `general`, `feedback` (feature requests), `showcase`. Space visibility: `public` (anyone

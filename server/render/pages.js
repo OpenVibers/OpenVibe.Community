@@ -153,8 +153,8 @@ function homePage({ latest, trending, languages, user }) {
         items: [
             { icon: 'fa-paste', title: 'Pastes', text: 'Code, logs and configs with highlighting for every common language, a raw link and a download.', href: '/new' },
             { icon: 'fa-image', title: 'Screenshots', text: 'Drop an image and share it with a link. Location data is stripped before it is stored.', href: '/new' },
-            { icon: 'fa-layer-group', title: 'Spaces', text: 'General, Feedback and Showcase: places to talk, share and get help.', href: '/s' },
-            { icon: 'fa-comments', title: 'Threads', text: 'Long-form discussion that outlives a chat scrollback. Start one in any open space.', href: '/s/general' },
+            { icon: 'fa-layer-group', title: 'Forum', text: 'General, Feedback and Showcase: places to talk, share and get help.', href: '/s' },
+            { icon: 'fa-comments', title: 'Threads', text: 'Long-form discussion that outlives a chat scrollback. Start one in any open forum.', href: '/s/general' },
             { icon: 'fa-wave-square', title: 'Pulse', text: 'What is happening across the OpenVibe network, in one feed.', href: '/pulse' },
             { icon: 'fa-code-branch', title: 'Open source', text: 'Every line that runs this site is public. Read it, file an issue, send a fix.', href: 'https://github.com/OpenVibers/OpenVibe.Community' },
         ],
@@ -175,12 +175,12 @@ const { url } = await res.json(); // "/p/<slug>"` },
     }) + showcase.cta({
         title: 'Start a paste',
         text: 'Paste it, get a link, share it anywhere. Sign in to keep your pastes together under your OpenVibe account, or post without one.',
-        actions: [{ label: 'New paste', href: '/new', primary: true, icon: 'fa-plus' }, { label: 'Visit the Spaces', href: '/s' }],
+        actions: [{ label: 'New paste', href: '/new', primary: true, icon: 'fa-plus' }, { label: 'Visit the Forum', href: '/s' }],
     }) + `
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
     return renderPage({
         title: null,
-        description: 'The people of OpenVibe. A community-run, open source home for pastes, spaces and threads. Free speech within the rules.',
+        description: 'The people of OpenVibe. A community-run, open source home for pastes, forums and threads. Free speech within the rules.',
         canonicalPath: '/',
         active: 'home',
         jsonLd: [ld.websiteLd()],
@@ -302,7 +302,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(p.slug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(p.slug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
     <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
-    ${p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in a space</a>` : ''}
+    ${p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
 

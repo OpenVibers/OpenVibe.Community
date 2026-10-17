@@ -64,7 +64,7 @@ function createChatRooms({ config, fetchImpl = globalThis.fetch } = {}) {
             };
         }
         if (r.status === 404) fail(404, 'chat_room.not_found', 'No such chat room (or it is private and you are not in it)');
-        if (r.status === 403) fail(403, 'chat_room.not_owner', 'Only the chat room\'s owner can attach it to a space');
+        if (r.status === 403) fail(403, 'chat_room.not_owner', 'Only the chat room\'s owner can attach it to a forum');
         if (r.status === 401) fail(401, 'auth.required', 'Sign in again to attach a chat room');
         if (r.status === 422) fail(400, 'chat_room.invalid', (r.data && r.data.error) || 'Chat refused that attachment');
         fail(502, 'chat_room.unavailable', 'OpenVibe.Chat could not attach the room right now');

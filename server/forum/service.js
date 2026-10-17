@@ -188,8 +188,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     /** The space, or 404 (staff spaces look missing) / 401 (members-only, signed out). */
     async function spaceFor(v, slug) {
         const space = /^[a-z0-9-]{1,40}$/.test(String(slug)) ? await store.getSpace(db, slug) : null;
-        if (!space || (space.visibility === 'staff' && !moderator(v))) fail(404, 'space.not_found', 'No such space');
-        if (!canRead(v, space)) fail(401, 'auth.required', 'Sign in to read this space');
+        if (!space || (space.visibility === 'staff' && !moderator(v))) fail(404, 'space.not_found', 'No such forum');
+        if (!canRead(v, space)) fail(401, 'auth.required', 'Sign in to read this forum');
         return space;
     }
 
@@ -427,16 +427,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     /** The space, when the viewer moderates it: 404 (no such space), else 403. */
     async function moderatedSpace(v, slug, what) {
         const space = await spaceFor(v, slug);
-        if (!await moderates(v, space)) fail(403, 'capability.denied', `Only this space's moderators ${what}`);
+        if (!await moderates(v, space)) fail(403, 'capability.denied', `Only this forum's moderators ${what}`);
         return space;
     }
 
     /** Validated space fields from a settings body (only what was sent). */
     async function spaceFields(body, space) {
         const f = {};
-        if (body.name !== undefined) { const n = cleanTitle(body.name); if (n.length < 2 || n.length > 60) fail(400, 'space.invalid_name', 'Space names are 2 to 60 characters'); f.name = n; }
+        if (body.name !== undefined) { const n = cleanTitle(body.name); if (n.length < 2 || n.length > 60) fail(400, 'space.invalid_name', 'Forum names are 2 to 60 characters'); f.name = n; }
         if (body.description !== undefined) f.description = body.description == null ? null : cleanTitle(body.description).slice(0, 300) || null;
-        if (body.style !== undefined) { if (!STYLES.includes(body.style)) fail(400, 'space.invalid_style', 'style is feed or forum'); f.style = body.style; }
+        if (body.style !== undefined) { if (!STYLES.includes(body.style)) fail(400, 'space.invalid_style', 'style is feed or forum (classic)'); f.style = body.style; }
         for (const k of ['votes', 'reactions']) if (body[k] !== undefined) f[k] = (body[k] === true || body[k] === 1 || body[k] === '1' || body[k] === 'true') ? 1 : 0;
         if (body.position !== undefined) f.position = Number.isInteger(Number(body.position)) ? Number(body.position) : 0;
         if (body.kind !== undefined) { if (!['discussion', 'request', 'roadmap'].includes(body.kind)) fail(400, 'space.invalid_kind', 'kind is discussion, request or roadmap'); f.thread_kind = body.kind; }
@@ -447,8 +447,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         }
         if (body.parent !== undefined) {
             const p = body.parent ? await store.getSpace(db, String(body.parent)) : null;
-            if (body.parent && !p) fail(404, 'space.not_found', 'No such parent space');
-            if (p && space && (p.id === space.id || p.parent_id === space.id)) fail(400, 'space.invalid_parent', 'A space cannot sit under itself or its own child');
+            if (body.parent && !p) fail(404, 'space.not_found', 'No such parent forum');
+            if (p && space && (p.id === space.id || p.parent_id === space.id)) fail(400, 'space.invalid_parent', 'A forum cannot sit under itself or its own child');
             if (p && p.parent_id) fail(400, 'space.invalid_parent', 'Child boards go one level deep');
             f.parent_id = p ? p.id : null;
         }
@@ -537,7 +537,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const groups = (await store.listGroups(db)).map((g) => ({ slug: g.slug, name: g.name, description: g.description || null, spaces: top.filter((sp) => sp.group && sp.group.slug === g.slug) }))
                 .filter((g) => g.spaces.length);
             const other = top.filter((sp) => !sp.group);
-            if (other.length) groups.push({ slug: null, name: 'More spaces', description: null, spaces: other });
+            if (other.length) groups.push({ slug: null, name: 'More forums', description: null, spaces: other });
             return { spaces: shaped, groups };
         },
 
@@ -560,7 +560,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         async updateSpaceSettings(v, spaceSlug, body = {}) {
             const space = await moderatedSpace(v, spaceSlug, 'change it');
             // Where a space sits on the board index (its group, parent board and position) is the board index's: staff.
-            if (!moderator(v) && ['group', 'parent', 'position'].some((k) => body[k] !== undefined)) fail(403, 'capability.denied', 'Only moderators of the board index move a space on it');
+            if (!moderator(v) && ['group', 'parent', 'position'].some((k) => body[k] !== undefined)) fail(403, 'capability.denied', 'Only moderators of the board index move a forum on it');
             const fields = await spaceFields(body, space);
             const next = await store.updateSpace(db, space.id, fields);
             const row = (await store.listSpaces(db, ['public', 'members', 'staff'])).find((r) => r.id === next.id) || next;
@@ -571,13 +571,13 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
         /** A new space — moderators. { slug, name, description?, style?, votes?, reactions?, group?, parent?, visibility?, kind? } */
         async createSpace(v, body = {}) {
-            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators create spaces');
+            if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators create forums');
             const slug = String(body.slug || '').trim().toLowerCase();
-            if (!SPACE_SLUG.test(slug) || ['new-space', 'discuss', 'feed', 'new'].includes(slug)) fail(400, 'space.invalid_slug', 'A space slug is 2 to 40 lowercase letters, digits and dashes (not new-space, discuss, feed or new)');
+            if (!SPACE_SLUG.test(slug) || ['new-space', 'discuss', 'feed', 'new'].includes(slug)) fail(400, 'space.invalid_slug', 'A forum address is 2 to 40 lowercase letters, digits and dashes (not new-space, discuss, feed or new)');
             if (await store.getSpace(db, slug)) fail(409, 'space.slug_taken', 'That address is taken');
             const visibility = ['public', 'members', 'staff'].includes(body.visibility) ? body.visibility : 'public';
             const fields = await spaceFields({ ...body, name: body.name }, null);
-            if (!fields.name) fail(400, 'space.invalid_name', 'Name the space');
+            if (!fields.name) fail(400, 'space.invalid_name', 'Name the forum');
             const style = fields.style || 'feed';
             await store.createSpace(db, { slug, visibility, created_by: v.subject || v.service || 'staff', style, votes: fields.votes != null ? fields.votes : (style === 'forum' ? 0 : 1),
                 reactions: fields.reactions != null ? fields.reactions : 1, name: fields.name, description: fields.description || null, group_id: fields.group_id || null,
@@ -600,7 +600,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         async attachChatRoom(v, spaceSlug, body = {}) {
             const space = await spaceFor(v, spaceSlug);
             if (!person(v) && !moderator(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account');
-            if (!await canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the space\'s owner or staff attach a chat room');
+            if (!await canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the forum\'s owner or staff attach a chat room');
             if (!v || v.kind !== 'user' || !v.token) fail(403, 'chat_room.person_only', 'Attach a chat room while signed in with your own account');
             if (!chatRooms) fail(503, 'chat_room.unavailable', 'Chat rooms cannot be attached right now');
             const slug = chatRooms.parseRoomRef(body.room);
@@ -623,7 +623,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         async detachChatRoom(v, spaceSlug) {
             const space = await spaceFor(v, spaceSlug);
             if (!person(v) && !moderator(v)) fail(401, 'auth.required', 'Sign in with your OpenVibe account');
-            if (!await canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the space\'s owner or staff detach its chat room');
+            if (!await canManageChatRoom(v, space)) fail(403, 'capability.denied', 'Only the forum\'s owner or staff detach its chat room');
             const before = await chatRoomRow(space.id);
             if (!before) return { detached: false, chat: null };
             await db.prepare('DELETE FROM space_chat_rooms WHERE space_id = ?').run(space.id);
@@ -643,9 +643,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const page = Math.max(parseInt(q.page, 10) || 1, 1);
             const perPage = Math.min(Math.max(parseInt(q.limit, 10) || THREADS_PER_PAGE, 1), 100);
             const category = q.category ? await store.getCategory(db, space.id, q.category) : null;
-            if (q.category && !category) fail(404, 'category.not_found', 'No such category in this space');
+            if (q.category && !category) fail(404, 'category.not_found', 'No such category in this forum');
             const statuses = STATUSES[space.thread_kind] || [];
-            if (q.status && !statuses.includes(q.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'Threads in this space have no status');
+            if (q.status && !statuses.includes(q.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'Threads in this forum have no status');
             const { rows, total } = await store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
             const index = await this.listSpaces(v);
             const self = index.spaces.find((x) => x.slug === space.slug) || {};
@@ -699,7 +699,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         async react(v, postId, body = {}) {
             if (!person(v)) fail(401, 'auth.required', 'Sign in to rate posts');
             const { post, thread, space } = await postFor(v, postId);
-            if (space.reactions === 0) fail(403, 'space.reactions_off', 'Ratings are off in this space');
+            if (space.reactions === 0) fail(403, 'space.reactions_off', 'Ratings are off in this forum');
             await requireMembership(v, space, thread);
             if (thread.locked && !await moderates(v, space)) fail(403, 'thread.locked', 'This thread is locked');
             if (post.author_subject === v.subject) fail(403, 'reaction.own_post', 'You cannot rate your own post');
@@ -723,7 +723,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             await requireMembership(v, space, thread);
             if (thread.members_only_owner || space.members_only_owner) fail(403, 'crosspost.members_only', 'Members-only threads stay where they are');
             const target = await spaceFor(v, String(body.to || ''));
-            if (target.id === space.id) fail(400, 'crosspost.same_space', 'Pick another space');
+            if (target.id === space.id) fail(400, 'crosspost.same_space', 'Pick another forum');
             mayPostIn(v, target);
             await requireMembership(v, target);
             const kind = target.thread_kind || 'discussion';
@@ -786,7 +786,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         /** Delete a category — moderators. Its threads stay, without a category. */
         async deleteCategory(v, spaceSlug, slug) {
             const space = await moderatedSpace(v, spaceSlug, 'manage categories');
-            if (!await store.deleteCategory(db, space.id, slug)) fail(404, 'category.not_found', 'No such category in this space');
+            if (!await store.deleteCategory(db, space.id, slug)) fail(404, 'category.not_found', 'No such category in this forum');
             pingSpace(space);
             return { ok: true };
         },
@@ -797,7 +797,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!(person(v) && thread.author_subject === v.subject) && !await moderates(v, space)) fail(403, 'thread.not_yours', 'Only the author or a moderator changes the category');
             await requireMembership(v, space, thread);
             const category = body.category ? await store.getCategory(db, space.id, body.category) : null;
-            if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
+            if (body.category && !category) fail(404, 'category.not_found', 'No such category in this forum');
             const next = await store.setThreadCategory(db, thread.id, category ? category.id : null);
             const projections = await authors.projectionsFor([next.author_subject]);
             pingThread(space, next);
@@ -874,7 +874,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const kind = space.thread_kind || 'discussion';
             if (kind === 'roadmap' && !moderator(v)) fail(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
             const category = body.category ? await store.getCategory(db, space.id, body.category) : null;
-            if (body.category && !category) fail(404, 'category.not_found', 'No such category in this space');
+            if (body.category && !category) fail(404, 'category.not_found', 'No such category in this forum');
             const title = cleanTitle(body.title);
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
@@ -974,7 +974,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (value === null) fail(400, 'vote.invalid', 'value must be 1, -1 or 0');
             if (!person(v)) fail(401, 'auth.required', 'Sign in to vote');
             const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
-            if (space.votes === 0) fail(403, 'space.votes_off', 'Votes are off in this space');
+            if (space.votes === 0) fail(403, 'space.votes_off', 'Votes are off in this forum');
             await requireMembership(v, space, thread);
             if (thread.locked) fail(403, 'thread.locked', 'This thread is locked');
             voteLimiter.check(`s:${v.subject}`);

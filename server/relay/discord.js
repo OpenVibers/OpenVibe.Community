@@ -89,7 +89,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
     /** Why this thread (and a post of it) may not leave the site, or null. */
     function refusal(thread, space, post = null) {
         if (thread.origin === 'discord' || (post && post.origin === 'discord')) return `loop prevention: ${post && post.origin === 'discord' ? 'post' : 'thread'} came from Discord`;
-        if (space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return 'the thread is no longer public (members-only or a restricted space)';
+        if (space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return 'the thread is no longer public (members-only or a restricted forum)';
         return null;
     }
     /** Queue-time filter: the same rules, quietly. */
