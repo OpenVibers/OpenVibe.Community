@@ -74,7 +74,9 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         assert.ok(st.started_at_head, 'it says it started at the head');
         assert.ok(!('cursor' in st) && !('lag' in st) && !('latest_seq' in st), 'no numeric position in the status');
         assert.strictEqual((await deliveries()).length, 0);
-        assert.deepStrictEqual(await db.prepare('SELECT name, cursor, position FROM relay_cursors').all(), [{ name: CURSOR, cursor: null, position: events.encode(3) }], 'the head, stored as the opaque latest_cursor and nothing numeric');
+        assert.deepStrictEqual(await db.prepare('SELECT * FROM relay_cursors').all().then((rows) => rows.map(({ name, position }) => ({ name, position }))), [{ name: CURSOR, position: events.encode(3) }], 'the head, stored as the opaque latest_cursor');
+        const cols = (await db.prepare("SELECT column_name FROM information_schema.columns WHERE table_name = 'relay_cursors' ORDER BY column_name").all()).map((r) => r.column_name);
+        assert.deepStrictEqual(cols, ['name', 'position', 'updated_at'], 'no numeric position column is left (migration 0010)');
         assert.ok(events.calls.every((c) => !/after_seq/.test(c.path)), 'no numeric position is ever sent');
         before = events.calls.length;
     });
@@ -145,8 +147,8 @@ const postEvent = (p, t, visibility = 'public') => envelope('community.post.crea
         assert.strictEqual((await worker.status()).last_error, null);
     });
 
-    await check('a row with no position (a numeric one only) starts at the head: a number is never read as a place', async () => {
-        await db.prepare('UPDATE relay_cursors SET cursor = 3, position = NULL WHERE name = ?').run(CURSOR);
+    await check('a row with no position starts at the head', async () => {
+        await db.prepare('UPDATE relay_cursors SET position = NULL WHERE name = ?').run(CURSOR);
         const t5 = await newThread('Before the restart at the head');
         events.add(threadEvent(t5));
         const from = events.calls.length;
