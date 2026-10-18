@@ -94,7 +94,7 @@ function footerInit(opts) {
                 { name: 'Pulse', url: '/pulse' },
                 { name: 'New paste', url: '/new' },
                 { name: 'My pastes', url: '/my' },
-                { name: 'What is coming', url: '/#coming' },
+                { name: 'Roadmap', url: '/s/roadmap' },
                 { name: 'Source code', url: 'https://github.com/OpenVibers/OpenVibe.Community' },
             ],
         }],
