@@ -1,0 +1,35 @@
+{
+  "about": "Pinned starter threads, one per forum, written by the site itself (shown as OpenVibe). server/forum/starters.js syncs this file at every boot: a new key becomes a pinned thread, a changed title or body updates it in place.",
+  "items": [
+    {
+      "key": "welcome",
+      "space": "general",
+      "title": "Welcome to OpenVibe: start here",
+      "body": "OpenVibe is a network of open-source sites that share one account. Sign in once at [openvibe.network](https://openvibe.network) and the same name, avatar and followers work everywhere.\n\nA few places to start:\n\n- **[OpenVibe.Live](https://openvibe.live)**: go live straight from your browser, with no OBS and no follower minimum. [How it works](https://openvibe.live/docs/go-live-in-your-browser).\n- **[OpenVibe.Tools](https://openvibe.tools)**: free tools that work in the browser: converters, PDF, images, text and developer tools.\n- **[OpenVibe.Games](https://openvibe.games)**: games to play, creator worlds and what is on Steam right now.\n- **[OpenVibe.Space](https://openvibe.space)**: make your own site and publish it.\n- **[OpenVibe.Help](https://openvibe.help)**: answers about every site, and tickets when you need a person.\n\nThis forum is for anything about OpenVibe and the people on it. Introduce yourself, ask what something does, or tell us what you are making.\n\nIdeas and bugs go in [Feedback](/s/feedback), where people vote on them. What we are building next is on the [Roadmap](/s/roadmap). Everything here follows the [terms](/terms)."
+    },
+    {
+      "key": "how-to-get-help",
+      "space": "help",
+      "title": "How to get help (read this first)",
+      "body": "Ask anything here: streaming, tools, your account, any OpenVibe site. Other people and staff answer in the thread, so the next person with the same question finds it.\n\nA question gets answered faster when it says:\n\n- **Which site and page**, with its link.\n- **What you did**, step by step.\n- **What you expected, and what happened instead.** Copy any error message exactly.\n- **Your device and browser**, for example \"Android, Chrome\" or \"Windows, Firefox\".\n\nNever post a password, a stream key, an API token or a sign-in link. Nobody from OpenVibe will ask you for one.\n\nOther places to look:\n\n- [OpenVibe.Help](https://openvibe.help) searches every site's answers, and you can open a private ticket there for account or payment problems.\n- [Network status](https://openvibe.network/status) shows whether a site is having trouble right now.\n- Going live: [the guide to streaming from your browser](https://openvibe.live/docs/go-live-in-your-browser).\n\nWhen your question is answered, say what fixed it. It helps the next person."
+    },
+    {
+      "key": "how-feedback-works",
+      "space": "feedback",
+      "title": "How feedback works",
+      "body": "This is where ideas, bugs and questions about every OpenVibe site go. Posts are ranked by votes, so what most people want rises to the top.\n\n- **One idea or one bug per post.** Search first: if it is already here, vote for it and add what is different for you.\n- **Pick a category** (idea, bug or question) when you post.\n- **For a bug**, say which site and page, what you did, what you expected and what happened. A screenshot helps.\n- **For an idea**, say what you are trying to do. The problem matters more than the exact solution.\n\nStaff mark each post as **planned**, **in progress**, **done** or **declined**, and the status shows on the post. Bigger pieces of work go on the [Roadmap](/s/roadmap), where every item has its own thread.\n\nSecurity problems should not be posted in public. Open a private ticket at [OpenVibe.Help](https://openvibe.help) instead."
+    },
+    {
+      "key": "show-what-you-made",
+      "space": "showcase",
+      "title": "Show what you made",
+      "body": "This forum is for your work: streams, clips, art, music, code, tools, game worlds and sites. Things made with OpenVibe and things made elsewhere are both welcome.\n\nA good showcase post:\n\n- **Links to it**: your channel on [OpenVibe.Live](https://openvibe.live), a world on [OpenVibe.Games](https://openvibe.games/worlds), a site you published on [OpenVibe.Space](https://openvibe.space), or anywhere else.\n- **Says what it is and how you made it.** People like to know the tools and the story.\n- **Credits the people and sources you used.**\n\nPosts are ranked by votes. Only post work that is yours or that you have permission to share."
+    },
+    {
+      "key": "off-topic-house-rules",
+      "space": "off-topic",
+      "title": "Off-topic: house rules",
+      "body": "Anything that is not about OpenVibe goes here: games, music, what you are watching, your day.\n\nThe same few rules apply as everywhere on OpenVibe:\n\n- Be kind. Argue with ideas, not with people.\n- No spam, ads or link farming.\n- No threats, and nobody's private information.\n- Nothing illegal, nothing you do not have the rights to, and mark adult content as adult.\n\nIf a post breaks them, tell staff with a private ticket at [OpenVibe.Help](https://openvibe.help). The full rules are in the [terms](/terms)."
+    }
+  ]
+}
