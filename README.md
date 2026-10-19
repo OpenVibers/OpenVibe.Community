@@ -378,6 +378,9 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   only staff start items. The Roadmap space follows [`docs/roadmap/public.json`](docs/roadmap/public.json):
   every boot syncs it (`server/forum/roadmap.js`), one thread per item, matched by key. A changed summary
   is an edit of the item's opening post, so the history stays, and replies and votes stay with the item.
+- **Starter threads.** Every forum but the Roadmap opens with a pinned guide by OpenVibe (welcome, how to get
+  help, how feedback works, showcase, off-topic rules) from [`docs/forum/starters.json`](docs/forum/starters.json),
+  synced at boot by `server/forum/starters.js` the same way. Staff unpinning, locking or deleting one sticks.
 
 - **Images on posts.** Up to 4 per thread or reply: PNG, JPEG, GIF or WebP by content, 8 MB each, with
   metadata stripped. Each is stored in OpenVibe.Media's Object API as a public `med_` object owned by the

@@ -25,6 +25,11 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
         const r = await require('./forum/roadmap').syncFromFile(require('./db').getDb());
         if (r && (r.created || r.updated)) console.log(`[Roadmap] ${r.created} item(s) added, ${r.updated} updated`);
     } catch (err) { console.warn('[Roadmap] not synced:', err.message); }
+    // Each forum's pinned starter thread follows docs/forum/starters.json (server/forum/starters.js).
+    try {
+        const r = await require('./forum/starters').syncFromFile(require('./db').getDb());
+        if (r && (r.created || r.updated)) console.log(`[Starters] ${r.created} thread(s) added, ${r.updated} updated`);
+    } catch (err) { console.warn('[Starters] not synced:', err.message); }
     const server = app.listen(config.port, config.host, () => {
         console.log(`[Community] ${config.nodeEnv} on http://${config.host}:${config.port} → ${config.baseUrl}`);
         console.log(`[Community] pastes: this site is the authority (PostgreSQL), identity via ${config.networkUrl}`);
