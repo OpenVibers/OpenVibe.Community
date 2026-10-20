@@ -3,7 +3,8 @@
 /**
  * /pulse — what is happening across the OpenVibe network, newest first, from Pulse
  * (server/pulse). Filtering by origin and paging ("Older") are links, so it works without
- * JavaScript. AI items carry an AI label and no person; system items name no one either.
+ * JavaScript. AI items carry an AI label and no person; system items name no one either. A filter is offered only for an
+ * origin that has items (or the one asked for), and an empty page is not indexed: "Nothing here yet" is not a page.
  */
 const ld = require('./jsonld');
 const { renderPage } = require('./layout');
@@ -38,8 +39,9 @@ function itemHtml(it) {
   </li>`;
 }
 
-function pulsePage({ items, origin = '', after = null, nextCursor = null }) {
-    const tabs = FILTERS.map(([id, label]) => `<a class="tab${id === origin ? ' active' : ''}" href="${esc(href(id))}"${id === origin ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+function pulsePage({ items, origin = '', after = null, nextCursor = null, origins = null }) {
+    const offered = FILTERS.filter(([id]) => !id || id === origin || !origins || origins.includes(id));
+    const tabs = offered.map(([id, label]) => `<a class="tab${id === origin ? ' active' : ''}" href="${esc(href(id))}"${id === origin ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     const body = `
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Pulse</span></nav>
@@ -56,8 +58,8 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null }) {
         title: `Pulse${origin ? ` — ${FILTERS.find(([id]) => id === origin)[1]}` : ''}`,
         description: 'The pulse of the OpenVibe network: new public pastes, threads, replies and what the other OpenVibe sites share, with AI-made items labelled as AI.',
         canonicalPath: href(origin, after),
-        // The first page of each filter is worth indexing; deep cursors are not.
-        robots: after ? 'noindex,follow' : 'index,follow',
+        // The first page of each filter is worth indexing; deep cursors and empty pages are not.
+        robots: after || !items.length ? 'noindex,follow' : 'index,follow',
         active: 'pulse',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pulse', url: '/pulse' }])],

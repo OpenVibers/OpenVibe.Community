@@ -31,6 +31,7 @@ const serviceNameOf = (sub) => String(sub || '').replace(/^(svc|app|mod):/, '');
 function createPulse({ db, network = null, config = {} } = {}) {
     const authors = createAuthors({ db, network });
     const base = (config.baseUrl || '').replace(/\/$/, '');
+    let originsCache = { at: 0, list: null };
 
     /** Record one of Community's own items; never lets a Pulse problem fail the write that caused it. */
     async function recordLocal(type, id, { title, path, actor = null, origin = 'user', at = null }) {
@@ -129,6 +130,17 @@ function createPulse({ db, network = null, config = {} } = {}) {
         async retract(v, service, type, id) {
             if (service !== serviceNameOf(v.service)) fail(403, 'pulse.foreign_ref', 'A service retracts only its own items');
             return { removed: await store.removeItem(db, service, type, id) };
+        },
+
+        /** The origins that have at least one listable item (the page offers a filter only for those), cached a minute. */
+        async origins() {
+            if (originsCache.list && Date.now() - originsCache.at < 60_000) return originsCache.list;
+            const list = [];
+            for (const origin of ORIGINS) {
+                if ((await store.listItems(db, { origin, limit: 1 })).rows.length) list.push(origin);
+            }
+            originsCache = { at: Date.now(), list };
+            return list;
         },
 
         /** GET /api/v1/pulse ?origin=user|ai|system&after=<cursor>&limit= → { items, next_cursor } */
