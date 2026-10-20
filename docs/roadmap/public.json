@@ -53,13 +53,19 @@
       "summary": "Servers with text and voice channels, roles and invite links; pictures in rooms; and AI members in group chats, each thinking with OpenVibe's AI or your own model, able to search OpenVibe and use small tools. Opened on 16 October 2026." },
     { "key": "food-household", "category": "features", "status": "done", "title": "A household on OpenVibe.Food",
       "summary": "A shared pantry and meal plan for a household, filled by barcode, photo or receipt, and a household chat with an AI member that knows what is in the cupboard. Opened on 16 October 2026." },
-    { "key": "arena-alert", "category": "features", "status": "done", "title": "ARENA ALERT on OpenVibe.Live",
-      "summary": "The Arena is a drama desk: rage quits, viewer crashes, meltdowns, comebacks, records and beefs from every stream, each story stating what was measured, with reactions, the Lolcow Index and the Clout Rankings. Streamers can keep themselves out. Opened on 16 October 2026; since 18 October a story names someone only when their whole name was said, and an AI headline never adds an accusation." },
+    { "key": "arena-alert", "category": "features", "status": "done", "title": "The Rundown on OpenVibe.Live",
+      "summary": "What streamers talked about, written up from their own speech at [openvibe.live/rundown](https://openvibe.live/rundown): the topics, each streamer's take in their own words with a link to the moment, every stream as an episode with a recap and chapters, and crossovers when streamers name each other. It replaced the Arena on 19 October 2026: no beefs, ratings or rankings, and streamers can keep themselves out." },
     { "key": "better-transcripts", "category": "platform", "status": "done", "title": "Sharper live transcripts",
       "summary": "Live streams, recordings and clips are transcribed with NVIDIA's Parakeet model on OpenVibe's own server: more of what was said, punctuated, as fast as before. Japanese and other languages keep the multilingual model. Since 16 October 2026." },
     { "key": "game-services", "category": "features", "status": "done", "title": "Worlds and game services",
       "summary": "Build a world in the map editor and publish it for anyone to join from a browser, and give any game leaderboards, achievements and cloud saves through OpenVibe.Play and the SDK." },
     { "key": "quests-everywhere", "category": "features", "status": "done", "title": "Quests on every site",
-      "summary": "Quests across OpenVibe with badges and OpenCoins, Live's go-live setup as a quest series, and quests developers define for their own apps through the SDK." }
+      "summary": "Quests across OpenVibe with badges and OpenCoins, Live's go-live setup as a quest series, and quests developers define for their own apps through the SDK." },
+    { "key": "sdk-everywhere", "category": "platform", "status": "in_progress", "title": "Every product in the SDK",
+      "summary": "Anything an OpenVibe site does, an app or a bot should be able to do through [openvibe-sdk](https://github.com/OpenVibers/OpenVibe.SDK). On 20 October 2026 Live (who is live, channels, going live, WHIP), the network-wide Inventory and Tips joined Chat, AI, Media, Play, Quest, VIP and the rest. The products still without a module come next." },
+    { "key": "found-in-search", "category": "platform", "status": "in_progress", "title": "Found in search, and better link previews",
+      "summary": "Recordings and clips on [openvibe.video](https://openvibe.video) have video sitemaps and a description of their own, and near-empty test recordings stay out of search. Every site's sitemap lists only pages search engines should index. Shared links get the network's preview cards, The Rundown has its own, and a live channel's link shows the stream as it is now." },
+    { "key": "scraplandia-first-hour", "category": "features", "status": "in_progress", "title": "Scraplandia's first hour",
+      "summary": "Scraplandia on [openvibe.games](https://openvibe.games) should be worth playing from the first minute. So far: a smoother world that loads faster, townsfolk, sounds, a first-steps checklist with a waypoint from the first branches to the first haul, and a layout for phones. Next: more to do between your first tools and your first haul." }
   ]
 }
