@@ -457,7 +457,7 @@ async function createApp(opts = {}) {
         let out;
         try { out = await pulse.list({ origin, after: req.query.after }); }
         catch (err) { if (err instanceof v1.ApiError) return res.redirect(302, origin ? `/pulse?origin=${origin}` : '/pulse'); throw err; }
-        html(res, pulsePage({ items: out.items, origin, after: req.query.after || null, nextCursor: out.next_cursor }));
+        html(res, pulsePage({ items: out.items, origin, after: req.query.after || null, nextCursor: out.next_cursor, origins: await pulse.origins() }));
     }));
 
     app.get('/my', withUser, wrap(async (req, res) => {

@@ -174,6 +174,20 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(bad.status, 302);
     });
 
+    await check('/pulse offers a filter only for an origin with items, and an empty page is noindex', async () => {
+        const { pulsePage } = require('../server/render/pulse');
+        const item = { id: 1, source: { service: 'live', type: 'clip', id: 'x' }, title: 'A clip', url: 'https://openvibe.live/c/1', origin: 'user', actor: null, occurred_at: '2026-10-20T00:00:00.000Z' };
+        const people = pulsePage({ items: [item], origins: ['user'] });
+        assert.ok(people.includes('href="/pulse?origin=user"') && !people.includes('href="/pulse?origin=ai"') && !people.includes('href="/pulse?origin=system"'), 'no AI or System tab when neither has items');
+        assert.ok(people.includes('<meta name="robots" content="index,follow">'));
+        const empty = pulsePage({ items: [], origin: 'system', origins: ['user'] });
+        assert.ok(empty.includes('aria-current="page">System</a>'), 'the filter asked for keeps its tab');
+        assert.ok(empty.includes('Nothing here yet.') && empty.includes('<meta name="robots" content="noindex,follow">'));
+        assert.ok(pulsePage({ items: [item] }).includes('href="/pulse?origin=system"'), 'without the origins list every filter shows');
+        const r = await t.get('/pulse');
+        assert.ok(r.text.includes('href="/pulse?origin=system"'), 'system items exist here, so the tab shows');
+    });
+
     await t.close();
     done();
 })();
