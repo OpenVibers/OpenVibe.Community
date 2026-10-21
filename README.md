@@ -51,8 +51,11 @@ authority (there is no switch any more — `live-client.js` and the `/api/pastes
 see [Community as the paste authority](#community-as-the-paste-authority). The import brought
 889 + 2 pastes, 60 comments and 48 likes; 5 rows (1 paste, 4 comments, `ambiguous_owner`) wait in
 `import_hold`. Live and Tools forward paste writes here, and Media answers old paste URLs with a 301 to
-this site. Comments, the forum and Pulse are deployed but hold almost nothing yet (10 wiki comment
-threads, 0 forum threads), and the Discord relay is off. A restore drill passed on 2026-09-23.
+this site. On 2026-10-21 production held 1,193 pastes; 4,508 comment threads under other products' pages
+(Deals offers, Live recordings and clips, Host plans, Blog posts, pastes and wiki pages) with about 80 comments
+between them, most of them on pastes; 39 forum threads, all opened by the system (34 public-roadmap items and 5
+discussions), none by a person yet; and 300 Pulse items. The Discord relay is off. A restore drill passed on
+2026-09-23.
 
 | Concern | Where it lives | How Community reaches it |
 | --- | --- | --- |
