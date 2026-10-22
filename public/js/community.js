@@ -96,7 +96,7 @@
           results.classList.remove('loading');
         }).catch(function () { location.href = url; });
       }
-      browseForm.addEventListener('submit', function (e) { e.preventDefault(); var qs = new URLSearchParams(new FormData(browseForm)); ['sort', 'lang', 'q'].forEach(function (k) { if (!qs.get(k) || (k === 'sort' && qs.get(k) === 'new')) qs.delete(k); }); var s = qs.toString(); load('/pastes' + (s ? '?' + s : ''), true); }, { signal });
+      browseForm.addEventListener('submit', function (e) { e.preventDefault(); var qs = new URLSearchParams(new FormData(browseForm)); ['sort', 'lang', 'q', 'from'].forEach(function (k) { if (!qs.get(k) || (k === 'sort' && qs.get(k) === 'new') || (k === 'from' && qs.get(k) === 'people')) qs.delete(k); }); var s = qs.toString(); load('/pastes' + (s ? '?' + s : ''), true); }, { signal });
       $$('select', browseForm).forEach(function (sel) { sel.addEventListener('change', function () { browseForm.requestSubmit ? browseForm.requestSubmit() : browseForm.dispatchEvent(new Event('submit', { cancelable: true })); }, { signal }); });
       results.addEventListener('click', function (e) { var a = e.target.closest ? e.target.closest('.pager a') : null; if (!a) return; e.preventDefault(); load(a.getAttribute('href'), true); window.scrollTo({ top: results.offsetTop - 80, behavior: 'smooth' }); }, { signal });
       window.addEventListener('popstate', function (e) { if (e.state && e.state.browse) load(e.state.browse, false); else if (location.pathname === '/pastes') load(location.pathname + location.search, false); }, { signal });

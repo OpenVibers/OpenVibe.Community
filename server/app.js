@@ -326,8 +326,9 @@ async function createApp(opts = {}) {
     }
 
     app.get('/', withUser, wrap(async (req, res) => {
-        const [latest, trending, languages, extras] = await Promise.all([catalog.latest(12), catalog.trending(8), catalog.languages(), readHomeExtras()]);
-        html(res, pages.homePage({ latest, trending, languages, user: req.user, ...extras }));
+        // People's pastes lead; OpenVibe.AI's moment pastes from streams have their own shelf.
+        const [latest, trending, fromStreams, languages, extras] = await Promise.all([catalog.latest(12, { from: 'people' }), catalog.trending(8, { from: 'people' }), catalog.latest(8, { from: 'streams' }), catalog.languages(), readHomeExtras()]);
+        html(res, pages.homePage({ latest, trending, fromStreams, languages, user: req.user, ...extras }));
     }));
 
     app.get('/updates', (req, res) => html(res, pages.updatesPage()));

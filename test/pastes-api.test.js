@@ -115,6 +115,8 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(bad.status, 400);
         const onlyAi = (await call('/api/pastes?origin=ai')).json();
         assert.ok(onlyAi.pastes.length >= 1 && onlyAi.pastes.every((x) => x.origin === 'ai'));
+        const people = (await call('/api/pastes?origin=people&limit=200')).json();
+        assert.ok(people.pastes.length >= 1 && people.pastes.every((x) => x.origin !== 'ai'), 'origin=people: every paste but the AI ones');
         const browserMeta = await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'meta?', metadata: { ai_moment: true } } });
         assert.strictEqual(browserMeta.json().paste.metadata, null, 'browsers cannot set metadata');
     });
