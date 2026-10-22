@@ -41,7 +41,8 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     r = await post(evt({ visibility: 'internal', subject: { type: 'stream', id: '9', revision: 1 } }));
     assert.strictEqual(r.json.outcome, 'ignored:not_public');
     r = await post(evt({ event_type: 'blog.post.published', source: 'blog', subject: { type: 'post', id: 'pst_1' }, actor: { type: 'service', id: 'blog' },
-        payload: { blog: 'openvibe', canonical_url: 'https://openvibe.blog/@openvibe/hello', publication_state: 'published', visibility: 'public', indexability: { decision: 'index', reasons: [] } } }));
+        // The contract's shape (blog.post.published v1): the blog is { id, handle }; the title names the handle.
+        payload: { blog: { id: 'blg_01M00000000000000000000000', handle: 'openvibe' }, canonical_url: 'https://openvibe.blog/@openvibe/hello', publication_state: 'published', visibility: 'public', indexability: { decision: 'index', reasons: [] } } }));
     assert.strictEqual(r.json.outcome, 'pulse:created');
     assert.strictEqual((await items())[1].title, 'New post on the openvibe blog');
     assert.strictEqual((await items())[1].origin, 'system', 'no person when a service published it');

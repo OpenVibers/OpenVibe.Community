@@ -10,13 +10,14 @@ const { spawn } = require('child_process');
 const { measure, check, format } = require('openvibe-shared/perf-budget');
 
 const BUDGETS = {
-    htmlRawKB: 26,   // measured 22.0 (fresh database; the showcase home)
-    htmlBrotliKB: 6.5,   // 5.7
+    htmlRawKB: 35,   // measured 31.7 on 10-22: the home gained the forum's places, the roadmap, Pulse, real counts and six
+                     // questions with their FAQPage JSON-LD; was 26 at 22.0
+    htmlBrotliKB: 8.1,   // 7.3 on 10-22 (the same shelves); was 6.5 at 5.7
     jsFiles: 7,   // 6: openvibe-shared/shell adds web-runtime.js (raised with the shell, 2026-10-04)
     jsRawKB: 265,   // 251.3 (was 208.8 before the shell's web-runtime.js)
     jsBrotliKB: 64,   // 59.9 (was 48.9)
     cssFiles: 3,   // 2
-    cssRawKB: 40,   // 36.5: community.css + the network's cached showcase.css (raised with the showcase home)
+    cssRawKB: 43,   // 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
     cssBrotliKB: 8.5,   // 7.7
     externalFiles: 2,   // 1
 };

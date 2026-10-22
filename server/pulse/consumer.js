@@ -68,7 +68,9 @@ function itemFor(event) {
     if (!publicIndexable(p)) return 'ignored:not_public';
     const url = httpsUrl(p.canonical_url);
     if (!url || !subjectId) return 'ignored:payload';
-    const title = k[0] === 'blog' ? `New post on the ${clean(p.blog, 60) || 'OpenVibe'} blog`
+    // blog.post.published names its blog as { id, handle } (contracts payload v1); a plain string is still read.
+    const blogName = clean(p.blog && typeof p.blog === 'object' ? p.blog.handle : p.blog, 60);
+    const title = k[0] === 'blog' ? (blogName ? `New post on the ${blogName} blog` : 'New post on an OpenVibe blog')
         : k[0] === 'wiki' ? `Wiki: ${clean(p.space, 40)} / ${clean(p.slug, 60)}`
             : `News: ${clean(p.topic, 60) || 'a new story'}`;
     const actor = event.actor && event.actor.type === 'user' ? subjectOf(event.actor) : null;
