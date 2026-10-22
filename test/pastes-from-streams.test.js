@@ -9,8 +9,9 @@ const pages = require('../server/render/pages');
 
 const at = (i) => new Date(Date.UTC(2026, 9, 1) + i * 60_000).toISOString();
 const rows = [
-    { slug: 'ai-1', origin: 'ai', type: 'paste', title: 'Moment one', visibility: 'public', views: 500, created_at: at(30) },
-    { slug: 'ai-2', origin: 'ai', type: 'paste', title: 'Moment two', visibility: 'public', views: 400, created_at: at(31) },
+    // The moment pastes are screenshots with a caption, as in production (892 of 892 on 2026-10-22).
+    { slug: 'ai-1', origin: 'ai', type: 'screenshot', title: 'Moment one', visibility: 'public', views: 500, created_at: at(30) },
+    { slug: 'ai-2', origin: 'ai', type: 'screenshot', title: 'Moment two', visibility: 'public', views: 400, created_at: at(31) },
     { slug: 'me-1', origin: 'user', type: 'paste', title: 'My script', visibility: 'public', views: 5, created_at: at(10) },
     { slug: 'imp-1', origin: 'imported', type: 'paste', title: 'Imported log', visibility: 'public', views: 9, created_at: at(11) },
 ].sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -39,8 +40,9 @@ const check = async (name, fn) => { catalog.reset(); await fn(); passed++; conso
     await check('/pastes lists people\'s by default, and from=streams or from=all on request, in the store and the window', async () => {
         const people = await catalog.browse({});
         assert.deepStrictEqual([people.from, people.pastes.map((p) => p.slug)], ['people', ['imp-1', 'me-1']]);
-        assert.deepStrictEqual((await catalog.browse({ from: 'streams' })).pastes.map((p) => p.slug), ['ai-2', 'ai-1']);
-        assert.strictEqual((await catalog.browse({ from: 'all' })).total, 4);
+        const streams = await catalog.browse({ from: 'streams' });
+        assert.deepStrictEqual([streams.type, streams.pastes.map((p) => p.slug)], ['all', ['ai-2', 'ai-1']], 'from streams lists every type: the moments are screenshots');
+        assert.strictEqual((await catalog.browse({ from: 'all', type: 'all' })).total, 4);
         assert.deepStrictEqual((await catalog.browse({ from: 'streams', sort: 'views' })).pastes.map((p) => p.slug), ['ai-1', 'ai-2'], 'the windowed path keeps the origin too');
         assert.ok(asked.includes('people') && asked.includes('ai'));
     });
@@ -54,7 +56,7 @@ const check = async (name, fn) => { catalog.reset(); await fn(); passed++; conso
         const page = pages.browsePage({ ...out, pages: 3 }, []);
         assert.match(page, /from streams, written up by OpenVibe\.AI/);
         assert.match(page, /<option value="streams" selected>/);
-        assert.match(page, /href="\/pastes\?from=streams&amp;page=2"/, 'the pager keeps whose pastes');
+        assert.match(page, /href="\/pastes\?type=all&amp;from=streams&amp;page=2"/, 'the pager keeps whose pastes');
         assert.match(pages.browsePage({ ...(await catalog.browse({})), pages: 1 }, []), /pastes by people/);
     });
 

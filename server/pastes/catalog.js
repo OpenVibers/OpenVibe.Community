@@ -82,10 +82,11 @@ function normalizeBrowseQuery(query = {}) {
     const sort = query.sort === 'views' ? 'views' : 'new';
     const lang = String(query.lang || '').trim().toLowerCase().replace(/[^a-z0-9+#.-]/g, '').slice(0, 32);
     const page = Math.max(1, Math.min(parseInt(query.page, 10) || 1, 500));
-    // What to list: text pastes (default), images (screenshots) or all of them.
-    const type = ['all', 'pastes', 'images'].includes(query.type) ? query.type : (lang === 'image' ? 'images' : 'pastes');
     // Whose: people's pastes (the default), the moment pastes from streams, or both.
     const from = ['people', 'streams', 'all'].includes(query.from) ? query.from : 'people';
+    // What to list: text pastes (people's default), images (screenshots) or all of them. The moment pastes from streams
+    // are screenshots with a caption, so their default is all.
+    const type = ['all', 'pastes', 'images'].includes(query.type) ? query.type : (lang === 'image' ? 'images' : from === 'streams' ? 'all' : 'pastes');
     return { q, sort, lang: type === 'images' && lang === 'image' ? '' : lang, page, type, from };
 }
 const _ofType = (type) => (p) => (type === 'all' ? true : type === 'images' ? p.type === 'screenshot' : p.type !== 'screenshot');
