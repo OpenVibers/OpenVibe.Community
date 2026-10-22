@@ -80,6 +80,7 @@ const looks = require('../server/pastes/no-looks');
         assert.strictEqual(looks.body('A person adjusts their hair.\n\n🔴 Caught live on @x\'s stream'), '🔴 Caught live on @x\'s stream', 'a description that was all looks leaves the footer');
         assert.strictEqual(looks.body('A person adjusts their hair.'), '');
         assert.strictEqual(looks.body("A desk.\n\n▶ Watch this moment on @null's stream: https://openvibe.video/v/9"), 'A desk.\n\n▶ Watch this moment on the stream: https://openvibe.video/v/9');
+        assert.strictEqual(looks.body("A man at a desk.\r\n\r\n▶ Watch this moment on @null's stream: https://openvibe.video/v/9"), 'A person at a desk.\r\n\r\n▶ Watch this moment on the stream: https://openvibe.video/v/9', 'CRLF, as Live writes it');
         assert.strictEqual(looks.cleanRow({ origin: 'ai', title: 'A person adjusts their hair' }).title, 'Untitled');
     });
 
