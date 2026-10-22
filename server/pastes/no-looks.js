@@ -16,7 +16,8 @@
  */
 const { noLooks, noLooksTags } = require('openvibe-sdk/no-looks');
 
-const FOOTER = /(\n\n(?:🔴|▶)[\s\S]*)$/u;
+// Live writes the footer after a blank line, CRLF on every AI moment paste (2026-10-22: all 478 '@null' ones).
+const FOOTER = /(\r?\n\r?\n(?:🔴|▶)[\s\S]*)$/u;
 
 const summary = (s) => (typeof s === 'string' ? noLooks(s).trim() : s);
 
