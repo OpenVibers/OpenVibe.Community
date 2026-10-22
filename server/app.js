@@ -294,9 +294,40 @@ async function createApp(opts = {}) {
     // Every page response below (redirects and error pages too) that sets no policy of its own.
     app.use(cache.applyHtml({ private: true }));
 
+    // The home's other shelves: the forum's public places, the roadmap (in progress first), the network's latest
+    // activity from Pulse (pastes are shown above it already) and real counts. Read at most once a minute; a shelf
+    // that fails or is empty is left out of the page.
+    let homeExtras = { at: 0, value: null };
+    async function readHomeExtras() {
+        if (homeExtras.value && Date.now() - homeExtras.at < 60_000) return homeExtras.value;
+        const quiet = (p, fallback) => Promise.resolve().then(() => p).catch(() => fallback);
+        const [spaces, roadmap, roadmapCounts, activity, counts] = await Promise.all([
+            quiet(require('./forum/store').listSpaces(db, ['public']), []),
+            quiet(db.prepare(`SELECT t.title, t.slug, t.status, t.last_activity_at FROM threads t JOIN spaces s ON s.id = t.space_id
+                WHERE s.slug = 'roadmap' AND s.visibility = 'public' AND t.deleted_at IS NULL AND t.members_only_owner IS NULL
+                ORDER BY (t.status = 'in_progress') DESC, t.last_activity_at DESC, t.id DESC LIMIT 8`).all(), []),
+            quiet(db.prepare(`SELECT t.status, COUNT(*) AS n FROM threads t JOIN spaces s ON s.id = t.space_id
+                WHERE s.slug = 'roadmap' AND t.deleted_at IS NULL GROUP BY t.status`).all(), []),
+            quiet(pulse.list({ limit: 12 }).then((out) => (out.items || []).filter((it) => it.source && it.source.type !== 'paste').slice(0, 6)), []),
+            quiet(db.prepare(`SELECT (SELECT COUNT(*) FROM pastes WHERE deleted_at IS NULL AND visibility = 'public') AS pastes,
+                (SELECT COUNT(*) FROM pulse_items) AS pulse`).get(), {}),
+        ]);
+        const value = {
+            spaces: spaces.filter((sp) => sp.slug !== 'roadmap' && !sp.members_only_owner),
+            roadmap, activity,
+            counts: {
+                pastes: Number(counts.pastes) || 0, pulse: Number(counts.pulse) || 0,
+                shipped: Number((roadmapCounts.find((r) => r.status === 'done') || {}).n) || 0,
+                building: Number((roadmapCounts.find((r) => r.status === 'in_progress') || {}).n) || 0,
+            },
+        };
+        homeExtras = { at: Date.now(), value };
+        return value;
+    }
+
     app.get('/', withUser, wrap(async (req, res) => {
-        const [latest, trending, languages] = await Promise.all([catalog.latest(12), catalog.trending(8), catalog.languages()]);
-        html(res, pages.homePage({ latest, trending, languages, user: req.user }));
+        const [latest, trending, languages, extras] = await Promise.all([catalog.latest(12), catalog.trending(8), catalog.languages(), readHomeExtras()]);
+        html(res, pages.homePage({ latest, trending, languages, user: req.user, ...extras }));
     }));
 
     app.get('/updates', (req, res) => html(res, pages.updatesPage()));

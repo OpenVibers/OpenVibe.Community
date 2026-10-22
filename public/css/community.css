@@ -336,3 +336,22 @@ button.rx:hover { border-color: var(--accent); }
 
 /* A link inside running text is underlined: colour alone did not tell it apart (WCAG 1.4.1). */
 .lede a, .muted a, p a:not(.btn) { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Home shelves (server/render/pages.js homePage): real counts, the forum's places, the roadmap, Pulse, questions */
+.cm-stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; padding: 0; }
+.cm-stats > div { display: flex; flex-direction: column-reverse; min-width: 0; padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.cm-stats dt { margin: 0; font-size: .8rem; color: var(--text-secondary); }
+.cm-stats dd { margin: 0; font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.cm-shelf { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); }
+.cm-tile { display: grid; gap: 4px; height: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text-primary); }
+.cm-tile:hover, .cm-tile:focus-visible { border-color: var(--accent); text-decoration: none; }
+.cm-tile span { font-size: .9rem; color: var(--text-secondary); }
+.cm-tile small { font-size: .8rem; color: var(--text-secondary); }
+.cm-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.cm-list li { padding: 10px 14px; overflow-wrap: anywhere; }
+.cm-list li + li { border-top: 1px solid var(--border); }
+.cm-faq { display: grid; gap: 8px; max-width: 860px; }
+.cm-faq details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.cm-faq summary { cursor: pointer; padding: 12px 16px; font-weight: 700; }
+.cm-faq details[open] summary { border-bottom: 1px solid var(--border); }
+.cm-faq p { margin: 0; padding: 12px 16px 14px; color: var(--text-secondary); line-height: 1.6; }

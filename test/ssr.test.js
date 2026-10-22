@@ -23,7 +23,7 @@ const { boot, check, done } = require('./helpers/app');
         const r = await t.get('/');
         assert.strictEqual(r.status, 200);
         has(r.text, '<html lang="en"');
-        has(r.text, '<title>OpenVibe.Community — the people of OpenVibe</title>');
+        has(r.text, '<title>OpenVibe.Community: pastes, forums and the OpenVibe roadmap</title>');
         has(r.text, '<link rel="canonical" href="https://openvibe.community/">');
         has(r.text, '<meta property="og:type" content="website">');
         has(r.text, '<meta name="twitter:card" content="summary">');
@@ -53,6 +53,14 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(cfg.navbar.loginUrl, '/auth/login?next={path}', 'sign-in returns to the current page (boost moves between pages)');
         assert.strictEqual(cfg.footer.mount, '#ov-footer');
         assert.strictEqual(cfg.footer.variant, 'full');
+        // The home's other shelves: the forum's places and the roadmap (both seeded at boot), and questions whose
+        // FAQPage JSON-LD is exactly what the page shows.
+        has(r.text, 'id="h-forum"');
+        has(r.text, 'href="/s/general"');
+        assert.ok(/<dt>public pastes<\/dt><dd>\d+<\/dd>/.test(r.text), 'the real count of public pastes');
+        const faq = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].flatMap((m) => [].concat(JSON.parse(m[1]))).find((x) => x['@type'] === 'FAQPage');
+        const shown = [...r.text.matchAll(/<summary>([^<]*)<\/summary>/g)].map((m) => m[1].replace(/&#39;/g, "'"));
+        assert.deepStrictEqual(faq.mainEntity.map((q) => q.name), shown, 'every question in the FAQPage is on the page');
         // Verbiage: never "free"/"no cost".
         assert.ok(!/\bfree\b(?! speech)/i.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'no "free" claims outside "free speech"');
     });
@@ -62,7 +70,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(r.text.startsWith('<!doctype html>'));
         const head = r.text.split('</head>')[0];
         assert.strictEqual((head.match(/<title>/g) || []).length, 1, 'one title');
-        has(head, '<title>OpenVibe.Community — the people of OpenVibe</title>');
+        has(head, '<title>OpenVibe.Community: pastes, forums and the OpenVibe roadmap</title>');
         assert.strictEqual((head.match(/<link rel="canonical" href="https:\/\/openvibe\.community\/">/g) || []).length, 1, 'one canonical');
         has(head, '<meta name="robots" content="index,follow');
         has(head, '<script type="application/ld+json">');
