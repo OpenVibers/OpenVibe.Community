@@ -21,42 +21,41 @@ const WINDOW = 200;             // page cap for one window query
 const LOCAL_TTL_MS = 2000;
 const PER_PAGE = 24;
 
-let _recent = { at: 0, promise: null, pastes: [] };
-const _byType = new Map();      // 'paste' | 'screenshot' → { at, promise, pastes }
+// One cached window per (type, from): type 'paste' | 'screenshot' | null (both), from 'people' | 'streams' | 'all'.
+const _windows = new Map();     // key → { at, promise, pastes }
+// Where a paste comes from: people (written or imported by someone) or streams (OpenVibe.AI's moment pastes from Live).
+const FROM = { people: 'people', streams: 'ai', all: undefined };
 
 function _textOnlyPublic(rows) {
     return (rows || []).filter((p) => p && p.slug && (p.visibility === 'public' || p.visibility == null));
 }
 
-/** The latest public pastes (cached). Never throws — an unavailable store yields the stale list or []. */
-async function recent() {
+/** The latest public pastes of one type and origin (cached). Never throws: an unavailable store yields the stale list or []. */
+async function windowOf({ type = null, from = 'all' } = {}) {
+    const key = `${type || 'any'}:${from}`;
     const now = Date.now();
-    if (_recent.promise) return _recent.promise;
-    if (now - _recent.at < LOCAL_TTL_MS) return _recent.pastes;
-    _recent.promise = source.listPastes({ limit: WINDOW, offset: 0 })
-        .then((out) => { _recent = { at: Date.now(), promise: null, pastes: _textOnlyPublic(out && out.pastes) }; return _recent.pastes; })
-        .catch((err) => { console.warn('[Catalog] recent pastes unavailable:', err.message); _recent.promise = null; _recent.at = Date.now() - LOCAL_TTL_MS + 5000; return _recent.pastes; });
-    return _recent.promise;
-}
-
-/** The latest public pastes of one type, 'paste' (text) or 'screenshot' (cached like recent()). Never throws. */
-async function recentOf(type) {
-    const now = Date.now();
-    const cur = _byType.get(type) || { at: 0, promise: null, pastes: [] };
+    const cur = _windows.get(key) || { at: 0, promise: null, pastes: [] };
     if (cur.promise) return cur.promise;
     if (now - cur.at < LOCAL_TTL_MS) return cur.pastes;
-    cur.promise = source.listPastes({ limit: WINDOW, offset: 0, type })
-        .then((out) => { _byType.set(type, { at: Date.now(), promise: null, pastes: _textOnlyPublic(out && out.pastes) }); return _byType.get(type).pastes; })
-        .catch((err) => { console.warn(`[Catalog] recent ${type}s unavailable:`, err.message); _byType.set(type, { at: Date.now() - LOCAL_TTL_MS + 5000, promise: null, pastes: cur.pastes }); return cur.pastes; });
-    _byType.set(type, cur);
+    const query = { limit: WINDOW, offset: 0, ...(type ? { type } : {}), ...(FROM[from] ? { origin: FROM[from] } : {}) };
+    cur.promise = source.listPastes(query)
+        .then((out) => { _windows.set(key, { at: Date.now(), promise: null, pastes: _textOnlyPublic(out && out.pastes) }); return _windows.get(key).pastes; })
+        .catch((err) => { console.warn(`[Catalog] recent pastes (${key}) unavailable:`, err.message); _windows.set(key, { at: Date.now() - LOCAL_TTL_MS + 5000, promise: null, pastes: cur.pastes }); return cur.pastes; });
+    _windows.set(key, cur);
     return cur.promise;
 }
+
+/** The latest public pastes, every type and origin (cached). Never throws. */
+const recent = () => windowOf();
+/** The latest public pastes of one type, 'paste' (text) or 'screenshot' (cached like recent()). Never throws. */
+const recentOf = (type) => windowOf({ type });
 
 function byViews(a, b) { return (b.views || 0) - (a.views || 0) || (b.likes || 0) - (a.likes || 0) || String(b.created_at).localeCompare(String(a.created_at)); }
 function byNewest(a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); }
 
-async function latest(n = 12) { return (await recent()).slice().sort(byNewest).slice(0, n); }
-async function trending(n = 8) { return (await recent()).slice().sort(byViews).slice(0, n); }
+const fromOf = (v) => (Object.prototype.hasOwnProperty.call(FROM, v) ? v : 'all');
+async function latest(n = 12, { from = 'all' } = {}) { return (await windowOf({ from: fromOf(from) })).slice().sort(byNewest).slice(0, n); }
+async function trending(n = 8, { from = 'all' } = {}) { return (await windowOf({ from: fromOf(from) })).slice().sort(byViews).slice(0, n); }
 
 /** Pastes in the same language first, then the newest, never the paste itself. */
 async function related(paste, n = 6) {
@@ -85,7 +84,9 @@ function normalizeBrowseQuery(query = {}) {
     const page = Math.max(1, Math.min(parseInt(query.page, 10) || 1, 500));
     // What to list: text pastes (default), images (screenshots) or all of them.
     const type = ['all', 'pastes', 'images'].includes(query.type) ? query.type : (lang === 'image' ? 'images' : 'pastes');
-    return { q, sort, lang: type === 'images' && lang === 'image' ? '' : lang, page, type };
+    // Whose: people's pastes (the default), the moment pastes from streams, or both.
+    const from = ['people', 'streams', 'all'].includes(query.from) ? query.from : 'people';
+    return { q, sort, lang: type === 'images' && lang === 'image' ? '' : lang, page, type, from };
 }
 const _ofType = (type) => (p) => (type === 'all' ? true : type === 'images' ? p.type === 'screenshot' : p.type !== 'screenshot');
 
@@ -95,24 +96,25 @@ const _ofType = (type) => (p) => (type === 'all' ? true : type === 'images' ? p.
  * sort and the language filter are answered from the recent window.
  */
 async function browse(query = {}, ctx = {}) {
-    const { q, sort, lang, page, type } = normalizeBrowseQuery(query);
+    const { q, sort, lang, page, type, from } = normalizeBrowseQuery(query);
+    const origin = FROM[from] ? { origin: FROM[from] } : {};
     const offset = (page - 1) * PER_PAGE;
     let pastes, total, windowed = false;
 
     if (sort === 'new' && !lang && type === 'pastes') {
-        const out = await source.listPastes({ limit: PER_PAGE, offset, search: q || undefined, type: 'paste' }, ctx);
+        const out = await source.listPastes({ limit: PER_PAGE, offset, search: q || undefined, type: 'paste', ...origin }, ctx);
         pastes = _textOnlyPublic(out && out.pastes);
         total = Number(out && out.total) || pastes.length;
     } else {
         let rows;
         if (q) {
-            const out = await source.listPastes({ limit: WINDOW, offset: 0, search: q, type: 'paste' }, ctx);
+            const out = await source.listPastes({ limit: WINDOW, offset: 0, search: q, type: 'paste', ...origin }, ctx);
             rows = _textOnlyPublic(out && out.pastes);
         } else if (type === 'all') {
-            const [text, images] = await Promise.all([recentOf('paste'), recentOf('screenshot')]);
+            const [text, images] = await Promise.all([windowOf({ type: 'paste', from }), windowOf({ type: 'screenshot', from })]);
             rows = [...text, ...images];
         } else {
-            rows = await recentOf(type === 'images' ? 'screenshot' : 'paste');
+            rows = await windowOf({ type: type === 'images' ? 'screenshot' : 'paste', from });
         }
         rows = rows.filter(_ofType(type));
         if (lang) rows = rows.filter((p) => (p.language || 'text') === lang);
@@ -122,10 +124,10 @@ async function browse(query = {}, ctx = {}) {
         windowed = true;
     }
     const pages = Math.max(1, Math.ceil(total / PER_PAGE));
-    return { pastes, total, page, pages, perPage: PER_PAGE, q, sort, lang, type, windowed, windowSize: WINDOW };
+    return { pastes, total, page, pages, perPage: PER_PAGE, q, sort, lang, type, from, windowed, windowSize: WINDOW };
 }
 
 /** For tests and a hot reload after a write. */
-function reset() { _recent = { at: 0, promise: null, pastes: [] }; _byType.clear(); }
+function reset() { _windows.clear(); }
 
 module.exports = { recent, recentOf, latest, trending, related, languages, browse, normalizeBrowseQuery, reset, PER_PAGE, WINDOW };

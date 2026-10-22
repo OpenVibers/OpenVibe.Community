@@ -212,6 +212,9 @@ async function listPastes(db, opts = {}) {
     // hit) would give their content away without the read that burns them.
     else if (!opts.includeHidden) where.push("visibility = 'public' AND burn_after_read = 0");
     if (opts.origin === 'user' || opts.origin === 'ai' || opts.origin === 'imported') { where.push('origin = ?'); params.push(opts.origin); }
+    // 'people': everything but AI pastes (what people wrote or imported), the shelves' default since AI moment pastes
+    // outnumbered them three to one (2026-10-22: 890 AI, 307 by people).
+    else if (opts.origin === 'people') where.push("origin <> 'ai'");
     if (opts.ownerSubject !== undefined) { where.push('owner_subject = ?'); params.push(opts.ownerSubject); }
     if (opts.type === 'paste' || opts.type === 'screenshot') { where.push('type = ?'); params.push(opts.type); }
     if (opts.search) {

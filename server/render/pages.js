@@ -88,6 +88,7 @@ function pagerHref(state, page) {
     if (state.sort && state.sort !== 'new') q.set('sort', state.sort);
     if (state.lang) q.set('lang', state.lang);
     if (state.type && state.type !== 'pastes') q.set('type', state.type);
+    if (state.from && state.from !== 'people') q.set('from', state.from);
     if (page > 1) q.set('page', String(page));
     const s = q.toString();
     return `/pastes${s ? `?${s}` : ''}`;
@@ -182,7 +183,7 @@ function homeFaq() {
 </section>`;
 }
 
-function homePage({ latest, trending, languages, user, spaces = [], roadmap = [], activity = [], counts = {} }) {
+function homePage({ latest, trending, fromStreams = [], languages, user, spaces = [], roadmap = [], activity = [], counts = {} }) {
     const body = showcase.hero({
         eyebrow: 'OpenVibe.Community',
         title: 'Share it with a link.', accent: 'Talk about it here.',
@@ -205,6 +206,12 @@ function homePage({ latest, trending, languages, user, spaces = [], roadmap = []
   <div class="section-head"><h2>Most viewed</h2><a class="more" href="/pastes?sort=views">By views <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(trending, 'Nothing trending yet.')}
 </section>
+${fromStreams.length ? `
+<section class="section" id="from-streams">
+  <div class="section-head"><h2>From streams</h2><a class="more" href="/pastes?from=streams">All from streams <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+  <p class="muted">Moments from streams on OpenVibe.Live, written up by OpenVibe.AI, each linking back to the stream.</p>
+  ${cardGrid(fromStreams, '')}
+</section>` : ''}
 ${forumShelf(spaces)}
 ${roadmapShelf(roadmap)}
 ${pulseShelf(activity)}
@@ -266,35 +273,36 @@ function updatesPage() {
 
 // ── Browse ───────────────────────────────────────────────────
 function browsePage(result, languages) {
-    const { pastes, total, page, pages, q, sort, lang, type = 'pastes', windowed, windowSize } = result;
+    const { pastes, total, page, pages, q, sort, lang, type = 'pastes', from = 'people', windowed, windowSize } = result;
     const titleBits = [];
     if (q) titleBits.push(`“${q}”`);
     if (lang) titleBits.push(languageLabel(lang));
     titleBits.push(sort === 'views' ? 'most viewed' : 'newest');
     const title = `Pastes — ${titleBits.join(', ')}${page > 1 ? ` (page ${page})` : ''}`;
-    const canonical = pagerHref({ q, sort, lang, type }, page);
+    const canonical = pagerHref({ q, sort, lang, type, from }, page);
     const opt = (id, label) => `<option value="${esc(id)}"${id === (lang || '') ? ' selected' : ''}>${esc(label)}</option>`;
     const langOptions = [opt('', 'All languages')].concat((languages || []).map((l) => opt(l.language, `${languageLabel(l.language)} (${l.count})`)));
     if (lang && !(languages || []).some((l) => l.language === lang)) langOptions.push(opt(lang, languageLabel(lang)));
 
     const pager = pages > 1 ? `<nav class="pager" aria-label="Pages">
-    ${page > 1 ? `<a rel="prev" href="${esc(pagerHref({ q, sort, lang, type }, page - 1))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newer</a>` : '<span></span>'}
+    ${page > 1 ? `<a rel="prev" href="${esc(pagerHref({ q, sort, lang, type, from }, page - 1))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newer</a>` : '<span></span>'}
     <span class="pager-info">Page ${page} of ${pages}</span>
-    ${page < pages ? `<a rel="next" href="${esc(pagerHref({ q, sort, lang, type }, page + 1))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}
+    ${page < pages ? `<a rel="next" href="${esc(pagerHref({ q, sort, lang, type, from }, page + 1))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}
   </nav>` : '';
 
     const body = `
 <header class="page-head">
   <h1>Pastes</h1>
-  <p class="muted">${num(total)} ${total === 1 ? 'paste' : 'pastes'}${windowed ? ` in the latest ${windowSize}` : ''}${q ? ` matching “${esc(q)}”` : ''}</p>
+  <p class="muted">${num(total)} ${total === 1 ? 'paste' : 'pastes'}${from === 'streams' ? ' from streams, written up by OpenVibe.AI' : from === 'people' ? ' by people' : ''}${windowed ? ` in the latest ${windowSize}` : ''}${q ? ` matching “${esc(q)}”` : ''}</p>
 </header>
 <form class="filters" method="get" action="/pastes" role="search" data-browse>
   <label class="search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" name="q" value="${esc(q)}" placeholder="Search titles and content" aria-label="Search pastes"></label>
+  <label>From <select name="from"><option value="people"${from === 'people' ? ' selected' : ''}>People</option><option value="streams"${from === 'streams' ? ' selected' : ''}>Streams (AI)</option><option value="all"${from === 'all' ? ' selected' : ''}>Everyone</option></select></label>
   <label>Show <select name="type"><option value="pastes"${type === 'pastes' ? ' selected' : ''}>Pastes</option><option value="images"${type === 'images' ? ' selected' : ''}>Images</option><option value="all"${type === 'all' ? ' selected' : ''}>All</option></select></label>
   <label>Sort <select name="sort"><option value="new"${sort === 'new' ? ' selected' : ''}>Newest</option><option value="views"${sort === 'views' ? ' selected' : ''}>Most viewed</option></select></label>
   <label>Language <select name="lang">${langOptions.join('')}</select></label>
   <button class="btn" type="submit">Apply</button>
-  ${(q || lang || sort !== 'new') ? `<a class="btn btn-ghost" href="/pastes">Clear</a>` : ''}
+  ${(q || lang || sort !== 'new' || from !== 'people') ? `<a class="btn btn-ghost" href="/pastes">Clear</a>` : ''}
 </form>
 <section id="results" data-results>
   ${cardGrid(pastes, q ? 'No pastes match that search.' : 'No pastes yet.')}
