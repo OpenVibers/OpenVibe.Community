@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const events = require('../events');
 const store = require('./store');
 const looks = require('./no-looks');
+const spam = require('./spam');
 const commentStore = require('../comments/store');
 const { discussionModerator } = require('../identity/capabilities');
 const { stripImageMetadata } = require('../media/strip-metadata');
@@ -406,7 +407,11 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!content || typeof content !== 'string' || content.trim().length === 0) fail(400, 'Content is required');
             if (content.length > L.maxSizeKb * 1024) fail(400, `Paste too large (max ${L.maxSizeKb} KB)`);
             const metadata = serviceMetadata(v, body);
-            const visibility = visibilityOf(body.visibility, !!v.subject);
+            let visibility = visibilityOf(body.visibility, !!v.subject);
+            // Link spam from someone signed out is kept but unlisted (./spam.js); people with an account and AI pastes are
+            // never checked.
+            const spammy = !v.subject && v.origin !== 'ai' && visibility === 'public' ? spam.linkSpam({ title: body.title, content }) : null;
+            if (spammy && spammy.unlist) visibility = 'unlisted';
             const row = await store.insertPaste(db, {
                 slug: await slugFor(v, body, visibility, truthy(body.burn_after_read)),
                 owner_subject: v.subject || null,
@@ -423,7 +428,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
                 ...aiFields(v, body),
             });
-            return await created(row, { paste: await shapeOne(row, v) });
+            return await created(row, { paste: await shapeOne(row, v), ...(spammy && spammy.unlist ? { unlisted_reason: spammy.reason, notice: spam.NOTICE } : {}) });
         },
 
         /** POST /api/pastes/screenshot (and multipart POST /api/pastes) */
