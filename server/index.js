@@ -35,6 +35,9 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
         console.log(`[Community] pastes: this site is the authority (PostgreSQL), identity via ${config.networkUrl}`);
     });
     server.keepAliveTimeout = 65_000;
+    // Public AI text never describes a person: rows stored before the rule are repaired once listening
+    // (server/pastes/no-looks.js; a boot with nothing to repair only reads).
+    require('./pastes/no-looks').repairStored(require('./db').getDb()).catch((err) => console.warn('[Pastes] AI text repair skipped:', err.message));
     // Request telemetry (openvibe-sdk/service, plan T1): one aggregated sample per route template, method and status
     // class each minute, stored in this service's telemetry_samples table; rows older than 14 days go daily.
     telemetry.init({ service: 'community', sink: createPgTelemetrySink({ db: require('./db').getDb(), log: console }), skipPrefixes: ['/shared'], intervalMs: 60_000 });
