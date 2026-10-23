@@ -14,7 +14,7 @@ const BUDGETS = {
                      // questions with their FAQPage JSON-LD; was 26 at 22.0
     htmlBrotliKB: 8.1,   // 7.3 on 10-22 (the same shelves); was 6.5 at 5.7
     jsFiles: 7,   // 6: openvibe-shared/shell adds web-runtime.js (raised with the shell, 2026-10-04)
-    jsRawKB: 265,   // 251.3 (was 208.8 before the shell's web-runtime.js)
+    jsRawKB: 269,   // 267.5 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 251.3 (was 208.8 before the shell's web-runtime.js)
     jsBrotliKB: 64,   // 59.9 (was 48.9)
     cssFiles: 3,   // 2
     cssRawKB: 43,   // 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
