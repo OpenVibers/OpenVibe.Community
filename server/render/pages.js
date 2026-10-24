@@ -151,7 +151,7 @@ function homeStats(c = {}) {
 
 function forumShelf(spaces) {
     if (!spaces || !spaces.length) return '';
-    return `<section class="section" id="forum" aria-labelledby="h-forum">
+    return `<section class="section home-sec" id="forum" aria-labelledby="h-forum">
   <div class="section-head"><h2 id="h-forum">The forum</h2><a class="more" href="/s">All forums <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   <ul class="cm-shelf" role="list">${spaces.slice(0, 8).map((sp) => `<li><a class="cm-tile" href="/s/${esc(sp.slug)}"><strong>${esc(sp.name)}</strong>${sp.description ? `<span>${esc(ld.clean(sp.description, 140))}</span>` : ''}<small>${num(sp.thread_count)} ${Number(sp.thread_count) === 1 ? 'thread' : 'threads'}${sp.last_activity_at ? ` · active ${esc(timeAgo(sp.last_activity_at))}` : ''}</small></a></li>`).join('')}</ul>
 </section>`;
@@ -159,7 +159,7 @@ function forumShelf(spaces) {
 
 function roadmapShelf(items) {
     if (!items || !items.length) return '';
-    return `<section class="section" id="roadmap" aria-labelledby="h-roadmap">
+    return `<section class="section home-sec" id="roadmap" aria-labelledby="h-roadmap">
   <div class="section-head"><h2 id="h-roadmap">On the roadmap</h2><a class="more" href="/s/roadmap">The whole roadmap <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   <ul class="cm-list" role="list">${items.map((t) => `<li><a href="/s/roadmap/t/${esc(t.slug)}">${esc(t.title)}</a> <span class="badge badge-status status-${esc(t.status || 'open')}">${esc(STATUS_WORDS[t.status] || 'Open')}</span>${t.last_activity_at ? ` <span class="muted small">${timeTag(t.last_activity_at)}</span>` : ''}</li>`).join('')}</ul>
 </section>`;
@@ -167,7 +167,7 @@ function roadmapShelf(items) {
 
 function pulseShelf(items) {
     if (!items || !items.length) return '';
-    return `<section class="section" id="pulse" aria-labelledby="h-pulse">
+    return `<section class="section home-sec" id="pulse" aria-labelledby="h-pulse">
   <div class="section-head"><h2 id="h-pulse">Across OpenVibe</h2><a class="more" href="/pulse">All of Pulse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   <ul class="cm-list" role="list">${items.map((it) => {
         const local = it.source.service === 'community';
@@ -177,7 +177,7 @@ function pulseShelf(items) {
 }
 
 function homeFaq() {
-    return `<section class="section" id="questions" aria-labelledby="h-faq">
+    return `<section class="section home-sec" id="questions" aria-labelledby="h-faq">
   <div class="section-head"><h2 id="h-faq">Questions</h2></div>
   <div class="cm-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>
 </section>`;
@@ -196,18 +196,18 @@ function homePage({ latest, trending, fromStreams = [], languages, user, spaces 
         note: 'Run by the people using it and moderated in the open. Say it, own it.',
         aside: { html: `<pre class="cm-hero-code" aria-label="Paste a file from a terminal"><code>${esc(TERMINAL)}</code></pre>` },
     }) + homeStats(counts) + `
-<section class="section" id="latest">
+<section class="section home-sec" id="latest">
   <div class="section-head"><h2>Latest pastes</h2><a class="more" href="/pastes">All pastes <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(latest, 'No pastes yet — be the first.')}
   ${languages && languages.length ? `<p class="lang-cloud" aria-label="Browse by language">${languages.slice(0, 12).map((l) => `<a href="/pastes?lang=${encodeURIComponent(l.language)}">${esc(languageLabel(l.language))} <small>${l.count}</small></a>`).join(' ')}</p>` : ''}
 </section>
 
-<section class="section" id="trending">
+<section class="section home-sec" id="trending">
   <div class="section-head"><h2>Most viewed</h2><a class="more" href="/pastes?sort=views">By views <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(trending, 'Nothing trending yet.')}
 </section>
 ${fromStreams.length ? `
-<section class="section" id="from-streams">
+<section class="section home-sec" id="from-streams">
   <div class="section-head"><h2>From streams</h2><a class="more" href="/pastes?from=streams">All from streams <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   <p class="muted">Moments from streams on OpenVibe.Live, written up by OpenVibe.AI, each linking back to the stream.</p>
   ${cardGrid(fromStreams, '')}

@@ -59,6 +59,20 @@ const truthy = (v) => v === true || v === 1 || v === '1' || v === 'true' || v ==
 const intIn = (v, def, min, max) => Math.min(Math.max(parseInt(v, 10) || def, min), max);
 
 function parseJson(text) { try { return text ? JSON.parse(text) : null; } catch { return null; } }
+/**
+ * What a paste's metadata shows to everyone but its owner and services: never the uploader's browser (user_agent), the
+ * file's original name or the page it came from. Every screenshot recorded all three and the public API served them
+ * (2026-10-24). The rest (an AI moment's links, an avatar's kind, size and type) stays.
+ */
+const PRIVATE_META = ['user_agent', 'original_name', 'page_url'];
+function metadataFor(raw, full) {
+    if (!raw || full) return raw || null;
+    const obj = typeof raw === 'string' ? parseJson(raw) : { ...raw };
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+    for (const k of PRIVATE_META) delete obj[k];
+    if (!Object.keys(obj).length) return null;
+    return typeof raw === 'string' ? JSON.stringify(obj) : obj;
+}
 /** A list's ?since= as 'YYYY-MM-DD HH:MM:SS' (UTC), from that form or ISO 8601; null when absent or unreadable. */
 function sinceParam(value) {
     if (value == null || value === '') return null;
@@ -147,7 +161,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             stream_id: streamIdOf(ref),
             stream_ref: ref,
             screenshot_url: p.screenshot_url || null,
-            metadata: p.metadata || null,
+            metadata: metadataFor(p.metadata, isOwner(v, p) || isService(v)),
             burn_after_read: !!p.burn_after_read,
             forked_from: p.forked_from || null,
             pinned: !!p.pinned,

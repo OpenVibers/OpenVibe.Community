@@ -51,6 +51,9 @@ img { max-width: 100%; height: auto; }
 .section { padding: 28px 0 8px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .section-head h2 { margin: 0; }
+/* The home's sections take the showcase's heading size (openvibe-shared/showcase.css .sc-sec), like "What lives here" between
+   them and the other OpenVibe homes; a paste page's "Comments" and "More like this" keep the compact size. */
+.home-sec > .section-head h2 { font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.02em; }
 .more { font-size: .9rem; font-weight: 600; white-space: nowrap; }
 .lang-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
 .lang-cloud a { background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: .85rem; color: var(--text-primary); }
