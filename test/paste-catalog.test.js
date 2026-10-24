@@ -15,6 +15,8 @@ const text = [
     { slug: 'bash-2', type: 'paste', language: 'bash', visibility: 'public', views: 3, created_at: at(13) },
     { slug: 'secret', type: 'paste', language: 'bash', visibility: 'unlisted', views: 999, created_at: at(14) },
 ];
+// The newest and most viewed image is someone's profile picture, public by Live's avatar upload default.
+shots[199].metadata = JSON.stringify({ kind: 'avatar', mime_type: 'image/png' });
 const all = [...shots, ...text].sort((a, b) => b.created_at.localeCompare(a.created_at));
 const asked = [];
 source.use({
@@ -52,6 +54,11 @@ const check = async (name, fn) => { catalog.reset(); await fn(); passed++; conso
         const rel = await catalog.related(text[0], 3);
         assert.deepStrictEqual(rel.map((p) => p.slug), ['bash-2', 'txt-1', 'js-1'], 'its language first, then the newest');
         assert.ok(asked.includes('paste'), 'asked the store for text pastes, not the shared window');
+    });
+    await check('the home\'s latest and most viewed leave profile pictures out; the lists keep them', async () => {
+        assert.strictEqual((await catalog.latest(3))[0].slug, 'shot-198', 'latest: the avatar is skipped');
+        assert.strictEqual((await catalog.trending(3))[0].slug, 'shot-198', 'most viewed: the avatar is skipped');
+        assert.strictEqual((await catalog.browse({ type: 'images', sort: 'views' })).pastes[0].slug, 'shot-199', 'the image list still has it');
     });
     console.log(`paste catalog: ${passed} checks passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

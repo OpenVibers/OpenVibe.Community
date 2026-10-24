@@ -362,6 +362,20 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(malformed.status, 400);
     });
 
+    await check('a screenshot\'s metadata: the owner and services see all of it; everyone else never the uploader\'s browser, file name or page', async () => {
+        const meta = (r) => JSON.parse(r.json().paste.metadata);
+        const anon = meta(await call(`/api/pastes/${shotSlug}`));
+        for (const k of ['user_agent', 'original_name', 'page_url']) assert.ok(!(k in anon), `anonymous: no ${k}`);
+        assert.strictEqual(anon.mime_type, 'image/jpeg', 'the rest stays');
+        const other = meta(await call(`/api/pastes/${shotSlug}`, { cookie: samJwt }));
+        assert.ok(!('original_name' in other) && !('page_url' in other), 'another person: the same');
+        const own = meta(await call(`/api/pastes/${shotSlug}`, { cookie: alexJwt }));
+        assert.strictEqual(own.original_name, 'desk.jpg');
+        assert.strictEqual(own.page_url, 'https://example.com/x');
+        const listed = (await call('/api/pastes?limit=50')).json().pastes.find((x) => x.slug === shotSlug);
+        assert.ok(!listed || !listed.metadata || !/user_agent|original_name|page_url/.test(listed.metadata), 'nor in the public list');
+    });
+
     await t.close();
     done();
 })();

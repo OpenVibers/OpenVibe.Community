@@ -29,6 +29,15 @@ const FROM = { people: 'people', streams: 'ai', all: undefined };
 function _textOnlyPublic(rows) {
     return (rows || []).filter((p) => p && p.slug && (p.visibility === 'public' || p.visibility == null));
 }
+// A profile picture is a public paste when its owner leaves "public" on (Live's avatar upload), but it is not
+// something they shared: the home's latest and most viewed leave them out (three of the four latest were avatars,
+// 2026-10-24). The paste lists and the person's own page still show them.
+function _metaKind(p) {
+    const m = p && p.metadata;
+    if (!m) return null;
+    try { return (typeof m === 'string' ? JSON.parse(m) : m).kind || null; } catch { return null; }
+}
+const _shared = (rows) => rows.filter((p) => _metaKind(p) !== 'avatar');
 
 /** The latest public pastes of one type and origin (cached). Never throws: an unavailable store yields the stale list or []. */
 async function windowOf({ type = null, from = 'all' } = {}) {
@@ -54,8 +63,8 @@ function byViews(a, b) { return (b.views || 0) - (a.views || 0) || (b.likes || 0
 function byNewest(a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); }
 
 const fromOf = (v) => (Object.prototype.hasOwnProperty.call(FROM, v) ? v : 'all');
-async function latest(n = 12, { from = 'all' } = {}) { return (await windowOf({ from: fromOf(from) })).slice().sort(byNewest).slice(0, n); }
-async function trending(n = 8, { from = 'all' } = {}) { return (await windowOf({ from: fromOf(from) })).slice().sort(byViews).slice(0, n); }
+async function latest(n = 12, { from = 'all' } = {}) { return _shared(await windowOf({ from: fromOf(from) })).sort(byNewest).slice(0, n); }
+async function trending(n = 8, { from = 'all' } = {}) { return _shared(await windowOf({ from: fromOf(from) })).sort(byViews).slice(0, n); }
 
 /** Pastes in the same language first, then the newest, never the paste itself. */
 async function related(paste, n = 6) {
