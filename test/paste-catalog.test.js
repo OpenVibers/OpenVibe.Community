@@ -60,5 +60,12 @@ const check = async (name, fn) => { catalog.reset(); await fn(); passed++; conso
         assert.strictEqual((await catalog.trending(3))[0].slug, 'shot-198', 'most viewed: the avatar is skipped');
         assert.strictEqual((await catalog.browse({ type: 'images', sort: 'views' })).pastes[0].slug, 'shot-199', 'the image list still has it');
     });
+    await check('the home\'s latest and most viewed leave a rough title out (openvibe-sdk/front-page); the lists keep it', async () => {
+        shots[198].title = 'this is bullshit';
+        assert.strictEqual((await catalog.latest(3))[0].slug, 'shot-197', 'latest: the next one shows');
+        assert.strictEqual((await catalog.trending(3))[0].slug, 'shot-197', 'most viewed: the next one shows');
+        assert.strictEqual((await catalog.browse({ type: 'images', sort: 'views' })).pastes[1].slug, 'shot-198', 'the image list keeps it');
+        delete shots[198].title;
+    });
     console.log(`paste catalog: ${passed} checks passed`);
 })().catch((err) => { console.error(err); process.exit(1); });
