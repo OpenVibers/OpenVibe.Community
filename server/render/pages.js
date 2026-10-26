@@ -240,7 +240,7 @@ const res = await fetch(api, {
 });
 const { url } = await res.json(); // "/p/<slug>"` },
         ],
-    }) + homeFaq() + showcase.cta({
+    }) + homeFaq() + showcase.network({ service: 'community' }) + showcase.cta({
         title: 'Start a paste',
         text: 'Paste it, get a link, share it anywhere. Sign in to keep your pastes together under your OpenVibe account, or post without one.',
         actions: [{ label: 'New paste', href: '/new', primary: true, icon: 'fa-plus' }, { label: 'Visit the Forum', href: '/s' }],
