@@ -17,8 +17,8 @@ const BUDGETS = {
     jsRawKB: 281,   // 276.8 with shared 4.11.0's seasonal navbar; 267.5 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 251.3 (was 208.8 before the shell's web-runtime.js)
     jsBrotliKB: 71,   // 69.1 Shared 4.12.0: the light/dark switch, the seasonal mark and the theme pairs; 65.5 with shared 4.11.0's seasonal navbar; 59.9 (was 48.9)
     cssFiles: 3,   // 2
-    cssRawKB: 43,   // 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
-    cssBrotliKB: 8.5,   // 7.7
+    cssRawKB: 52,   // 47.2 with Shared 4.13.0 (2026-10-26); 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
+    cssBrotliKB: 11,   // 9.5 with Shared 4.13.0 (2026-10-26); 7.7
     externalFiles: 2,   // 1
 };
 

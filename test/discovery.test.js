@@ -18,7 +18,8 @@ const { check, done } = require('./helpers/app');
     await check('robots.txt keeps the disallow set for every crawler and names the sitemap', () => {
         const txt = seo.robotsTxt({ sitemaps: ['https://openvibe.community/sitemap.xml'], disallow: discovery.ROBOTS_DISALLOW });
         assert.deepStrictEqual(discovery.ROBOTS_DISALLOW, ['/api/', '/auth/', '/my', '/new', '/s/*/new', '/*?sso=']);
-        assert.ok(txt.startsWith('User-agent: *\nAllow: /\nDisallow: /api/\n'));
+        // Shared 4.13 opens robots.txt with its content-signals note (a comment and Content-Signal); the rules follow.
+        assert.ok(txt.replace(/^(?:#[^\n]*\n|Content-Signal:[^\n]*\n|\n)*/, '').startsWith('User-agent: *\nAllow: /\nDisallow: /api/\n'));
         assert.strictEqual(txt.split('Disallow: /*?sso=').length - 1, 2, 'the generic and the search/AI group both disallow');
         assert.ok(txt.endsWith('Sitemap: https://openvibe.community/sitemap.xml\n'));
     });
