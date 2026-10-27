@@ -359,6 +359,23 @@ async function createApp(opts = {}) {
     // Old Live-style /pastes/<slug> links and bare slugs land on the paste page.
     app.get('/pastes/:slug', (req, res) => res.redirect(301, `/p/${encodeURIComponent(req.params.slug)}`));
 
+    // A paste link copied out of a chat or a document often carries what followed it: a full stop, a bracket, Markdown's
+    // ** around it. Characters no slug can hold are dropped from its end with a redirect, not answered "Paste not found".
+    app.get(/^\/p\/[^/]+(?:\/(?:raw|screenshot|download))?\/?$/, (req, res, next) => {
+        const [, , raw, rest = ''] = req.path.match(/^\/(p)\/([^/]+)((?:\/[a-z]+)?)\/?$/) || [];
+        let seg;
+        try {
+            seg = decodeURIComponent(raw || '');
+        } catch {
+            return next();
+        }
+        if (SLUG_RE.test(seg)) return next();
+        const clean = seg.replace(/[^A-Za-z0-9_-]+$/, '');
+        if (!SLUG_RE.test(clean)) return next();
+        const q = req.originalUrl.indexOf('?');
+        res.redirect(301, `/p/${clean}${rest}${q >= 0 ? req.originalUrl.slice(q) : ''}`);
+    });
+
     app.get('/p/:slug', withUser, wrap(async (req, res) => {
         const { slug } = req.params;
         if (!SLUG_RE.test(slug)) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'That link does not point at a paste.' }), 404);
