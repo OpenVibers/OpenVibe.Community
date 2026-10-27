@@ -14,8 +14,8 @@ const BUDGETS = {
                      // questions with their FAQPage JSON-LD; was 26 at 22.0
     htmlBrotliKB: 10,   // 8.6 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); 7.3 on 10-22 (the same shelves); was 6.5 at 5.7
     jsFiles: 7,   // 6: openvibe-shared/shell adds web-runtime.js (raised with the shell, 2026-10-04)
-    jsRawKB: 281,   // 276.8 with shared 4.11.0's seasonal navbar; 267.5 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 251.3 (was 208.8 before the shell's web-runtime.js)
-    jsBrotliKB: 71,   // 69.1 Shared 4.12.0: the light/dark switch, the seasonal mark and the theme pairs; 65.5 with shared 4.11.0's seasonal navbar; 59.9 (was 48.9)
+    jsRawKB: 291,   // 286.6 openvibe-shared 4.15 footer: the compact footer opens into the whole one, and the pulse line; 276.8 with shared 4.11.0's seasonal navbar; 267.5 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 251.3 (was 208.8 before the shell's web-runtime.js)
+    jsBrotliKB: 73,   // 71.7 openvibe-shared 4.15 footer: the compact footer opens into the whole one, and the pulse line; 69.1 Shared 4.12.0: the light/dark switch, the seasonal mark and the theme pairs; 65.5 with shared 4.11.0's seasonal navbar; 59.9 (was 48.9)
     cssFiles: 3,   // 2
     cssRawKB: 52,   // 47.2 with Shared 4.13.0 (2026-10-26); 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
     cssBrotliKB: 11,   // 9.5 with Shared 4.13.0 (2026-10-26); 7.7
