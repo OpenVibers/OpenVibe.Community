@@ -93,6 +93,25 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!lang.text.includes(`href="/p/${js}"`));
     });
 
+    await check('a link that picked up trailing punctuation (**, a full stop, a bracket) redirects to the paste', async () => {
+        for (const [path, to] of [
+            [`/p/${js}**`, `/p/${js}`],
+            [`/p/${js}.`, `/p/${js}`],
+            [`/p/${js})`, `/p/${js}`],
+            [`/p/${js}%2A%2A`, `/p/${js}`],
+            [`/p/${js}),/raw?dl=1`, `/p/${js}/raw?dl=1`],
+            [`/p/${js}./download`, `/p/${js}/download`],
+        ]) {
+            const r = await t.get(path);
+            assert.strictEqual(r.status, 301, path);
+            assert.strictEqual(r.headers.get('location'), to, path);
+        }
+        // Nothing left to point at, or junk in the middle: still "Paste not found".
+        assert.strictEqual((await t.get('/p/**')).status, 404);
+        assert.strictEqual((await t.get(`/p/${js.slice(0, 4)}*${js.slice(4)}`)).status, 404);
+        assert.strictEqual((await t.get(`/p/${js}`)).status, 200);
+    });
+
     await check('/my lists the signed-in person\'s pastes, private and unlisted included', async () => {
         const mine = await t.get('/my', { cookies: [`ov_token=${token}`] });
         assert.strictEqual(mine.status, 200);
