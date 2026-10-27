@@ -364,7 +364,9 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
   </figure>`;
     } else {
         const gutter = Array.from({ length: hl.lines }, (_, i) => i + 1).join('\n');
-        bodyBlock = `<div class="code-wrap" data-code>
+        // It scrolls (long lines, long pastes), so keyboard users must be able to reach and scroll it: a labelled region
+        // in the tab order (axe scrollable-region-focusable, the browser check of 2026-10-27 on /p/icy-moon-90).
+        bodyBlock = `<div class="code-wrap" data-code tabindex="0" role="region" aria-label="Paste content">
     <pre class="gutter" aria-hidden="true">${gutter}</pre>
     <pre class="code"><code class="hljs language-${esc(hl.language)}" id="paste-content">${hl.html}</code></pre>
   </div>`;
