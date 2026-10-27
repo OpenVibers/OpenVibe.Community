@@ -347,6 +347,16 @@ function shareLinks(p) {
  * comments: the paste's typed thread as the comment service shows it to this viewer (null while nobody has
  * commented); commentSort 'new' or 'old', commentsAfter the paging cursor. No comments on burn-after-read pastes.
  */
+/** Letters and digits only, lower case: a heading and a title match whatever their punctuation and emoji. */
+const bare = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+/** A document's opening # heading, dropped when it only repeats the paste's title (the page's h1 already shows it). */
+function withoutTitle(content, title) {
+    const text = String(content || '');
+    const m = text.match(/^\s*# +([^\n]+)\n?/);
+    return m && bare(m[1]) && bare(m[1]) === bare(title) ? text.slice(m[0].length) : text;
+}
+
 function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null }) {
     const isShot = p.type === 'screenshot';
     const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
@@ -377,7 +387,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
   </div>`;
         // A Markdown paste is a document: shown formatted (the same safe renderer as forum posts), its source a click
         // away. Copy, Raw and Download still give the source.
-        bodyBlock = isDoc ? `<div class="md paste-doc">${renderMarkdown(p.content, { headingShift: 1, document: true })}</div>
+        bodyBlock = isDoc ? `<div class="md paste-doc">${renderMarkdown(withoutTitle(p.content, title), { headingShift: 1, document: true })}</div>
   <details class="paste-source">
     <summary><i class="fa-solid fa-code" aria-hidden="true"></i> Markdown source <span class="muted small">${num(hl.lines)} lines</span></summary>
     ${code}
