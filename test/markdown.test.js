@@ -25,6 +25,39 @@ const { check, done } = require('./helpers/app');
         assert.strictEqual(md('**`code` in bold**'), '<p><strong><code>code</code> in bold</strong></p>');
     });
 
+    await check('pipe tables: header, alignment, inline formatting, escaped pipes; scrolling region', () => {
+        const t = md('Intro line\n| Delay | Test | **Result** |\n|:---|:-:|--:|\n| queue | `code` | ok \\| fine |\n| pipe | [x](https://a.b) |');
+        assert.strictEqual(t, '<p>Intro line</p>\n<div class="md-table" tabindex="0" role="region" aria-label="Table"><table><thead><tr>'
+            + '<th class="al-l">Delay</th><th class="al-c">Test</th><th class="al-r"><strong>Result</strong></th></tr></thead><tbody>'
+            + '<tr><td class="al-l">queue</td><td class="al-c"><code>code</code></td><td class="al-r">ok | fine</td></tr>'
+            + '<tr><td class="al-l">pipe</td><td class="al-c"><a href="https://a.b" rel="nofollow ugc noopener">x</a></td><td class="al-r"></td></tr>'
+            + '</tbody></table></div>', 'a short row gets empty cells');
+        // Without a delimiter row, or with cells that do not match it, pipes are just text.
+        assert.strictEqual(md('a | b\nc | d'), '<p>a | b<br>\nc | d</p>');
+        assert.strictEqual(md('| a | b |\n| --- |'), '<p>| a | b |<br>\n| --- |</p>');
+        // Cells are escaped like any text.
+        assert.ok(!md('| x |\n| - |\n| <script>alert(1)</script> |').includes('<script>'));
+    });
+
+    await check('a document numbers the heading levels it uses in order; a post keeps the fixed demotion', () => {
+        assert.strictEqual(md('# T\n### A\n#### B\n### C', { headingShift: 1, document: true }), '<h2>T</h2>\n<h3>A</h3>\n<h4>B</h4>\n<h3>C</h3>');
+        assert.strictEqual(md('### only', { headingShift: 1, document: true }), '<h2>only</h2>');
+        // A # inside a fence is code, not a heading level.
+        assert.strictEqual(md('```\n# not a heading\n```\n### Real', { headingShift: 1, document: true }).endsWith('<h2>Real</h2>'), true);
+        assert.strictEqual(md('# T\n### A'), '<h3>T</h3>\n<h5>A</h5>', 'forum posts unchanged');
+    });
+
+    await check('lists nest by indenting; continuation lines stay in their item', () => {
+        assert.strictEqual(md('- a\n  - a1\n  - a2\n- b'), '<ul><li>a<ul><li>a1</li><li>a2</li></ul></li><li>b</li></ul>');
+        assert.strictEqual(md('1. one\n   - x\n     more x\n2. two'), '<ol><li>one<ul><li>x<br>\nmore x</li></ul></li><li>two</li></ol>');
+        assert.strictEqual(md('- a\n    - deep\n- b'), '<ul><li>a<ul><li>deep</li></ul></li><li>b</li></ul>');
+        assert.strictEqual(md('- code:\n  ```\n  x < 1\n  ```'), '<ul><li>code:<pre class="md-code"><code class="hljs language-plaintext">x &lt; 1</code></pre></li></ul>');
+        // Past MAX_DEPTH the rest is shown as text, never deeper markup.
+        const deep = md(Array.from({ length: 12 }, (_, k) => `${'  '.repeat(k)}- l${k}`).join('\n'));
+        assert.ok((deep.match(/<ul>/g) || []).length <= 5, deep);
+        assert.ok(deep.includes('l11'), 'nothing is dropped');
+    });
+
     await check('raw HTML is text, never markup', () => {
         for (const evil of ['<script>alert(1)</script>', '<img src=x onerror=alert(1)>', '<a href="javascript:alert(1)">x</a>', '<iframe src="//evil">', '<svg onload=alert(1)>', '<!-- x -->']) {
             const out = md(evil);
@@ -57,6 +90,10 @@ const { check, done } = require('./helpers/app');
             underscore: ' __x'.repeat(10000),
             strike: '~~x '.repeat(10000),
             codeRuns,
+            wideTable: `${'|a'.repeat(20000)}|\n${'|-'.repeat(20000)}|\n${'|b'.repeat(20000)}|`,
+            tallTable: `| a | b |\n| - | - |\n${'| x | y |\n'.repeat(20000)}`,
+            pipes: `${'| '.repeat(20000)}\n${'|-'.repeat(20000)}`,
+            nested: Array.from({ length: 4000 }, (_, k) => `${' '.repeat(k % 40)}- item ${k}`).join('\n'),
         };
         for (const [name, src] of Object.entries(cases)) {
             const started = Date.now();

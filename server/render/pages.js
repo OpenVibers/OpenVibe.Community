@@ -12,6 +12,10 @@ const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
 const frame = require('openvibe-shared/frame');
 const showcase = require('openvibe-shared/showcase');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
+const { renderMarkdown } = require('./markdown');
+
+// Languages read as prose: their lines wrap by default (the Wrap button still toggles), so a phone shows the whole text.
+const PROSE = new Set(['markdown', 'plaintext', 'text']);
 
 const NETWORK_URL = 'https://openvibe.network';
 
@@ -355,6 +359,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
         || (p.user_id != null && !p.owner_subject && (String(user.id) === String(p.user_id) || (p.username && user.username === p.username)))));
     const hl = isShot ? null : highlight(p.content, p.language);
     const ext = extensionFor(p.language);
+    const isDoc = !!hl && hl.language === 'markdown';
 
     let bodyBlock;
     if (isShot) {
@@ -366,10 +371,17 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
         const gutter = Array.from({ length: hl.lines }, (_, i) => i + 1).join('\n');
         // It scrolls (long lines, long pastes), so keyboard users must be able to reach and scroll it: a labelled region
         // in the tab order (axe scrollable-region-focusable, the browser check of 2026-10-27 on /p/icy-moon-90).
-        bodyBlock = `<div class="code-wrap" data-code tabindex="0" role="region" aria-label="Paste content">
+        const code = `<div class="code-wrap${PROSE.has(hl.language) ? ' wrap' : ''}" data-code tabindex="0" role="region" aria-label="${isDoc ? 'Markdown source' : 'Paste content'}">
     <pre class="gutter" aria-hidden="true">${gutter}</pre>
     <pre class="code"><code class="hljs language-${esc(hl.language)}" id="paste-content">${hl.html}</code></pre>
   </div>`;
+        // A Markdown paste is a document: shown formatted (the same safe renderer as forum posts), its source a click
+        // away. Copy, Raw and Download still give the source.
+        bodyBlock = isDoc ? `<div class="md paste-doc">${renderMarkdown(p.content, { headingShift: 1, document: true })}</div>
+  <details class="paste-source">
+    <summary><i class="fa-solid fa-code" aria-hidden="true"></i> Markdown source <span class="muted small">${num(hl.lines)} lines</span></summary>
+    ${code}
+  </details>` : code;
     }
 
     const actions = `<div class="actions">

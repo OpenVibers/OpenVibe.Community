@@ -74,7 +74,8 @@
     var shot = $('.shot.nsfw');
     if (shot) shot.addEventListener('click', function (e) { if (!shot.classList.contains('revealed')) { e.preventDefault(); shot.classList.add('revealed'); } }, { signal });
     var codeWrap = $('[data-code]');
-    if (codeWrap) {
+    // A Markdown paste shows its document; its source (inside "Markdown source") already wraps.
+    if (codeWrap && !codeWrap.closest('.paste-source')) {
       var wrapBtn = document.createElement('button'); wrapBtn.type = 'button'; wrapBtn.className = 'btn btn-sm'; wrapBtn.innerHTML = '<i class="fa-solid fa-text-width" aria-hidden="true"></i> Wrap';
       wrapBtn.addEventListener('click', function () { codeWrap.classList.toggle('wrap'); }, { signal });
       var actions = $('.actions'); if (actions) actions.appendChild(wrapBtn);
