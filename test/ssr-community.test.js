@@ -39,6 +39,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>Hello world in JavaScript · OpenVibe.Community</title>');
         has(r.text, 'class="hljs-keyword">const</span>');
+        has(r.text, '<div class="code-wrap" data-code tabindex="0" role="region" aria-label="Paste content">');
         const ld = r.text.match(/<script type="application\/ld\+json">(.*?)<\/script>/g).map((s) => JSON.parse(s.replace(/<script[^>]*>|<\/script>/g, '')));
         assert.strictEqual(ld.find((o) => o['@type'] === 'Article').author.name, 'Alex');
         has(r.text, 'https://openvibe.media/avatars/alex.png');
