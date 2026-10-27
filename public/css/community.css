@@ -210,6 +210,33 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .md pre.md-code { background: var(--bg-input); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; overflow: auto; }
 .md pre.md-code code { background: none; border: 0; padding: 0; font-size: 13px; line-height: 1.5; white-space: pre; }
 .md hr { border: 0; border-top: 1px solid var(--border); }
+.md li > ul, .md li > ol { margin: .25em 0 .35em; }
+/* Links in running text are underlined, not told apart by colour alone (axe link-in-text-block, WCAG 1.4.1). */
+.md a { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: .18em; }
+.md a:hover { text-decoration-thickness: 2px; }
+.md-table { overflow-x: auto; margin: .9em 0; border: 1px solid var(--border); border-radius: 9px; }
+.md-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.md-table table { border-collapse: collapse; width: 100%; font-size: .94em; }
+.md-table th, .md-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; min-width: 7em; }
+.md-table thead th { background: var(--bg-input); color: var(--text-primary); font-weight: 600; }
+.md-table tbody tr:last-child td { border-bottom: 0; }
+.md-table .al-c { text-align: center; }
+.md-table .al-r { text-align: right; }
+/* A Markdown paste read as a document */
+.paste-doc { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 26px 22px; margin: 12px 0 14px; line-height: 1.65; }
+.paste-doc h2, .paste-doc h3, .paste-doc h4 { line-height: 1.3; margin: 1.3em 0 .5em; }
+.paste-doc h2 { font-size: 1.35rem; }
+.paste-doc h3 { font-size: 1.15rem; }
+.paste-doc h4 { font-size: 1rem; }
+.paste-doc ul, .paste-doc ol { padding-left: 1.4em; }
+/* Running text keeps a readable measure on wide screens; tables and code use the full width. */
+.paste-doc > p, .paste-doc > ul, .paste-doc > ol, .paste-doc > blockquote, .paste-doc > h2, .paste-doc > h3, .paste-doc > h4 { max-width: 80ch; }
+.paste-doc a { word-break: break-word; }
+.paste-source { margin: 0 0 18px; }
+.paste-source > summary { cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 6px 2px; color: var(--text-secondary); font-weight: 600; }
+.paste-source > summary:hover { color: var(--text-primary); }
+.paste-source[open] > summary { margin-bottom: 4px; }
+.paste-source .code-wrap { margin-top: 4px; }
 .reply-form { margin-top: 18px; }
 
 /* Errors + footer host */
@@ -225,6 +252,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
   .code-wrap { grid-template-columns: 1fr; }
   .thread-row, .pulse-item { flex-wrap: wrap; }
   .thread-head { gap: 10px; }
+  .paste-doc { padding: 2px 15px 16px; line-height: 1.6; }
+  .paste-doc ul, .paste-doc ol { padding-left: 1.15em; }
 }
 
 /* ── A comment thread's own page (/c/:accessId) ── */

@@ -93,6 +93,20 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!lang.text.includes(`href="/p/${js}"`));
     });
 
+    await check('a Markdown paste reads as a document, its source a click away; code pastes are unchanged', async () => {
+        const doc = (await svc.createText(anon, { title: 'Notes', content: '# Notes\n\n### Part\n\n| a | b |\n|---|--:|\n| 1 | 2 |\n\n- x\n  - y\n\n<script>alert(1)</script>', language: 'markdown' })).slug;
+        const r = await t.get(`/p/${doc}`);
+        assert.strictEqual(r.status, 200);
+        has(r.text, '<div class="md paste-doc"><h2>Notes</h2>\n<h3>Part</h3>');
+        has(r.text, '<td class="al-r">2</td>');
+        has(r.text, '<li>x<ul><li>y</li></ul></li>');
+        has(r.text, '<details class="paste-source">');
+        has(r.text, '<div class="code-wrap wrap" data-code tabindex="0" role="region" aria-label="Markdown source">');
+        assert.ok(!r.text.includes('<script>alert(1)</script>'), 'raw HTML stays text');
+        const code = await t.get(`/p/${js}`);
+        assert.ok(!code.text.includes('paste-doc') && code.text.includes('<div class="code-wrap" data-code'), 'code: no document, no default wrap');
+    });
+
     await check('a link that picked up trailing punctuation (**, a full stop, a bracket) redirects to the paste', async () => {
         for (const [path, to] of [
             [`/p/${js}**`, `/p/${js}`],
