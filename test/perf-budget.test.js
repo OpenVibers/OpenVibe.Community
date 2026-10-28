@@ -17,7 +17,7 @@ const BUDGETS = {
     jsRawKB: 318,   // 314 openvibe-shared 4.25.0: the menu's orb beside the brand, both balances on phones, messages, the account sheet on phones and the bar stepping away on phones; 306.5 openvibe-shared 4.22.0: the navbar's magnifier search button and More dropdown (search.js and loading.js load only when used); 300.7 Shared 4.17.0: OpenCoins and Vibes chips (wallet: true) in the navbar; 286.6 openvibe-shared 4.15 footer: the compact footer opens into the whole one, and the pulse line; 276.8 with shared 4.11.0's seasonal navbar; 267.5 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 251.3 (was 208.8 before the shell's web-runtime.js)
     jsBrotliKB: 80,   // 78.1 openvibe-shared 4.25.0: the menu's orb beside the brand, both balances on phones, messages, the account sheet on phones and the bar stepping away on phones; 74.4 Shared 4.17.0: OpenCoins and Vibes chips (wallet: true) in the navbar; 71.7 openvibe-shared 4.15 footer: the compact footer opens into the whole one, and the pulse line; 69.1 Shared 4.12.0: the light/dark switch, the seasonal mark and the theme pairs; 65.5 with shared 4.11.0's seasonal navbar; 59.9 (was 48.9)
     cssFiles: 3,   // 2
-    cssRawKB: 52,   // 47.2 with Shared 4.13.0 (2026-10-26); 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
+    cssRawKB: 59,   // 54.9 openvibe-shared 4.26.1 (hero visual); 47.2 with Shared 4.13.0 (2026-10-26); 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
     cssBrotliKB: 11,   // 9.5 with Shared 4.13.0 (2026-10-26); 7.7
     externalFiles: 2,   // 1
 };
