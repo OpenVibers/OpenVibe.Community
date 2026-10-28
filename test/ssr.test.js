@@ -46,7 +46,10 @@ const { boot, check, done } = require('./helpers/app');
         // Navbar/footer init payload matches the shared-chrome contract.
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
         assert.strictEqual(cfg.navbar.service, 'community');
-        assert.deepStrictEqual(cfg.navbar.links.map((l) => l.href), ['/pastes', '/s', '/pulse', '/search', '/new']);
+        // The bar (2026-10-28): the forum first, every place with an icon (the phone app bar); search is the magnifier,
+        // which offers this site's own search page first.
+        assert.deepStrictEqual(cfg.navbar.links.map((l) => l.href), ['/s', '/pastes', '/pulse', '/new']);
+        assert.ok(cfg.navbar.links.every((l) => l.icon) && cfg.navbar.appBar === true && cfg.navbar.search && cfg.navbar.search.page === '/search');
         assert.strictEqual(cfg.navbar.menu.after[0].href, '/my');
         assert.strictEqual(cfg.navbar.history.type, 'page');
         assert.strictEqual(cfg.navbar.silentLogin, 'https://openvibe.community/auth/login?silent=1&next={url}');

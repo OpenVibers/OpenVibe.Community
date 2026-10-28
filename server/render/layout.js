@@ -60,12 +60,15 @@ function navbarInit(opts) {
         service: 'community',
         apiBase: NETWORK_URL,
         links: [
-            { label: 'Pastes', href: '/pastes', active: opts.active === 'pastes' },
-            { label: 'Forum', href: '/s', active: opts.active === 'spaces' },
-            { label: 'Pulse', href: '/pulse', active: opts.active === 'pulse' },
-            { label: 'Search', href: '/search', icon: 'fa-magnifying-glass', active: opts.active === 'search' },
+            // The product's own places: the main ones carry an icon (phones get them as the bottom tab bar), the rest fold
+            // into the navbar's More (Shared 4.22). Search is the navbar's magnifier; What shipped is the footer's.
+            { label: 'Forum', href: '/s', icon: 'fa-comments', active: opts.active === 'spaces' },
+            { label: 'Pastes', href: '/pastes', icon: 'fa-paste', active: opts.active === 'pastes' },
+            { label: 'Pulse', href: '/pulse', icon: 'fa-bolt', active: opts.active === 'pulse' },
             { label: 'New paste', href: '/new', icon: 'fa-plus', active: opts.active === 'new' },
         ],
+        appBar: true,   // phones: the four places as the bottom tab bar (Shared 4.20)
+        search: { page: '/search', label: 'OpenVibe.Community' },   // the magnifier offers this site's own search first
         menu: { after: [{ label: 'My pastes', href: '/my', icon: 'fa-paste' }] },
         history: { type: opts.historyType || 'page', title: opts.historyTitle || opts.title },
         silentLogin: `${config.baseUrl}/auth/login?silent=1&next={url}`,

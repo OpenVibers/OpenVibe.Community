@@ -41,12 +41,12 @@ const { createSearchQuery, SearchUnavailable } = require('../server/search/query
         assert.ok(r.text.includes('noindex,follow'));
     });
 
-    await check('no query asks Search nothing; the navbar links to /search', async () => {
+    await check('no query asks Search nothing; the navbar magnifier offers /search', async () => {
         const n = asked.length;
         const r = await t.get('/search');
         assert.strictEqual(r.status, 200);
         assert.strictEqual(asked.length, n);
-        assert.ok(r.text.includes('"href":"/search"'));
+        assert.ok(r.text.includes('"search":{"page":"/search"'), 'the navbar\'s magnifier offers this search page first');
     });
 
     await check('Search not answering: 503, said plainly, with the paste filter', async () => {
