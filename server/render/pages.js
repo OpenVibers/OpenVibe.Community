@@ -161,7 +161,8 @@ function homeStats(c = {}) {
 
 /**
  * A paste as the kit's card: its picture when it is a screenshot (never an NSFW one: that card shows the paste icon and
- * says NSFW), else the paste icon with its language in the corner; who, views and when under the title.
+ * says NSFW), else its first lines in the media (kit.card preview; the lists carry 300 characters) with its language in
+ * the corner; who, views and when under the title.
  */
 function pasteKitCard(p) {
     const isShot = p.type === 'screenshot';
@@ -170,6 +171,7 @@ function pasteKitCard(p) {
         href: `/p/${p.slug}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
         badge: p.is_nsfw ? 'NSFW' : p.origin === 'ai' ? 'AI' : p.pinned ? 'Pinned' : '',
         corner: isShot ? '' : languageLabel(p.language || 'text'),
+        preview: !isShot && !p.is_nsfw ? String(p.content || '') : '',
         who: authorName(p), avatar: avatarUrl(p, 68) || '',
         count: [Number(p.views) || 0, 'views'], when: p.created_at || null,
     });
@@ -222,11 +224,8 @@ ${kit.list(items.slice(0, 5).map((t) => kit.row({ href: `/s/roadmap/t/${t.slug}`
 
 function pulseShelf(items) {
     if (!items || !items.length) return '';
-    const rows = items.slice(0, 4).map((it) => {
-        const row = kit.row({ href: it.url, title: it.title, badge: it.origin === 'ai' ? kit.badge('AI', 'accent') : '', sub: SERVICE_WORDS[it.source.service] || it.source.service, meta: whenOf(it.occurred_at).text, metaIso: whenOf(it.occurred_at).iso });
-        // Links to the network's other sites keep the nofollow they have on /pulse (kit.row has no rel of its own).
-        return it.source.service === 'community' ? row : row.replace('<a href=', '<a rel="nofollow ugc noopener" href=');
-    });
+    // Links to the network's other sites keep the nofollow they have on /pulse.
+    const rows = items.slice(0, 4).map((it) => kit.row({ href: it.url, rel: it.source.service === 'community' ? '' : 'nofollow ugc noopener', title: it.title, badge: it.origin === 'ai' ? kit.badge('AI', 'accent') : '', sub: SERVICE_WORDS[it.source.service] || it.source.service, meta: whenOf(it.occurred_at).text, metaIso: whenOf(it.occurred_at).iso }));
     return `<section class="cm-sec" id="pulse" aria-labelledby="h-pulse">${shelfHead('h-pulse', 'Across OpenVibe', { href: '/pulse', label: 'All of Pulse' })}
 ${kit.list(rows)}</section>`;
 }
