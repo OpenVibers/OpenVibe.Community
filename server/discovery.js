@@ -36,6 +36,7 @@ function llmsSections() {
             { title: 'Latest threads (RSS)', url: `${u}/s/feed.xml` },
             { title: 'Full text for language models', url: `${u}/llms-full.txt` },
         ] },
+        { title: 'API', links: [{ title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' }] },
     ];
 }
 
