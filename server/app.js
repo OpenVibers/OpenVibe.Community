@@ -36,7 +36,7 @@ const catalog = require('./pastes/catalog');
 const source = require('./pastes/source');
 const discovery = require('./discovery');
 const pages = require('./render/pages');
-const { assetVersion, SITE_NAME, DEFAULT_DESCRIPTION } = require('./render/layout');
+const { assetVersion, SITE_NAME, DEFAULT_DESCRIPTION, setRobotsHeader } = require('./render/layout');
 const { createAuthClient, createAuthRoutes } = require('./auth/routes');
 const { getDb } = require('./db');
 const { createNetworkIdentity } = require('./identity/network');
@@ -310,7 +310,10 @@ async function createApp(opts = {}) {
     // Pages are for browsers: the viewer (subject, staff) is resolved here too.
     const withUser = viewers.middleware({ services: false });
     const ctxOf = (req) => ({ token: req.token, ip: req.ip, userAgent: req.get('user-agent') || '', viewer: req.viewer });
-    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', PAGE_CACHE).send(body);
+    const html = (res, body, status = 200) => {
+        setRobotsHeader(res, body);
+        return res.status(status).type('html').set('Cache-Control', PAGE_CACHE).send(body);
+    };
     // A public page with a Markdown twin names it in the Link header and varies on Accept. Only the
     // pages the agent layer twins (the home, /pastes and a paste) call this.
     const twinLink = (res, pathname) => {

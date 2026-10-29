@@ -49,7 +49,7 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('unlisted: noindex and escaped; private: 404 for visitors, the owner gets the page and delete', async () => {
         const u = await t.get(`/p/${unl}`);
-        has(u.text, '<meta name="robots" content="noindex,follow">');
+        has(u.text, '<meta name="robots" content="noindex">');
         has(u.text, '&lt;script&gt;alert(1)&lt;/script&gt;');
         assert.ok(!u.text.includes('<script>alert(1)</script>'));
         assert.strictEqual((await t.get(`/p/${priv}`)).status, 404);
@@ -156,13 +156,12 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(api.status, 429, 'the API shares the budget');
     });
 
-    await check('feed and sitemap list store pastes', async () => {
+    await check('the feed links a paste, but no paste is in the sitemap (they are link-shared, noindex)', async () => {
         const feed = await t.get('/feed.xml');
         has(feed.text, `/p/${js}`);
         assert.ok(!feed.text.includes(priv));
         const map = await t.get('/sitemap.xml');
-        has(map.text, `/p/${js}`);
-        assert.ok(!map.text.includes(unl) && !map.text.includes(priv));
+        assert.ok(!map.text.includes(`/p/${js}`) && !map.text.includes(`/p/${unl}`) && !map.text.includes(`/p/${priv}`));
     });
 
     await t.close();
