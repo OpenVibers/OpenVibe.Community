@@ -109,7 +109,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>Hello world in JavaScript · OpenVibe.Community</title>');
         has(r.text, '<link rel="canonical" href="https://openvibe.community/p/amber-fox-42">');
-        has(r.text, '<meta name="robots" content="index,follow">');
+        has(r.text, '<meta name="robots" content="noindex">');
         has(r.text, '<meta property="og:type" content="article">');
         has(r.text, 'article:published_time');
         const ld = r.text.match(/<script type="application\/ld\+json">(.*?)<\/script>/g).map((s) => JSON.parse(s.replace(/<script[^>]*>|<\/script>/g, '')));
@@ -136,7 +136,8 @@ const { boot, check, done } = require('./helpers/app');
     await check('unlisted paste is noindex and its content is escaped', async () => {
         const r = await t.get('/p/dark-owl-55');
         assert.strictEqual(r.status, 200);
-        has(r.text, '<meta name="robots" content="noindex,follow">');
+        has(r.text, '<meta name="robots" content="noindex">');
+        assert.strictEqual(r.headers.get('x-robots-tag'), 'noindex');
         has(r.text, '&lt;script&gt;alert(1)&lt;/script&gt;');
         assert.ok(!r.text.includes('<script>alert(1)</script>'));
     });

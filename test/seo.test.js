@@ -84,18 +84,29 @@ const { boot, check, done } = require('./helpers/app');
         }
     });
 
-    await check('sitemap.xml lists home, /pastes and every recent public paste — never unlisted/private', async () => {
+    await check('sitemap.xml lists the pages meant for search and never a link-shared paste (SEO-29)', async () => {
         const r = await t.get('/sitemap.xml');
         assert.strictEqual(r.status, 200);
         assert.ok(r.headers.get('content-type').includes('xml'));
         assert.ok(r.text.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
         assert.ok(r.text.includes('<loc>https://openvibe.community/</loc>'));
         assert.ok(r.text.includes('<loc>https://openvibe.community/pastes</loc>'));
-        assert.ok(r.text.includes('<loc>https://openvibe.community/p/amber-fox-42</loc>'));
-        assert.ok(r.text.includes('<lastmod>2026-09-15</lastmod>'));
-        assert.ok(r.text.includes('/p/fair-moon-23'));
-        assert.ok(!r.text.includes('dark-owl-55') && !r.text.includes('grim-vale-61'));
+        for (const slug of ['amber-fox-42', 'fair-moon-23', 'dark-owl-55', 'grim-vale-61']) {
+            assert.ok(!r.text.includes(`/p/${slug}`), `${slug} must not be in a sitemap`);
+        }
         assert.strictEqual(r.headers.get('cache-control'), cache.htmlHeaders({ maxAge: 3600 }));
+    });
+
+    await check('a noindex page says so in the meta tag and in X-Robots-Tag; an indexable page sends no such header', async () => {
+        for (const path of ['/p/amber-fox-42', '/p/fair-moon-23', '/c/cth_0000000000000000000000', '/nope-not-a-page']) {
+            const r = await t.get(path);
+            assert.ok(r.headers.get('x-robots-tag') && /(?:^|,)\s*noindex/.test(r.headers.get('x-robots-tag')),
+                `${path}: X-Robots-Tag (got ${r.headers.get('x-robots-tag')})`);
+        }
+        assert.strictEqual((await t.get('/p/amber-fox-42')).headers.get('x-robots-tag'), 'noindex');
+        for (const path of ['/', '/pastes', '/updates']) {
+            assert.strictEqual((await t.get(path)).headers.get('x-robots-tag'), null, path);
+        }
     });
 
     await check('feed.xml is a valid-looking RSS of the latest pastes', async () => {

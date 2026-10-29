@@ -166,4 +166,16 @@ document.addEventListener('DOMContentLoaded', function () {
     return o.ogImage ? html : html.replace('<meta name="twitter:card" content="summary_large_image">', '<meta name="twitter:card" content="summary">');
 }
 
-module.exports = { renderPage, asset, assetVersion, abs, setRelease, SITE_NAME, DEFAULT_DESCRIPTION, DEFAULT_OG_IMAGE };
+/**
+ * Copy a page's noindex rule into an X-Robots-Tag response header (Google's 2026-10-26 UGC
+ * guidance asks for both a robots meta tag and the header on link-shared content). Called before
+ * send, so clients that never parse the head see it too. The value mirrors the meta tag
+ * ('noindex', 'noindex,nofollow'), so both say the same thing.
+ */
+function setRobotsHeader(res, html) {
+    const tag = /<meta[^>]*\bname=["']robots["'][^>]*>/i.exec(String(html || ''));
+    const content = tag && /\bcontent=["']([^"']*)["']/i.exec(tag[0]);
+    if (content && /(?:^|[\s,;])noindex(?:[\s,;]|$)/i.test(content[1])) res.set('X-Robots-Tag', content[1].replace(/\s+/g, ''));
+}
+
+module.exports = { renderPage, asset, assetVersion, abs, setRelease, SITE_NAME, DEFAULT_DESCRIPTION, DEFAULT_OG_IMAGE, setRobotsHeader };

@@ -24,7 +24,7 @@ const multer = require('multer');
 const seo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
 const discovery = require('../discovery');
-const { SITE_NAME } = require('../render/layout');
+const { SITE_NAME, setRobotsHeader } = require('../render/layout');
 const pages = require('../render/pages');
 const forumPages = require('../render/forum');
 const boardPages = require('../render/board');
@@ -51,7 +51,10 @@ function createForumRoutes({ forum, viewers, config }) {
         return ids;
     }
     const worthUploading = (title, body) => (title == null || String(title).trim().length >= 3) && String(body || '').trim().length > 0;
-    const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', cache.htmlHeaders({ private: true })).send(body);
+    const html = (res, body, status = 200) => {
+        setRobotsHeader(res, body);
+        return res.status(status).type('html').set('Cache-Control', cache.htmlHeaders({ private: true })).send(body);
+    };
     const login = (res, next) => res.redirect(303, `/auth/login?next=${encodeURIComponent(next)}`);
     const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 

@@ -66,10 +66,8 @@ async function buildSitemapRows() {
     add('/', null, 'hourly', '1.0');
     add('/pastes', null, 'hourly', '0.8');
     add('/pastes?sort=views', null, 'daily', '0.5');
-    for (const p of await catalog.recent()) {
-        if (Number(p.is_nsfw) || Number(p.burn_after_read)) continue;
-        add(`/p/${p.slug}`, isoDate(p.updated_at || p.created_at), 'weekly', '0.6');
-    }
+    // No /p/:slug rows: a paste is link-shared content and is noindex (SEO-29), so it must not be
+    // in a sitemap. The /pastes browse and search pages above are the surfaces meant for search.
     if (_forum) {
         add('/s', null, 'hourly', '0.8');
         add('/pulse', null, 'hourly', '0.5');

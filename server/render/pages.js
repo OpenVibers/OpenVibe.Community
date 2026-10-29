@@ -364,7 +364,6 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
     const shot = isShot ? mediaAbs(p.screenshot_url) || screenshotFallback(p.slug) : null;
-    const indexable = (p.visibility === 'public' || p.visibility == null) && !Number(p.is_nsfw) && !Number(p.burn_after_read);
     // Pastes name their owner by Network subject; the projection cache supplies the display fields.
     const isOwner = !!(user && (p.is_owner === true
         || (p.owner_subject && user.subject_id && p.owner_subject === user.subject_id)
@@ -442,7 +441,11 @@ ${related && related.length ? `<section class="section" id="related">
         description,
         canonicalPath: `/p/${p.slug}`,
         agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
-        robots: indexable ? 'index,follow' : 'noindex,follow',
+        // A paste is link-shared content: reached by the link its author shares, not found by
+        // search. Google's 2026-10-26 UGC guidance says to noindex those by default; the browse
+        // and search pages that are meant to be found keep index. Private, unlisted, NSFW and
+        // burn-after-read pastes were already noindex and stay so.
+        robots: 'noindex',
         ogType: 'article',
         ogImage: shot || undefined,
         published: ld.isoDate(p.created_at) || undefined,
