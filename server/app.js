@@ -70,6 +70,8 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const pasteRef = (slug) => ({ service: 'community', type: 'paste', id: String(slug) });
 const VERSION = require('../package.json').version;
+// The date /.well-known/security.txt must be refreshed by: one year on, a person re-reads and re-commits it.
+const SECURITY_EXPIRES = '2027-10-29T00:00:00.000Z';
 // Pages are rendered for the person reading them (and a form post redirects back to them), so no
 // shared or browser cache keeps one.
 const PAGE_CACHE = cache.htmlHeaders({ private: true });
@@ -286,6 +288,19 @@ async function createApp(opts = {}) {
             language: 'en', selfUrl: `${config.baseUrl}/feed.xml`, items: await discovery.pasteFeedItems() }, { format: 'rss' }))));
     // GET /<key>.txt — the IndexNow key file (only when a key is configured; it serves itself).
     if (indexnow.enabled) app.use(indexnow.keyFile);
+    // /.well-known/security.txt (RFC 9116, SEO-30). Contact, Expires and Canonical are required; Canonical is
+    // this site's own, from the config, never a constant. Policy is listed only while
+    // https://openvibe.network/security answers 200 (checked 2026-10-29). Expires is the date the file must be
+    // refreshed by: one year on, a person re-reads and re-commits it.
+    app.get('/.well-known/security.txt', (_req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'public, max-age=86400')
+        .send([
+            'Contact: mailto:security@openvibe.network',
+            `Expires: ${SECURITY_EXPIRES}`,
+            'Preferred-Languages: en',
+            `Canonical: ${config.baseUrl}/.well-known/security.txt`,
+            'Policy: https://openvibe.network/security',
+            '',
+        ].join('\n')));
 
     // ── Pages ────────────────────────────────────────────────
     // Pages are for browsers: the viewer (subject, staff) is resolved here too.
