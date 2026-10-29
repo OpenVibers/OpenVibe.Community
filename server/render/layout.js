@@ -129,6 +129,9 @@ function renderPage(o) {
         siteName: SITE_NAME, description, canonical, robots: o.robots || 'index,follow',
         type: o.ogType || 'website', image: o.ogImage || DEFAULT_OG_IMAGE, imageAlt: o.imageAlt,
         jsonLd: o.jsonLd, alternates: o.alternates,
+        // The page names its Markdown twin (openvibe-shared/agent-layer) in the head; only pages whose
+        // twin is mounted set o.agentLayer (the home, /pastes and a paste).
+        agentLayer: !!o.agentLayer && !!canonical,
         summary: description, url: canonical, updated: o.modified,
         navbar: nav, home: '/', navLinks: nav.links.map(({ label, href }) => ({ label, href })),
         footer: { service: 'community', variant: 'auto', path: o.canonicalPath, updates: '/updates' },   // full on the front page only (Shared 4.19)

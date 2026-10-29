@@ -254,6 +254,7 @@ const { url } = await res.json(); // "/p/<slug>"` },
         title: 'OpenVibe.Community: pastes, forums and the OpenVibe roadmap',
         description: 'Paste code, logs or a screenshot and get a short link. Talk it over in the forum, follow the OpenVibe roadmap, and see what is happening in Pulse.',
         canonicalPath: '/',
+        agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
         active: 'home',
         jsonLd: [
             ld.websiteLd(),
@@ -316,6 +317,7 @@ function browsePage(result, languages) {
         title,
         description: `Browse ${sort === 'views' ? 'the most viewed' : 'the latest'} pastes on OpenVibe.Community${lang ? ` in ${languageLabel(lang)}` : ''} — code, logs and screenshots shared by the people of OpenVibe.`,
         canonicalPath: canonical,
+        agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
         robots: q ? 'noindex,follow' : 'index,follow',
         active: 'pastes',
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }])],
@@ -439,6 +441,7 @@ ${related && related.length ? `<section class="section" id="related">
         title,
         description,
         canonicalPath: `/p/${p.slug}`,
+        agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
         robots: indexable ? 'index,follow' : 'noindex,follow',
         ogType: 'article',
         ogImage: shot || undefined,
