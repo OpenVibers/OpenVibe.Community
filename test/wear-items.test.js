@@ -46,7 +46,9 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'community.js'), 'utf8');
         assert.match(src, /querySelector\('\[data-ov-subject\]'\)/);
         assert.match(src, /OpenVibeItems\.decorate\(document\)/);
-        assert.match(src, /ov:boost:load', function \(\) \{ wirePage\(\); wearItems\(\); \}/);
+        assert.match(src, /ov:boost:load', function \(\) \{ wirePage\(\); wearItems\(\); kitWeb\(\); \}/);
+        // kit-web.js the same way: only on a page that draws the kit's pieces (the home's rails, menus, copy buttons).
+        assert.match(src, /querySelector\('\.ovk-rail, \.ovk-more, \[data-ovk-copy\]'\)/);
     });
 
     await t.close();

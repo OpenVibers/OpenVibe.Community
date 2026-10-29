@@ -19,7 +19,7 @@ const { boot, check, done } = require('./helpers/app');
     await ins.run('fair-moon-23', sam.subject_id, 'screenshot', 'Desktop shot', 'my desktop', 'text', 'public', 'https://openvibe.media/o/med_FAIRMOON', 40, 0, '2026-09-11 08:00:00', '2026-09-11 08:00:00');
     await ins.run('grim-vale-61', alex.subject_id, 'paste', 'private thing', 'private', 'text', 'private', null, 0, 0, '2026-09-10 08:00:00', '2026-09-10 08:00:00');
 
-    await check('home renders hero, latest + trending pastes, CTA and roadmap with full SEO head', async () => {
+    await check('home renders hero, the latest pastes as a rail, the forum, roadmap and questions with full SEO head', async () => {
         const r = await t.get('/');
         assert.strictEqual(r.status, 200);
         has(r.text, '<html lang="en"');
@@ -33,16 +33,27 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, '/shared/footer.js?v=');
         has(r.text, '<h1>Share it with a link.<span class="sc-accent"> Talk about it here.</span></h1>');
         has(r.text, '/shared/showcase.css?v=');
-        has(r.text, 'id="api"');
-        has(r.text, '<h2>Latest pastes</h2>');
-        has(r.text, '<h2>Most viewed</h2>');
-        has(r.text, 'id="spaces"');
-        has(r.text, 'href="/p/amber-fox-42"');
-        // Most-viewed puts the 900-view nginx paste first.
-        const trendingAt = r.text.indexOf('id="trending"');
-        assert.ok(r.text.indexOf('blue-lake-17', trendingAt) < r.text.indexOf('amber-fox-42', trendingAt));
+        // The front page is a taste and a door (2026-10-29): at most two hero actions; the newest pastes as a rail of the
+        // shared kit's cards (kit.css + room.css, kit-web.js through community.js) with See all; the kinds as quick
+        // filters, the most viewed among them; the API folded; the forum's places as a launcher.
+        const heroAt = r.text.indexOf('<section class="sc-hero');
+        const hero = r.text.slice(heroAt, r.text.indexOf('</section>', heroAt));
+        assert.strictEqual((hero.match(/class="sc-btn/g) || []).length, 2, 'two hero actions');
+        has(r.text, '/shared/kit.css?v=');
+        has(r.text, '/shared/room.css?v=');
+        has(r.text, '<meta name="ov-kit" content="/shared/kit-web.js?v=');
+        has(r.text, '<section class="ovk-rail ovk-rail--m" id="latest" aria-labelledby="latest-h">');
+        has(r.text, '<h2 id="latest-h">Latest pastes</h2>');
+        has(r.text, '<a class="ovk-rail-more" href="/pastes">See all');
+        assert.ok(/<article class="ovk-card ovk-card--post"[^>]*>[\s\S]*?href="\/p\/amber-fox-42"/.test(r.text), 'a paste is a kit card linking its page');
+        has(r.text, 'href="/pastes?sort=views"', 'the most viewed are a quick filter');
+        has(r.text, '<details class="ovk-fold" id="api">');
+        assert.ok(!/<h2>Most viewed<\/h2>|id="trending"|id="spaces"|class="sc-cta"|class="sc-sec sc-network"/.test(r.text), 'no shelf repeats another (most viewed, What lives here, the closing call, Part of OpenVibe)');
+        // Most viewed (/pastes?sort=views) puts the 900-view nginx paste first.
+        const views = await t.get('/pastes?sort=views');
+        assert.ok(views.text.indexOf('blue-lake-17') > 0 && views.text.indexOf('blue-lake-17') < views.text.indexOf('amber-fox-42'), 'most viewed first');
         // Unlisted/private fixtures never show on shared pages.
-        assert.ok(!r.text.includes('dark-owl-55') && !r.text.includes('grim-vale-61'));
+        assert.ok(![r.text, views.text].some((html) => html.includes('dark-owl-55') || html.includes('grim-vale-61')));
         // Navbar/footer init payload matches the shared-chrome contract.
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
         assert.strictEqual(cfg.navbar.service, 'community');
@@ -58,8 +69,8 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(cfg.footer.variant, 'full');
         // The home's other shelves: the forum's places and the roadmap (both seeded at boot), and questions whose
         // FAQPage JSON-LD is exactly what the page shows.
-        has(r.text, 'id="h-forum"');
-        has(r.text, 'href="/s/general"');
+        const forum = (/<section class="sc-sec sc-apps-sec" id="forum"[\s\S]*?<\/section>/.exec(r.text) || [''])[0];
+        assert.ok(forum.includes('<ul class="sc-apps">') && forum.includes('<a href="/s/general">') && forum.includes('href="/s">All forums'), 'the forum\'s places as a launcher');
         assert.ok(/<dt>public pastes<\/dt><dd>\d+<\/dd>/.test(r.text), 'the real count of public pastes');
         const faq = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].flatMap((m) => [].concat(JSON.parse(m[1]))).find((x) => x['@type'] === 'FAQPage');
         const shown = [...r.text.matchAll(/<summary>([^<]*)<\/summary>/g)].map((m) => m[1].replace(/&#39;/g, "'"));

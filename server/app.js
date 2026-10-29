@@ -323,8 +323,8 @@ async function createApp(opts = {}) {
     // Every page response below (redirects and error pages too) that sets no policy of its own.
     app.use(cache.applyHtml({ private: true }));
 
-    // The home's other shelves: the forum's public places, the roadmap (in progress first), the network's latest
-    // activity from Pulse (pastes are shown above it already) and real counts. Read at most once a minute; a shelf
+    // The home's other shelves: the forum's public places, the roadmap (its five next, in progress first), the network's
+    // four latest from Pulse (pastes are shown above it already) and real counts. Read at most once a minute; a shelf
     // that fails or is empty is left out of the page.
     let homeExtras = { at: 0, value: null };
     async function readHomeExtras() {
@@ -334,10 +334,10 @@ async function createApp(opts = {}) {
             quiet(require('./forum/store').listSpaces(db, ['public']), []),
             quiet(db.prepare(`SELECT t.title, t.slug, t.status, t.last_activity_at FROM threads t JOIN spaces s ON s.id = t.space_id
                 WHERE s.slug = 'roadmap' AND s.visibility = 'public' AND t.deleted_at IS NULL AND t.members_only_owner IS NULL
-                ORDER BY (t.status = 'in_progress') DESC, t.last_activity_at DESC, t.id DESC LIMIT 8`).all(), []),
+                ORDER BY (t.status = 'in_progress') DESC, t.last_activity_at DESC, t.id DESC LIMIT 5`).all(), []),
             quiet(db.prepare(`SELECT t.status, COUNT(*) AS n FROM threads t JOIN spaces s ON s.id = t.space_id
                 WHERE s.slug = 'roadmap' AND t.deleted_at IS NULL GROUP BY t.status`).all(), []),
-            quiet(pulse.list({ limit: 12 }).then((out) => (out.items || []).filter((it) => it.source && it.source.type !== 'paste').slice(0, 6)), []),
+            quiet(pulse.list({ limit: 12 }).then((out) => (out.items || []).filter((it) => it.source && it.source.type !== 'paste').slice(0, 4)), []),
             quiet(db.prepare(`SELECT (SELECT COUNT(*) FROM pastes WHERE deleted_at IS NULL AND visibility = 'public') AS pastes,
                 (SELECT COUNT(*) FROM pulse_items) AS pulse`).get(), {}),
         ]);
@@ -358,9 +358,10 @@ async function createApp(opts = {}) {
     // server/agent-pages.js. A twin passes the anonymous viewer and noView: it must never carry a
     // signed-in person's view, count a page view or consume a burn-after-read paste.
     async function homeView(user) {
-        // People's pastes lead; OpenVibe.AI's moment pastes from streams have their own shelf.
-        const [latest, trending, fromStreams, languages, extras] = await Promise.all([catalog.latest(12, { from: 'people' }), catalog.trending(8, { from: 'people' }), catalog.latest(8, { from: 'streams' }), catalog.languages(), readHomeExtras()]);
-        return pages.homePage({ latest, trending, fromStreams, languages, user, ...extras });
+        // People's pastes lead; OpenVibe.AI's moment pastes from streams have their own rail. The most viewed are a quick
+        // filter there (/pastes?sort=views), not a shelf of their own.
+        const [latest, fromStreams, languages, extras] = await Promise.all([catalog.latest(12, { from: 'people' }), catalog.latest(8, { from: 'streams' }), catalog.languages(), readHomeExtras()]);
+        return pages.homePage({ latest, fromStreams, languages, user, ...extras });
     }
 
     async function browseView(query) {

@@ -194,7 +194,21 @@
     document.head.appendChild(s);
   }
 
+  // ── The kit's behaviour ────────────────────────────────────
+  // A page with the kit's rails, card menus or copy buttons (openvibe-shared kit.js markup, the home) gets kit-web.js;
+  // it enhances what is there and, after that, every boosted page swap by itself.
+  function kitWeb() {
+    var meta = document.querySelector('meta[name="ov-kit"]');
+    if (!meta || window.OpenVibeKitWeb || document.getElementById('ov-kit-js')) return;
+    if (!document.querySelector('.ovk-rail, .ovk-more, [data-ovk-copy]')) return;
+    var s = document.createElement('script');
+    s.id = 'ov-kit-js';
+    s.src = meta.getAttribute('content');
+    document.head.appendChild(s);
+  }
+
   wirePage();
   wearItems();
-  document.addEventListener('ov:boost:load', function () { wirePage(); wearItems(); });
+  kitWeb();
+  document.addEventListener('ov:boost:load', function () { wirePage(); wearItems(); kitWeb(); });
 })();

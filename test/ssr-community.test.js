@@ -28,9 +28,11 @@ const { boot, check, done } = require('./helpers/app');
         const r = await t.get('/');
         assert.strictEqual(r.status, 200);
         has(r.text, `href="/p/${js}"`);
-        const trendingAt = r.text.indexOf('id="trending"');
-        assert.ok(r.text.indexOf(nginx, trendingAt) < r.text.indexOf(js, trendingAt), 'most viewed first');
-        assert.ok(!r.text.includes(unl) && !r.text.includes(priv));
+        // The most viewed are the home's quick filter (/pastes?sort=views), read from the same store.
+        has(r.text, 'href="/pastes?sort=views"');
+        const views = await t.get('/pastes?sort=views');
+        assert.ok(views.text.indexOf(nginx) > 0 && views.text.indexOf(nginx) < views.text.indexOf(js), 'most viewed first');
+        assert.ok(![r.text, views.text].some((html) => html.includes(unl) || html.includes(priv)));
         assert.strictEqual(t.live.calls.filter((c) => c.path.startsWith('/api/pastes')).length, 0);
     });
 
