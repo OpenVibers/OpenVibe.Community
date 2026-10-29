@@ -11,6 +11,7 @@ const ld = require('./jsonld');
 const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
 const frame = require('openvibe-shared/frame');
 const showcase = require('openvibe-shared/showcase');
+const kit = require('openvibe-shared/kit');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 const { renderMarkdown } = require('./markdown');
 
@@ -122,8 +123,11 @@ function cardGrid(pastes, empty = 'Nothing here yet.') {
 }
 
 // ── Home ─────────────────────────────────────────────────────
-// The home (openvibe-shared/showcase): what Community is and where to start, the pastes people are sharing right
-// now, what else lives here, and the API a terminal can paste with. The paste grids stay this site's own markup.
+// The front page is a taste and a door, not the index (owner 2026-10-29: pages "so dang long"; a phone should "act more
+// like an app"): what Community is and the two things to do first, the numbers as one strip, the newest pastes and the
+// moments from streams as rails of the shared kit's cards (openvibe-shared kit.rail + kit.card, room.css) with See all
+// and the kinds as quick filters, the forum's places as a launcher (showcase.apps), the roadmap and Pulse as short lists,
+// and the parts read once (the API) folded. The full lists live on /pastes, /s, /s/roadmap and /pulse.
 const TERMINAL = `$ curl -F 'content=<build.log' \\
     https://openvibe.community/api/pastes
 { "slug": "amber-fox-42",
@@ -140,115 +144,134 @@ const HOME_FAQ = [
 ];
 
 const STATUS_WORDS = { in_progress: 'In progress', done: 'Done', planned: 'Planned', open: 'Open', paused: 'Paused', declined: 'Declined' };
+const STATUS_TONE = { in_progress: 'accent', done: 'ok', planned: '', open: '', paused: 'warn', declined: 'bad' };
 const SERVICE_WORDS = { community: 'Community', live: 'Live', blog: 'Blog', wiki: 'Wiki', news: 'News', games: 'Games', media: 'Media' };
+// The forum's places in the launcher: the network's ring icons (openvibe-shared ov-icons) by space.
+const SPACE_ICON = { general: 'ov:chat', help: 'ov:help', feedback: 'ov:bell', showcase: 'ov:image', 'off-topic': 'ov:community' };
 
-/** The numbers under the heading: only real, non-zero counts. */
+/** The numbers: only real, non-zero counts, as one strip (kit.stats; it scrolls sideways on a phone). */
 function homeStats(c = {}) {
-    const items = [
-        c.pastes ? [num(c.pastes), 'public pastes'] : null,
-        c.shipped ? [num(c.shipped), 'roadmap items shipped'] : null,
-        c.building ? [num(c.building), 'being built now'] : null,
-        c.pulse ? [num(c.pulse), 'updates in Pulse'] : null,
-    ].filter(Boolean);
-    return items.length ? `<dl class="cm-stats">${items.map(([v, l]) => `<div><dt>${esc(l)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : '';
+    return kit.stats([
+        [Number(c.pastes) || 0, 'public pastes'],
+        [Number(c.shipped) || 0, 'roadmap items shipped'],
+        [Number(c.building) || 0, 'being built now'],
+        [Number(c.pulse) || 0, 'updates in Pulse'],
+    ], { label: 'OpenVibe.Community in numbers' });
 }
 
+/**
+ * A paste as the kit's card: its picture when it is a screenshot (never an NSFW one: that card shows the paste icon and
+ * says NSFW), else the paste icon with its language in the corner; who, views and when under the title.
+ */
+function pasteKitCard(p) {
+    const isShot = p.type === 'screenshot';
+    const image = isShot && !p.is_nsfw ? mediaAbs(p.screenshot_url) : '';
+    return kit.card({
+        href: `/p/${p.slug}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
+        badge: p.is_nsfw ? 'NSFW' : p.origin === 'ai' ? 'AI' : p.pinned ? 'Pinned' : '',
+        corner: isShot ? '' : languageLabel(p.language || 'text'),
+        who: authorName(p), avatar: avatarUrl(p, 68) || '',
+        count: [Number(p.views) || 0, 'views'], when: p.created_at || null,
+    });
+}
+
+/** A section's head in the rails' look (room.css): its heading and the one link to the whole list. */
+function shelfHead(id, title, more) {
+    return `<div class="ovk-rail-head"><h2 id="${esc(id)}">${esc(title)}</h2><a class="ovk-rail-more" href="${esc(more.href)}">${esc(more.label)}${kit.icon('chevron')}</a></div>`;
+}
+
+/** The kinds of paste as quick filters under the newest: the most viewed, then the languages people use most. */
+function kindChips(languages) {
+    const items = [{ href: '/pastes?sort=views', label: 'Most viewed' }].concat((languages || []).slice(0, 7).map((l) => (l.language === 'image'
+        ? { href: '/pastes?type=images', label: `Images ${num(l.count)}` }
+        : { href: `/pastes?lang=${encodeURIComponent(l.language)}`, label: `${languageLabel(l.language)} ${num(l.count)}` })));
+    return `<nav class="cm-kinds" aria-label="Browse pastes by kind">${items.map((x) => kit.button({ ...x, kind: 'quiet', small: true })).join('')}</nav>`;
+}
+
+function latestShelf(latest, languages) {
+    const rail = kit.rail({ id: 'latest', title: 'Latest pastes', more: { href: '/pastes', label: 'See all' }, items: (latest || []).map(pasteKitCard) });
+    const none = `<section id="latest" aria-labelledby="latest-h">${shelfHead('latest-h', 'Latest pastes', { href: '/pastes', label: 'See all' })}${kit.empty({ title: 'No pastes yet', text: 'Be the first: paste something and share the link.', action: { href: '/new', label: 'Start a paste' } })}</section>`;
+    return `<div class="cm-sec">${rail || none}${languages && languages.length ? kindChips(languages) : ''}</div>`;
+}
+
+function streamsShelf(items) {
+    if (!items || !items.length) return '';
+    return `<div class="cm-sec">${kit.rail({ id: 'from-streams', title: 'From streams', more: { href: '/pastes?from=streams', label: 'See all' }, items: items.map(pasteKitCard) })}
+<p class="cm-note">Moments from streams on OpenVibe.Live, written up by OpenVibe.AI, each linking back to the stream.</p></div>`;
+}
+
+/** The forum's public places as a launcher: icon tiles on a phone, a row with each one's line from 600 px. */
 function forumShelf(spaces) {
     if (!spaces || !spaces.length) return '';
-    return `<section class="section home-sec" id="forum" aria-labelledby="h-forum">
-  <div class="section-head"><h2 id="h-forum">The forum</h2><a class="more" href="/s">All forums <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  <ul class="cm-shelf" role="list">${spaces.slice(0, 8).map((sp) => `<li><a class="cm-tile" href="/s/${esc(sp.slug)}"><strong>${esc(sp.name)}</strong>${sp.description ? `<span>${esc(ld.clean(sp.description, 140))}</span>` : ''}<small>${num(sp.thread_count)} ${Number(sp.thread_count) === 1 ? 'thread' : 'threads'}${sp.last_activity_at ? ` · active ${esc(timeAgo(sp.last_activity_at))}` : ''}</small></a></li>`).join('')}</ul>
-</section>`;
+    return showcase.apps({
+        id: 'forum', title: 'The forum',
+        items: spaces.slice(0, 8).map((sp) => ({
+            icon: SPACE_ICON[sp.slug] || 'ov:chat', name: sp.name, href: `/s/${sp.slug}`,
+            text: `${sp.description ? `${ld.clean(sp.description, 90)} · ` : ''}${num(sp.thread_count)} ${Number(sp.thread_count) === 1 ? 'thread' : 'threads'}`,
+        })),
+        more: { href: '/s', label: 'All forums' },
+    });
 }
 
+const whenOf = (v) => (v ? kit.when(v) : { text: '', iso: '' });
 function roadmapShelf(items) {
     if (!items || !items.length) return '';
-    return `<section class="section home-sec" id="roadmap" aria-labelledby="h-roadmap">
-  <div class="section-head"><h2 id="h-roadmap">On the roadmap</h2><a class="more" href="/s/roadmap">The whole roadmap <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  <ul class="cm-list" role="list">${items.map((t) => `<li><a href="/s/roadmap/t/${esc(t.slug)}">${esc(t.title)}</a> <span class="badge badge-status status-${esc(t.status || 'open')}">${esc(STATUS_WORDS[t.status] || 'Open')}</span>${t.last_activity_at ? ` <span class="muted small">${timeTag(t.last_activity_at)}</span>` : ''}</li>`).join('')}</ul>
-</section>`;
+    return `<section class="cm-sec" id="roadmap" aria-labelledby="h-roadmap">${shelfHead('h-roadmap', 'On the roadmap', { href: '/s/roadmap', label: 'The whole roadmap' })}
+${kit.list(items.slice(0, 5).map((t) => kit.row({ href: `/s/roadmap/t/${t.slug}`, title: t.title, subHtml: kit.badge(STATUS_WORDS[t.status] || 'Open', STATUS_TONE[t.status] || ''), meta: whenOf(t.last_activity_at).text, metaIso: whenOf(t.last_activity_at).iso })))}</section>`;
 }
 
 function pulseShelf(items) {
     if (!items || !items.length) return '';
-    return `<section class="section home-sec" id="pulse" aria-labelledby="h-pulse">
-  <div class="section-head"><h2 id="h-pulse">Across OpenVibe</h2><a class="more" href="/pulse">All of Pulse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  <ul class="cm-list" role="list">${items.map((it) => {
-        const local = it.source.service === 'community';
-        return `<li><span class="badge pulse-source">${esc(SERVICE_WORDS[it.source.service] || it.source.service)}</span> <a href="${esc(it.url)}"${local ? '' : ' rel="nofollow ugc noopener"'}>${esc(it.title)}</a>${it.origin === 'ai' ? ' <span class="badge badge-ai" title="Generated by AI">AI</span>' : ''} <span class="muted small">${timeTag(it.occurred_at)}</span></li>`;
-    }).join('')}</ul>
-</section>`;
+    const rows = items.slice(0, 4).map((it) => {
+        const row = kit.row({ href: it.url, title: it.title, badge: it.origin === 'ai' ? kit.badge('AI', 'accent') : '', sub: SERVICE_WORDS[it.source.service] || it.source.service, meta: whenOf(it.occurred_at).text, metaIso: whenOf(it.occurred_at).iso });
+        // Links to the network's other sites keep the nofollow they have on /pulse (kit.row has no rel of its own).
+        return it.source.service === 'community' ? row : row.replace('<a href=', '<a rel="nofollow ugc noopener" href=');
+    });
+    return `<section class="cm-sec" id="pulse" aria-labelledby="h-pulse">${shelfHead('h-pulse', 'Across OpenVibe', { href: '/pulse', label: 'All of Pulse' })}
+${kit.list(rows)}</section>`;
 }
 
-function homeFaq() {
-    return `<section class="section home-sec" id="questions" aria-labelledby="h-faq">
-  <div class="section-head"><h2 id="h-faq">Questions</h2></div>
-  <div class="cm-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>
-</section>`;
-}
-
-function homePage({ latest, trending, fromStreams = [], languages, user, spaces = [], roadmap = [], activity = [], counts = {} }) {
-    const body = showcase.hero({
-        eyebrow: 'OpenVibe.Community',
-        title: 'Share it with a link.', accent: 'Talk about it here.',
-        lede: 'Paste code, logs, configs or a screenshot and get a short link that works anywhere. Reading and sharing need no account. Sign in with your OpenVibe account to edit, comment and keep a list of your own, and talk things through in the Forum.',
-        actions: [
-            { label: 'Start a paste', href: '/new', primary: true, icon: 'fa-plus' },
-            { label: 'Browse pastes', href: '/pastes', icon: 'fa-paste' },
-            ...(user ? [{ label: 'My pastes', href: '/my', icon: 'fa-user' }] : []),
-        ],
-        note: 'Run by the people using it and moderated in the open. Say it, own it.',
-        aside: { html: `<pre class="cm-hero-code" aria-label="Paste a file from a terminal"><code>${esc(TERMINAL)}</code></pre>` },
-    }) + homeStats(counts) + `
-<section class="section home-sec" id="latest">
-  <div class="section-head"><h2>Latest pastes</h2><a class="more" href="/pastes">All pastes <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  ${cardGrid(latest, 'No pastes yet — be the first.')}
-  ${languages && languages.length ? `<p class="lang-cloud" aria-label="Browse by language">${languages.slice(0, 12).map((l) => `<a href="/pastes?lang=${encodeURIComponent(l.language)}">${esc(languageLabel(l.language))} <small>${l.count}</small></a>`).join(' ')}</p>` : ''}
-</section>
-
-<section class="section home-sec" id="trending">
-  <div class="section-head"><h2>Most viewed</h2><a class="more" href="/pastes?sort=views">By views <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  ${cardGrid(trending, 'Nothing trending yet.')}
-</section>
-${fromStreams.length ? `
-<section class="section home-sec" id="from-streams">
-  <div class="section-head"><h2>From streams</h2><a class="more" href="/pastes?from=streams">All from streams <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  <p class="muted">Moments from streams on OpenVibe.Live, written up by OpenVibe.AI, each linking back to the stream.</p>
-  ${cardGrid(fromStreams, '')}
-</section>` : ''}
-${forumShelf(spaces)}
-${roadmapShelf(roadmap)}
-${pulseShelf(activity)}
-` + showcase.features({
-        id: 'spaces',
-        title: 'What lives here',
-        items: [
-            { icon: 'fa-paste', title: 'Pastes', text: 'Code, logs and configs with highlighting for every common language, a raw link and a download.', href: '/new' },
-            { icon: 'fa-image', title: 'Screenshots', text: 'Drop an image and share it with a link. Location data is stripped before it is stored.', href: '/new' },
-            { icon: 'fa-layer-group', title: 'Forum', text: 'General, Feedback and Showcase: places to talk, share and get help.', href: '/s' },
-            { icon: 'fa-comments', title: 'Threads', text: 'Long-form discussion that outlives a chat scrollback. Start one in any open forum.', href: '/s/general' },
-            { icon: 'fa-wave-square', title: 'Pulse', text: 'What is happening across the OpenVibe network, in one feed.', href: '/pulse' },
-            { icon: 'fa-code-branch', title: 'Open source', text: 'Every line that runs this site is public. Read it, file an issue, send a fix.', href: 'https://github.com/OpenVibers/OpenVibe.Community' },
-        ],
-    }) + showcase.code({
-        id: 'api',
-        title: 'Paste from anywhere',
-        lede: 'The page you use is the API a script uses: no key for public pastes. Sign in, or send your OpenVibe token, to keep them under your account.',
-        samples: [
-            { label: 'A file from a terminal', lang: 'bash', code: `curl -F 'content=<build.log' -F title='Build log' \\\n  https://openvibe.community/api/pastes` },
-            { label: 'JavaScript', lang: 'js', code: `const api = 'https://openvibe.community/api/pastes';
+/** The API, read once: folded, with the two samples to copy. */
+function apiFold() {
+    return kit.fold({
+        id: 'api', title: 'Paste from a script', meta: 'curl or fetch',
+        body: `<p class="cm-fold-lede">The page you use is the API a script uses: no key for public pastes. Sign in, or send your OpenVibe token, to keep them under your account.</p>
+<p class="cm-snip-h">A file from a terminal</p>${kit.snippet({ id: 'api-curl', code: `curl -F 'content=<build.log' -F title='Build log' \\\n  https://openvibe.community/api/pastes` })}
+<p class="cm-snip-h">JavaScript</p>${kit.snippet({ id: 'api-js', code: `const api = 'https://openvibe.community/api/pastes';
 const res = await fetch(api, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ title: 'Snippet', content }),
 });
-const { url } = await res.json(); // "/p/<slug>"` },
+const { url } = await res.json(); // "/p/<slug>"` })}`,
+    });
+}
+
+function homeFaq() {
+    return `<section class="cm-sec" id="questions" aria-labelledby="h-faq">
+  <h2 id="h-faq" class="cm-h">Questions</h2>
+  <div class="cm-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>
+</section>`;
+}
+
+function homePage({ latest, fromStreams = [], languages, user, spaces = [], roadmap = [], activity = [], counts = {} }) {
+    const body = showcase.hero({
+        title: 'Share it with a link.', accent: 'Talk about it here.',
+        lede: 'Paste code, logs, configs or a screenshot and get a short link that works anywhere. No account needed to read or share.',
+        // Two, side by side on a phone: the paste itself, then the list (signed in: your own; See all opens everyone's).
+        actions: [
+            { label: 'Start a paste', href: '/new', primary: true, icon: 'fa-plus' },
+            user ? { label: 'My pastes', href: '/my', icon: 'fa-user' } : { label: 'Browse pastes', href: '/pastes', icon: 'fa-paste' },
         ],
-    }) + homeFaq() + showcase.network({ service: 'community' }) + showcase.cta({
-        title: 'Start a paste',
-        text: 'Paste it, get a link, share it anywhere. Sign in to keep your pastes together under your OpenVibe account, or post without one.',
-        actions: [{ label: 'New paste', href: '/new', primary: true, icon: 'fa-plus' }, { label: 'Visit the Forum', href: '/s' }],
-    }) + `
+        // The terminal beside the words on a computer; a phone skips it (community.css), and the API fold has it too.
+        aside: { html: `<pre class="cm-hero-code" aria-label="Paste a file from a terminal"><code>${esc(TERMINAL)}</code></pre>` },
+    }) + homeStats(counts) + `
+${latestShelf(latest, languages)}
+${streamsShelf(fromStreams)}
+${forumShelf(spaces)}
+<div class="cm-pair">${roadmapShelf(roadmap)}${pulseShelf(activity)}</div>
+<div class="cm-sec">${apiFold()}</div>
+${homeFaq()}
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
     return renderPage({
         title: 'OpenVibe.Community: pastes, forums and the OpenVibe roadmap',
@@ -261,7 +284,9 @@ const { url } = await res.json(); // "/p/<slug>"` },
             ...(latest && latest.length ? [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Latest pastes', url: `${config.baseUrl}/pastes`, itemListElement: latest.slice(0, 12).map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.title || 'Untitled', url: `${config.baseUrl}/p/${p.slug}` })) }] : []),
             { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: HOME_FAQ.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) },
         ],
-        styles: [showcase.STYLESHEET],
+        // The kit's controls (kit.css) and its cards and rails (room.css, after it); kit-web.js comes with community.js.
+        styles: [showcase.STYLESHEET, 'kit.css', 'room.css'],
+        bodyClass: 'cm-home',
         body,
     });
 }

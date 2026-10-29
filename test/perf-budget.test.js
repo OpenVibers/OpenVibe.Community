@@ -10,16 +10,16 @@ const { spawn } = require('child_process');
 const { measure, check, format } = require('openvibe-shared/perf-budget');
 
 const BUDGETS = {
-    htmlRawKB: 42,   // 41.6 with the agent layer's two discovery <link> tags (Shared 4.34.0, 2026-10-29); was 41 at 41.0
+    htmlRawKB: 41,   // 39.4 the short home (2026-10-29: rails, a launcher and a fold in place of three grids, What lives here, Part of OpenVibe and the closing call), lowered back from 42; 41.6 with the agent layer's two discovery <link> tags (Shared 4.34.0, 2026-10-29); was 41 at 41.0
                      // 36.4 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); measured 31.7 on 10-22: the home gained the forum's places, the roadmap, Pulse, real counts and six
                      // questions with their FAQPage JSON-LD; was 26 at 22.0
     htmlBrotliKB: 10,   // 8.6 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); 7.3 on 10-22 (the same shelves); was 6.5 at 5.7
     jsFiles: 7,   // 6: openvibe-shared/shell adds web-runtime.js (raised with the shell, 2026-10-04)
     jsRawKB: 318,   // 314 openvibe-shared 4.25.0: the menu's orb beside the brand, both balances on phones, messages, the account sheet on phones and the bar stepping away on phones; 306.5 openvibe-shared 4.22.0: the navbar's magnifier search button and More dropdown (search.js and loading.js load only when used); 300.7 Shared 4.17.0: OpenCoins and Vibes chips (wallet: true) in the navbar; 286.6 openvibe-shared 4.15 footer: the compact footer opens into the whole one, and the pulse line; 276.8 with shared 4.11.0's seasonal navbar; 267.5 with openvibe-shared 4.9.0 (status text twins in every theme, 2026-10-23); 251.3 (was 208.8 before the shell's web-runtime.js)
     jsBrotliKB: 80,   // 78.1 openvibe-shared 4.25.0: the menu's orb beside the brand, both balances on phones, messages, the account sheet on phones and the bar stepping away on phones; 74.4 Shared 4.17.0: OpenCoins and Vibes chips (wallet: true) in the navbar; 71.7 openvibe-shared 4.15 footer: the compact footer opens into the whole one, and the pulse line; 69.1 Shared 4.12.0: the light/dark switch, the seasonal mark and the theme pairs; 65.5 with shared 4.11.0's seasonal navbar; 59.9 (was 48.9)
-    cssFiles: 3,   // 2
-    cssRawKB: 59,   // 54.9 openvibe-shared 4.26.1 (hero visual); 47.2 with Shared 4.13.0 (2026-10-26); 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
-    cssBrotliKB: 11.5,   // 9.5 with Shared 4.13.0 (2026-10-26); 7.7 // raised 11 -> 12 for the openvibe-shared Kit 2 pin (kit.css grew) // back to the pre-Kit 2 value: Kit 2 has its own files (kit-data.css) since openvibe-shared v4.37.0, so kit.css weighs what it did // back to the pre-Kit 2 value: Kit 2 has its own files (kit-data.css) since openvibe-shared v4.37.0, so kit.css weighs what it did
+    cssFiles: 5,   // 5 the short home: + kit.css (numbers, lists, chips, the fold) and room.css (cards and rails), the shared kit's look; 3
+    cssRawKB: 100,   // 97.3 the short home (2026-10-29): kit.css 25.6 KB + room.css 15.7 KB, while community.css sheds the old shelves' rules and the page 10 of its 15 phone screens; 54.9 openvibe-shared 4.26.1 (hero visual); 47.2 with Shared 4.13.0 (2026-10-26); 40.6 on 10-22 (the home shelves' styles in community.css); was 40 at 36.5 with the showcase home
+    cssBrotliKB: 21,   // 20.4 the short home (kit.css + room.css, as above; was 11.5 once Kit 2 had its own files in openvibe-shared v4.37.0); 9.5 with Shared 4.13.0 (2026-10-26); 7.7 // raised 11 -> 12 for the openvibe-shared Kit 2 pin (kit.css grew)
     externalFiles: 2,   // 1
 };
 

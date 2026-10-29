@@ -51,13 +51,7 @@ img { max-width: 100%; height: auto; }
 .section { padding: 28px 0 8px; }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .section-head h2 { margin: 0; }
-/* The home's sections take the showcase's heading size (openvibe-shared/showcase.css .sc-sec), like "What lives here" between
-   them and the other OpenVibe homes; a paste page's "Comments" and "More like this" keep the compact size. */
-.home-sec > .section-head h2 { font-size: clamp(22px, 2.6vw, 30px); letter-spacing: -.02em; }
 .more { font-size: .9rem; font-weight: 600; white-space: nowrap; }
-.lang-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
-.lang-cloud a { background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: .85rem; color: var(--text-primary); }
-.lang-cloud a small { color: var(--text-muted); margin-left: 4px; }
 
 /* Cards */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
@@ -367,24 +361,33 @@ button.rx:hover { border-color: var(--accent); }
 .pulse-new { position: sticky; top: 8px; z-index: 5; display: flex; justify-content: center; margin: 0 0 10px; }
 .pulse-new[hidden] { display: none; }
 
-/* A link inside running text is underlined: colour alone did not tell it apart (WCAG 1.4.1). */
-.lede a, .muted a, p a:not(.btn) { text-decoration: underline; text-underline-offset: 2px; }
+/* A link inside running text is underlined: colour alone did not tell it apart (WCAG 1.4.1). Held to an element's weight
+   (:where), so it beats the bare `a` rule but not a shared piece's own link style (showcase's "All forums →"). */
+:where(.lede, .muted, p) a:not(:where(.btn)) { text-decoration: underline; text-underline-offset: 2px; }
 
-/* Home shelves (server/render/pages.js homePage): real counts, the forum's places, the roadmap, Pulse, questions */
-.cm-stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; padding: 0; }
-.cm-stats > div { display: flex; flex-direction: column-reverse; min-width: 0; padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-.cm-stats dt { margin: 0; font-size: .8rem; color: var(--text-secondary); }
-.cm-stats dd { margin: 0; font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.cm-shelf { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); }
-.cm-tile { display: grid; gap: 4px; height: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text-primary); }
-.cm-tile:hover, .cm-tile:focus-visible { border-color: var(--accent); text-decoration: none; }
-.cm-tile span { font-size: .9rem; color: var(--text-secondary); }
-.cm-tile small { font-size: .8rem; color: var(--text-secondary); }
-.cm-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-.cm-list li { padding: 10px 14px; overflow-wrap: anywhere; }
-.cm-list li + li { border-top: 1px solid var(--border); }
+/* Home (server/render/pages.js homePage): a taste and a door. The shared kit draws it (showcase.css: the hero and the
+   forum's launcher; kit.css: the numbers, lists, chips and the fold; room.css: the rails of cards); this is only the
+   spacing between its parts, one heading size for all of them, and the quick filters' strip. */
+.cm-home .page > .sc-sec { margin-top: 32px; }
+.cm-home .page > .sc-sec > h2, .cm-h { margin: 0 0 12px; font-family: inherit; font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; }
+.cm-sec { min-width: 0; margin-top: 28px; }
+.cm-sec > .ovk-rail { margin-top: 0; }
+.cm-home .ovk-rail-more, .cm-home .sc-apps-more a { display: inline-flex; align-items: center; min-height: 44px; }
+.cm-note { margin: 0; color: var(--text-secondary); font-size: .88rem; }
+/* The kinds as quick filters: one strip that scrolls sideways on a phone (like the numbers), wrapping from 600 px. */
+.cm-kinds { display: flex; gap: 8px; margin: 2px -16px 0; padding: 0 16px 2px; overflow-x: auto; scrollbar-width: none; }
+.cm-kinds::-webkit-scrollbar { display: none; }
+.cm-kinds .ovk-btn { flex: none; min-height: 44px; }
+.cm-pair { display: grid; grid-auto-flow: row; gap: 0 28px; min-width: 0; }
+.cm-fold-lede { margin: 0 0 12px; color: var(--text-secondary); }
+.cm-snip-h { margin: 0 0 6px; color: var(--text-secondary); font-size: .8rem; font-weight: 700; }
+@media (min-width: 600px) { .cm-kinds { flex-wrap: wrap; margin: 2px 0 0; padding: 0; overflow: visible; } }
+@media (min-width: 1024px) { .cm-pair { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: start; } }
+/* Where the hero stacks (showcase.css, 860 px) it skips the terminal sample: the fold "Paste from a script" has it, and a
+   phone gets to the pastes. */
+@media (max-width: 860px) { .cm-home .sc-hero-aside { display: none; } }
 .cm-faq { display: grid; gap: 8px; max-width: 860px; }
 .cm-faq details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-.cm-faq summary { cursor: pointer; padding: 12px 16px; font-weight: 700; }
+.cm-faq summary { min-height: 44px; box-sizing: border-box; cursor: pointer; padding: 12px 16px; font-weight: 700; }
 .cm-faq details[open] summary { border-bottom: 1px solid var(--border); }
 .cm-faq p { margin: 0; padding: 12px 16px 14px; color: var(--text-secondary); line-height: 1.6; }

@@ -48,10 +48,10 @@ const check = async (name, fn) => { catalog.reset(); await fn(); passed++; conso
     });
 
     await check('the home has a From streams shelf; the browse page says whose pastes and keeps it in its links', async () => {
-        const home = pages.homePage({ latest: [], trending: [], fromStreams: [rows[0]], languages: [] });
+        const home = pages.homePage({ latest: [], fromStreams: [rows[0]], languages: [] });
         assert.match(home, /id="from-streams"/);
         assert.match(home, /href="\/pastes\?from=streams"/);
-        assert.doesNotMatch(pages.homePage({ latest: [], trending: [], languages: [] }), /id="from-streams"/, 'no shelf without any');
+        assert.doesNotMatch(pages.homePage({ latest: [], languages: [] }), /id="from-streams"/, 'no shelf without any');
         const out = await catalog.browse({ from: 'streams' });
         const page = pages.browsePage({ ...out, pages: 3 }, []);
         assert.match(page, /from streams, written up by OpenVibe\.AI/);

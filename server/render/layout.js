@@ -146,6 +146,9 @@ function renderPage(o) {
             `<script src="${asset('js/community.js')}" defer></script>`,
             // openvibe-shared items.js + items.css: community.js loads them only on a page that shows someone.
             `<meta name="ov-items" content="${escapeHtml(ovServe.url('items.js'))} ${escapeHtml(ovServe.url('items.css'))}">`,
+            // openvibe-shared kit-web.js (rails' arrows, card menus, copy buttons): community.js loads it only on a page
+            // that draws the kit's pieces, so every page keeps the same scripts and boost still swaps between them.
+            `<meta name="ov-kit" content="${escapeHtml(ovServe.url('kit-web.js'))}">`,
             `<meta name="ov-boost" content="community@${escapeHtml(RELEASE)}">`,
             `<script src="${ovServe.url('boost.js')}" data-main="#main" defer></script>`,
         ].filter(Boolean).join('\n'),

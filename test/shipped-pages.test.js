@@ -5,7 +5,7 @@
 const assert = require('assert');
 const pages = require('../server/render/pages');
 
-const home = pages.homePage({ latest: [], trending: [], languages: [], user: null });
+const home = pages.homePage({ latest: [], languages: [], user: null });
 assert.ok(home.includes('data-ov-shipped="latest" data-service="community" href="/updates"'), 'home pill');
 assert.ok(home.includes('data-ov-shipped="list" data-service="community"'), 'home recent list');
 assert.ok(home.includes('"logoutUrl":"/auth/logout?next={path}"'));
