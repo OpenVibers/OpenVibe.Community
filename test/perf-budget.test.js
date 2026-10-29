@@ -10,7 +10,8 @@ const { spawn } = require('child_process');
 const { measure, check, format } = require('openvibe-shared/perf-budget');
 
 const BUDGETS = {
-    htmlRawKB: 41,   // 36.4 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); measured 31.7 on 10-22: the home gained the forum's places, the roadmap, Pulse, real counts and six
+    htmlRawKB: 42,   // 41.6 with the agent layer's two discovery <link> tags (Shared 4.34.0, 2026-10-29); was 41 at 41.0
+                     // 36.4 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); measured 31.7 on 10-22: the home gained the forum's places, the roadmap, Pulse, real counts and six
                      // questions with their FAQPage JSON-LD; was 26 at 22.0
     htmlBrotliKB: 10,   // 8.6 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); 7.3 on 10-22 (the same shelves); was 6.5 at 5.7
     jsFiles: 7,   // 6: openvibe-shared/shell adds web-runtime.js (raised with the shell, 2026-10-04)

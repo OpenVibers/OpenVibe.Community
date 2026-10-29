@@ -40,7 +40,7 @@ const { assetVersion, SITE_NAME, DEFAULT_DESCRIPTION } = require('./render/layou
 const { createAuthClient, createAuthRoutes } = require('./auth/routes');
 const { getDb } = require('./db');
 const { createNetworkIdentity } = require('./identity/network');
-const { createViewerResolver } = require('./identity/viewer');
+const { createViewerResolver, ANONYMOUS } = require('./identity/viewer');
 const v1 = require('./http/v1');
 const { createCommentService } = require('./comments/service');
 const { createCommentsApi } = require('./comments/api');
@@ -276,7 +276,8 @@ async function createApp(opts = {}) {
     // ── Machine endpoints ────────────────────────────────────
     // Written by openvibe-shared/seo from server/discovery.js; the sitemap is rebuilt at most hourly.
     app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
-        .send(seo.robotsTxt({ sitemaps: [`${config.baseUrl}/sitemap.xml`], disallow: discovery.ROBOTS_DISALLOW })));
+        .send(seo.robotsTxt({ sitemaps: [`${config.baseUrl}/sitemap.xml`], disallow: discovery.ROBOTS_DISALLOW })
+            + `# Agent manifest: ${config.baseUrl}/.well-known/agent.json\n`));
     app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
         .send(seo.llmsTxt({ name: SITE_NAME, summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, sections: discovery.llmsSections() })));
     app.get('/llms-full.txt', wrap(async (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
@@ -310,6 +311,12 @@ async function createApp(opts = {}) {
     const withUser = viewers.middleware({ services: false });
     const ctxOf = (req) => ({ token: req.token, ip: req.ip, userAgent: req.get('user-agent') || '', viewer: req.viewer });
     const html = (res, body, status = 200) => res.status(status).type('html').set('Cache-Control', PAGE_CACHE).send(body);
+    // A public page with a Markdown twin names it in the Link header and varies on Accept. Only the
+    // pages the agent layer twins (the home, /pastes and a paste) call this.
+    const twinLink = (res, pathname) => {
+        res.vary('Accept');
+        res.set('Link', require('openvibe-shared/agent-layer').linkHeaderTags(`${config.baseUrl}${pathname}`, `${config.baseUrl}/llms.txt`).header);
+    };
     // Every page response below (redirects and error pages too) that sets no policy of its own.
     app.use(cache.applyHtml({ private: true }));
 
@@ -344,10 +351,50 @@ async function createApp(opts = {}) {
         return value;
     }
 
-    app.get('/', withUser, wrap(async (req, res) => {
+    // The public pages the agent layer twins, built once here and used by both the HTML routes and
+    // server/agent-pages.js. A twin passes the anonymous viewer and noView: it must never carry a
+    // signed-in person's view, count a page view or consume a burn-after-read paste.
+    async function homeView(user) {
         // People's pastes lead; OpenVibe.AI's moment pastes from streams have their own shelf.
         const [latest, trending, fromStreams, languages, extras] = await Promise.all([catalog.latest(12, { from: 'people' }), catalog.trending(8, { from: 'people' }), catalog.latest(8, { from: 'streams' }), catalog.languages(), readHomeExtras()]);
-        html(res, pages.homePage({ latest, trending, fromStreams, languages, user: req.user, ...extras }));
+        return pages.homePage({ latest, trending, fromStreams, languages, user, ...extras });
+    }
+
+    async function browseView(query) {
+        const [result, languages] = await Promise.all([catalog.browse(query), catalog.languages()]);
+        return pages.browsePage(result, languages);
+    }
+
+    const agentViews = {
+        home: () => homeView(null),
+        browse: (query) => browseView(query),
+        paste: (slug, query) => pasteView(slug, query, {
+            viewer: ANONYMOUS, user: null, twin: true,
+            ctx: { viewer: ANONYMOUS, noView: true, ip: '127.0.0.1', userAgent: '' },
+        }),
+    };
+
+    // The agent layer (openvibe-shared/agent-layer): /.well-known/agent.json, and the Markdown twins of the
+    // home, /pastes and a paste. Gated to the manifest and twin requests only, so a browser (signed in or
+    // not) keeps the page its own route renders; the twins render through the same page builders signed out.
+    {
+        const agentRouter = express.Router();
+        require('openvibe-shared/agent-layer').mount(agentRouter, {
+            descriptor: require('./agent-descriptor'),
+            render: require('./agent-pages').createAgentPages({ views: agentViews }).renderPublicPage,
+        });
+        app.use((req, res, next) => {
+            // The manifest exactly: the rest of /.well-known/ (security.txt) belongs to the app.
+            if (req.path === '/.well-known/agent.json') return agentRouter(req, res, next);
+            if (String(req.path || '').endsWith('.md') || (req.query && req.query.format === 'markdown')
+                || req.accepts(['html', 'text/markdown']) === 'text/markdown') return agentRouter(req, res, next);
+            return next();
+        });
+    }
+
+    app.get('/', withUser, wrap(async (req, res) => {
+        twinLink(res, '/');
+        html(res, await homeView(req.user));
     }));
 
     app.get('/updates', (req, res) => html(res, pages.updatesPage()));
@@ -370,8 +417,8 @@ async function createApp(opts = {}) {
     }));
 
     app.get('/pastes', withUser, wrap(async (req, res) => {
-        const [result, languages] = await Promise.all([catalog.browse(req.query), catalog.languages()]);
-        html(res, pages.browsePage(result, languages));
+        twinLink(res, req.originalUrl);
+        html(res, await browseView(req.query));
     }));
 
     // Old Live-style /pastes/<slug> links and bare slugs land on the paste page.
@@ -394,15 +441,20 @@ async function createApp(opts = {}) {
         res.redirect(301, `/p/${clean}${rest}${q >= 0 ? req.originalUrl.slice(q) : ''}`);
     });
 
-    app.get('/p/:slug', withUser, wrap(async (req, res) => {
-        const { slug } = req.params;
-        if (!SLUG_RE.test(slug)) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'That link does not point at a paste.' }), 404);
+    /** The paste page's body, or the error page it answers with; the HTML route and the twin share it. */
+    async function pasteView(slug, query, { viewer, user, ctx, twin = false } = {}) {
+        if (!SLUG_RE.test(slug)) return { status: 404, body: pages.errorPage({ status: 404, title: 'Paste not found', message: 'That link does not point at a paste.' }) };
+        // A twin is not a person reading: never consume a burn-after-read paste for one.
+        if (twin) {
+            const row = await db.prepare('SELECT burn_after_read FROM pastes WHERE slug = ?').get(slug);
+            if (!row || Number(row.burn_after_read)) return null;
+        }
         let paste;
         try {
-            paste = await source.getPaste(slug, ctxOf(req));
+            paste = await source.getPaste(slug, ctx);
         } catch (err) {
-            if (err.status === 404) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
-            if (err.status === 410) return html(res, pages.errorPage({ status: 410, title: 'This paste has burned', message: 'It was set to burn after reading, and it has been read.' }), 410);
+            if (err.status === 404) return { status: 404, body: pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }) };
+            if (err.status === 410) return { status: 410, body: pages.errorPage({ status: 410, title: 'This paste has burned', message: 'It was set to burn after reading, and it has been read.' }) };
             throw err;
         }
         const related = await catalog.related(paste, 6);
@@ -410,10 +462,20 @@ async function createApp(opts = {}) {
         // comments API show, sorted (?sort=old|new) and paged (?after=<last comment id>) as there; null while
         // nobody has commented. The comment service applies the paste's visibility again.
         // A burn-after-read paste is gone once shown, so it has no comment panel.
-        const after = /^\d{1,15}$/.test(String(req.query.after || '')) ? String(req.query.after) : null;
-        const sort = req.query.sort === 'old' ? 'old' : 'new';
-        const thread = paste.burn_after_read ? null : await comments.forRef(req.viewer, pasteRef(paste.slug), { sort, after, limit: 30 });
-        html(res, pages.pastePage({ paste, related, user: req.user, comments: thread, commentSort: sort, commentsAfter: after }));
+        const after = /^\d{1,15}$/.test(String(query.after || '')) ? String(query.after) : null;
+        const sort = query.sort === 'old' ? 'old' : 'new';
+        const thread = paste.burn_after_read ? null : await comments.forRef(viewer, pasteRef(paste.slug), { sort, after, limit: 30 });
+        return {
+            status: 200, slug: paste.slug,
+            body: pages.pastePage({ paste, related, user, comments: thread, commentSort: sort, commentsAfter: after }),
+        };
+    }
+
+    app.get('/p/:slug', withUser, wrap(async (req, res) => {
+        const out = await pasteView(req.params.slug, req.query, { viewer: req.viewer, user: req.user, ctx: ctxOf(req) });
+        if (!out) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
+        if (out.status === 200) twinLink(res, `/p/${encodeURIComponent(out.slug)}`);
+        html(res, out.body, out.status);
     }));
 
     // No-JS comment form: signed in, the cookie (SameSite=Lax) and no Origin from another site, as on /c/:accessId.
