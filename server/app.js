@@ -218,6 +218,9 @@ async function createApp(opts = {}) {
     const limits = createActorLimits({ registry: metrics.registry, valkey, ...(opts.actorLimits || {}) });
 
     // ── /api/pastes — the native paste API ───────────────────
+    // GET /openapi.json: the API document, generated from the table the /api routers mount (server/openapi.js).
+    // Mounted before them, because each router ends with a 404 for anything it does not serve.
+    require('./openapi').mount(app);
     app.use('/api/', rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false }));
     app.use('/api/pastes', require('./pastes/api').createPastesApi({ service: app.locals.pastes, viewers, anonWriteLimiter, limits }));
     // ── /api/v1/submissions — clips, art, ideas and reports for community review ──
