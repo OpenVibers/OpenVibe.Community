@@ -14,6 +14,7 @@ const showcase = require('openvibe-shared/showcase');
 const kit = require('openvibe-shared/kit');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 const { renderMarkdown } = require('./markdown');
+const { pickBlock, pickRules, foldBlock } = require('./short');
 
 // Languages read as prose: their lines wrap by default (the Wrap button still toggles), so a phone shows the whole text.
 const PROSE = new Set(['markdown', 'plaintext', 'text']);
@@ -247,10 +248,31 @@ const { url } = await res.json(); // "/p/<slug>"` })}`,
 }
 
 function homeFaq() {
-    return `<section class="cm-sec" id="questions" aria-labelledby="h-faq">
-  <h2 id="h-faq" class="cm-h">Questions</h2>
-  <div class="cm-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>
-</section>`;
+    // The questions are a fold on a phone (the owner's short-pages rule, 2026-10-30): they stay in the page for the
+    // crawlers, and the script closes them where the reader has room for more.
+    return `<section class="cm-sec" id="questions" aria-labelledby="h-faq">${foldBlock({
+        id: 'faq-fold',
+        head: '<h2 id="h-faq" class="cm-h">Questions</h2>',
+        html: `<div class="cm-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>`,
+    })}</section>`;
+}
+
+/**
+ * The roadmap and the pulse, one at a time on a phone (the owner's short-pages rule, 2026-10-30): the chips pick one
+ * of the two shelves, and both stay in the page for the crawlers. On a wide screen they stay side by side.
+ */
+function pickWhatIsHappening(roadmap, activity) {
+    const panes = [
+        { id: 'shelf-roadmap', label: 'Roadmap', html: roadmapShelf(roadmap) },
+        { id: 'shelf-pulse', label: 'Across OpenVibe', html: pulseShelf(activity) },
+    ];
+    return pickBlock({ key: 'happening', label: 'What is happening', head: 'What is happening', panes, bodyClass: 'cm-pair' });
+}
+
+/** The rules that show the picked shelf of the home's pick block: one per shelf, written for this page. */
+function happeningRules() {
+    const ids = ['shelf-roadmap', 'shelf-pulse'];
+    return `@supports selector(:has(*)){@media (max-width:640px){${pickRules('happening', ids)}}}`;
 }
 
 function homePage({ latest, fromStreams = [], languages, user, spaces = [], roadmap = [], activity = [], counts = {} }) {
@@ -268,7 +290,7 @@ function homePage({ latest, fromStreams = [], languages, user, spaces = [], road
 ${latestShelf(latest, languages)}
 ${streamsShelf(fromStreams)}
 ${forumShelf(spaces)}
-<div class="cm-pair">${roadmapShelf(roadmap)}${pulseShelf(activity)}</div>
+${pickWhatIsHappening(roadmap, activity)}
 <div class="cm-sec">${apiFold()}</div>
 ${homeFaq()}
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
@@ -285,6 +307,8 @@ ${homeFaq()}
         ],
         // The kit's controls (kit.css) and its cards and rails (room.css, after it); kit-web.js comes with community.js.
         styles: [showcase.STYLESHEET, 'kit.css', 'room.css'],
+        // The rule that shows the picked shelf: one per shelf, so the CSS is written for this page.
+        inlineStyles: [happeningRules()],
         bodyClass: 'cm-home',
         body,
     });
