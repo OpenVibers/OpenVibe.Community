@@ -141,6 +141,7 @@ function renderPage(o) {
             appIcon.headTags({ site: 'community', iconBase: '/assets' }),
             ...feeds.map((f) => `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(f.title)}" href="${escapeHtml(f.href)}">`),
             ...(o.styles || []).map((name) => `<link rel="stylesheet" href="${ovServe.url(name)}">`),
+            ...(o.inlineStyles || []).map((css) => `<style>${css}</style>`),
             `<link rel="stylesheet" href="${asset('css/community.css')}">`,
             '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">',
             `<script src="${asset('js/community.js')}" defer></script>`,
