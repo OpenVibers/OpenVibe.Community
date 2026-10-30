@@ -372,7 +372,6 @@ button.rx:hover { border-color: var(--accent); }
 .cm-home .page > .sc-sec > h2, .cm-h { margin: 0 0 12px; font-family: inherit; font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; }
 .cm-sec { min-width: 0; margin-top: 28px; }
 .cm-sec > .ovk-rail { margin-top: 0; }
-.cm-home .ovk-rail-more, .cm-home .sc-apps-more a { display: inline-flex; align-items: center; min-height: 44px; }
 .cm-note { margin: 0; color: var(--text-secondary); font-size: .88rem; }
 /* The kinds as quick filters: one strip that scrolls sideways on a phone (like the numbers), wrapping from 600 px. */
 .cm-kinds { display: flex; gap: 8px; margin: 2px -16px 0; padding: 0 16px 2px; overflow-x: auto; scrollbar-width: none; }
