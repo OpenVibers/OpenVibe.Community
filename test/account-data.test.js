@@ -14,11 +14,19 @@ const { signDeliveryHeaders } = require('openvibe-sdk/events');
 const { validate } = require('openvibe-contracts');
 const { testDb } = require('./helpers/db');
 const { createPulseConsumer, TOPICS } = require('../server/pulse/consumer');
+const { uncovered } = require('openvibe-sdk/account-data');
 let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
 
 (async () => {
     SECRET = `whsec_${'ab'.repeat(32)}`;
     db = await testDb();
+    {
+        const missing = await uncovered(db, {
+            taskKeyed: ['spaces', 'comment_threads'],
+            exempt: { account_data_events: 'the ledger of requests itself: which export and deletion Community applied' },
+        });
+        assert.deepStrictEqual(missing, [], `a table with a person column is neither covered nor exempted: ${missing.join(', ')}`);
+    }
     sent = [];
     failNext = false;
     accountSend = async (p, body) => { if (failNext) { failNext = false; return { ok: false, status: 503 }; } sent.push({ path: p, body }); return { ok: true, status: 200 }; };
