@@ -30,7 +30,10 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
         const r = await require('./forum/starters').syncFromFile(require('./db').getDb());
         if (r && (r.created || r.updated)) console.log(`[Starters] ${r.created} thread(s) added, ${r.updated} updated`);
     } catch (err) { console.warn('[Starters] not synced:', err.message); }
-    const server = app.listen(config.port, config.host, () => {
+    // Socket activation (2026-10-31): systemd's .socket unit holds the listener across restarts, so a deploy
+    // queues requests in the kernel instead of answering 502. Without the socket unit, the usual listen.
+    const socketActivated = process.env.LISTEN_FDS === '1' && Number(process.env.LISTEN_PID) === process.pid;
+    const server = app.listen(...(socketActivated ? [{ fd: 3 }] : [config.port, config.host]), () => {
         console.log(`[Community] ${config.nodeEnv} on http://${config.host}:${config.port} → ${config.baseUrl}`);
         console.log(`[Community] pastes: this site is the authority (PostgreSQL), identity via ${config.networkUrl}`);
     });
