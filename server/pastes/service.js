@@ -18,7 +18,6 @@
 const crypto = require('crypto');
 const events = require('../events');
 const store = require('./store');
-const looks = require('./no-looks');
 const spam = require('./spam');
 const commentStore = require('../comments/store');
 const { discussionModerator } = require('../identity/capabilities');
@@ -300,8 +299,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     function aiFields(v, body) {
         if (!isService(v) || body.ai_summary == null) return {};
         const tags = body.ai_tags == null ? null : (typeof body.ai_tags === 'string' ? body.ai_tags : JSON.stringify(body.ai_tags)).slice(0, 2000);
-        // Public AI text never describes a person (./no-looks.js).
-        return { ai_summary: looks.summary(String(body.ai_summary).slice(0, 2000)), ai_tags: looks.tags(tags), ai_analyzed_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
+        // AI text is stored as written: describing people is fine (owner, 2026-10-31).
+        return { ai_summary: String(body.ai_summary).slice(0, 2000), ai_tags: tags, ai_analyzed_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
     }
 
     /**
