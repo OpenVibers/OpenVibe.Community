@@ -10,7 +10,7 @@ const { spawn } = require('child_process');
 const { measure, check, format } = require('openvibe-shared/perf-budget');
 
 const BUDGETS = {
-    htmlRawKB: 42,   // 41.9 the phone home (2026-10-30: the roadmap and the pulse become chips and the questions a fold); 39.4 the short home (2026-10-29: rails, a launcher and a fold in place of three grids, What lives here, Part of OpenVibe and the closing call), lowered back from 42; 41.6 with the agent layer's two discovery <link> tags (Shared 4.34.0, 2026-10-29); was 41 at 41.0
+    htmlRawKB: 43,   // 42.3 with openvibe-shared 4.59.0: the Pair mark beside the name, set in the brand face (2026-10-31); 41.9 the phone home (2026-10-30: the roadmap and the pulse become chips and the questions a fold); 39.4 the short home (2026-10-29: rails, a launcher and a fold in place of three grids, What lives here, Part of OpenVibe and the closing call), lowered back from 42; 41.6 with the agent layer's two discovery <link> tags (Shared 4.34.0, 2026-10-29); was 41 at 41.0
                      // 36.4 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); measured 31.7 on 10-22: the home gained the forum's places, the roadmap, Pulse, real counts and six
                      // questions with their FAQPage JSON-LD; was 26 at 22.0
     htmlBrotliKB: 10,   // 8.6 with the Part of OpenVibe section (Shared 4.13, 2026-10-26); 7.3 on 10-22 (the same shelves); was 6.5 at 5.7
