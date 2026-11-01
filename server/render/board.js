@@ -12,7 +12,7 @@ const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
-const { timeTag, fmtDate, num, avatarUrl, authorHtml, wearName } = require('./pages');
+const { timeTag, fmtDate, num, avatarUrl, mediaW, authorHtml, wearName } = require('./pages');
 const f = require('./forum');
 
 const STYLE_LABELS = { forum: 'Classic', feed: 'Feed' };   // the two styles, as the Forum page and the settings name them
@@ -176,7 +176,7 @@ ${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moder
 function authorPanel(p) {
     const a = p.author;
     if (!a) return '<aside class="postbit-author"><span class="postbit-name">Anonymous</span></aside>';
-    const pic = avatarUrl(a, 96);
+    const pic = mediaW(avatarUrl(a, 96), 160);
     const name = a.display_name || a.username || (a.is_ai ? 'AI' : a.is_system ? 'OpenVibe' : 'Someone');
     const initial = esc(String(name).trim()[0] || '?').toUpperCase();
     const st = p.author_stats;

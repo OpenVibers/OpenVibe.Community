@@ -50,6 +50,14 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!page.includes('class="thread-score"'), 'no score column');
     });
 
+    await check('the postbit avatar asks Media for the width it draws (the 64 px picture: 160)', async () => {
+        const obj = 'https://openvibe.media/o/med_01M644DY8BFX4H7MTRKPGG052R';
+        await t.db.prepare('UPDATE subject_projection SET avatar_url = ? WHERE subject_id = ?').run(obj, alex.subject_id);
+        const html = (await call('/s/general/t/welcome-thread')).text;
+        assert.ok(html.includes(`<img class="postbit-avatar" src="${obj}?w=160"`), 'the 64 px postbit avatar asks for 160');
+        await t.db.prepare('UPDATE subject_projection SET avatar_url = NULL WHERE subject_id = ?').run(alex.subject_id);
+    });
+
     await check('the board index: groups in order, every space with topics, posts and the last post', async () => {
         const r = (await call('/api/v1/spaces')).json();
         const general = r.groups[0].spaces.find((s) => s.slug === 'general');
