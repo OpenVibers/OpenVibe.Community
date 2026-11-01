@@ -230,7 +230,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
   <header class="thread-head">
     ${space.votes === false ? '' : f.voteForm(base, thread, viewer)}
     <div>
-      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Sticky" aria-label="Sticky"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
+      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${f.statusBadge(thread)}${f.categoryBadge(thread, space)}</p>` : ''}
       <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
     </div>
