@@ -189,6 +189,18 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .vote-btn:hover { border-color: var(--accent); color: var(--accent-light); }
 .vote-btn.active { background: var(--accent-strong, var(--accent, #3472d8)); border-color: var(--accent-strong, var(--accent, #3472d8)); color: var(--on-accent-strong, var(--on-accent)); }
 .mod-actions form { margin: 0; }
+.mod-actions .mod-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mod-actions .mod-rule, .mod-actions .mod-reason, .post-mod .mod-rule, .post-mod .mod-reason {
+  font: inherit; font-size: .82rem; padding: 3px 6px; border-radius: 6px;
+  border: 1px solid var(--border-light); background: var(--bg-input); color: var(--text-primary); max-width: 100%;
+}
+.mod-actions .mod-reason, .post-mod .mod-reason { width: 13em; }
+.post-mod { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 0; }
+.rss-link { display: inline-block; font-size: .78rem; font-weight: 600; color: var(--text-secondary); padding: 1px 7px; border: 1px solid var(--border-light); border-radius: 6px; vertical-align: middle; white-space: nowrap; }
+.rss-link:hover { color: var(--accent-light); border-color: var(--accent); text-decoration: none; }
+h1 .rss-link { font-size: .68rem; margin-left: 6px; }
+.thread-follow { margin: 4px 0 0; }
+.space-foot { margin: 20px 0 0; color: var(--text-secondary); }
 .posts { display: flex; flex-direction: column; gap: 12px; margin: 14px 0; }
 .post { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; }
 .post-opening { border-color: var(--border-light); }
@@ -319,6 +331,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
   .board-table td.num::before { content: attr(data-label) ': '; color: var(--text-secondary); font-size: .8rem; }
   .board-table td.topic-icon { display: none; }
   .board-last, .board-last a, .board-last .small { width: auto; max-width: 100%; }
+  .mod-actions form, .post-mod { width: 100%; }
+  .mod-actions .mod-reason, .post-mod .mod-reason { flex: 1 1 9em; width: auto; }
 }
 
 /* ── Ratings (Facepunch style) ── */

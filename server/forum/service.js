@@ -51,6 +51,7 @@ const { isUserSubject } = require('../vip');
 const { stripImageMetadata } = require('../media/strip-metadata');
 const { sniffImage } = require('../media/sniff-image');
 const reactions = require('./reactions');
+const moderation = require('./moderation');
 const blocks = require('../identity/blocks');
 const STYLES = ['feed', 'forum'];
 const SPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
@@ -124,6 +125,17 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     /** Global discussion staff, or a person (signed in themselves) this space lists as its moderator. */
     const moderates = async (v, space) => moderator(v)
         || (!!space && person(v) && v.kind === 'user' && await store.moderatesSpace(db, space.id, v.subject));
+
+    /**
+     * One public moderation-log row, in the caller's transaction. The row names the actor's role only
+     * (staff, owner, moderator), never their subject; `fields` is moderation.fields(body).
+     */
+    const logModeration = async (v, space, { thread = null, post = null, action, rule = null, reason = null }) => {
+        await store.addModerationLog(db, {
+            space_id: space.id, thread_id: thread ? thread.id : null, post_id: post ? post.id : null,
+            action, rule, reason, actor_role: moderation.actorRole(v, space, moderator(v)),
+        });
+    };
 
     // ── a space's chat room (OpenVibe.Chat) ──────────────────
     const chatRoomRow = async (spaceId) => (spaceId == null ? null : await db.prepare('SELECT * FROM space_chat_rooms WHERE space_id = ?').get(spaceId) || null);
@@ -355,12 +367,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         if (relay) await hook(async () => await relay.hideThreads(threadIds, 'made members-only'));
     }
 
-    async function removeThread(v, thread, space) {
+    async function removeThread(v, thread, space, body = {}) {
         const mine = person(v) && thread.author_subject === v.subject;
         if (!mine && !await moderates(v, space)) fail(403, 'thread.not_yours', 'Only the author or a moderator deletes a thread');
+        const fields = moderation.fields(body);
         await db.tx(async () => {
             await store.softDeleteThread(db, thread.id);
-            if (!mine) await events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+            if (!mine) {
+                await events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+                await logModeration(v, space, { thread, action: 'delete', ...fields });
+            }
         });
         if (pulse) await hook(async () => { await pulse.threadGone(thread.id); for (const p of await db.prepare('SELECT id FROM posts WHERE thread_id = ?').all(thread.id)) await pulse.postGone(p.id); });
         if (relay) await hook(async () => await relay.enqueueDelete(thread.id, null, mine ? 'deleted by its author' : 'deleted by a moderator'));
@@ -663,6 +679,42 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         },
 
         /**
+         * A thread's feed: its newest live posts (opening and replies, 50 at most), under the same
+         * visibility as the thread itself. → { space, thread: { slug, title }, posts }
+         */
+        async threadFeed(v, spaceSlug, threadSlug) {
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
+            await requireMembership(v, space, thread);
+            return {
+                space: await shapeSpace(space, await membersOnly(space.members_only_owner)),
+                thread: { slug: thread.slug, title: thread.title },
+                // Only a public, open thread's feed may sit in a shared cache; any other is the reader's own copy.
+                shared: space.visibility === 'public' && !space.members_only_owner && !thread.members_only_owner,
+                posts: await store.recentPosts(db, thread.id, 50),
+            };
+        },
+
+        /**
+         * A space's public moderation log: its newest 100 actions with the rule and reason, in role only
+         * (never the moderator's identity), public for public spaces and members-only for the rest.
+         * → { space, entries: [{ id, action, rule, reason, actor_role, created_at, thread, post_id }] }
+         */
+        async moderationLog(v, spaceSlug) {
+            const space = await spaceFor(v, spaceSlug);
+            await requireMembership(v, space);
+            const rows = await store.listModerationLog(db, space.id, { limit: 100 });
+            return {
+                space: await shapeSpace(space, await membersOnly(space.members_only_owner)),
+                entries: rows.map((r) => ({
+                    id: r.id, action: r.action, rule: r.rule || null, reason: r.reason || null,
+                    actor_role: r.actor_role, created_at: isoTime(r.created_at),
+                    thread: r.thread_id && !r.thread_deleted_at ? { slug: r.thread_slug, title: r.thread_title, url: `/s/${space.slug}/t/${r.thread_slug}` } : null,
+                    post_id: r.post_id || null,
+                })),
+            };
+        },
+
+        /**
          * Upload an image to attach to a new thread or reply in this space { buffer, originalname } → { attachment }.
          * People only; PNG, JPEG, GIF or WebP by content, at most 8 MB; metadata (EXIF, GPS) stripped; stored in
          * OpenVibe.Media as a public med_ object the person owns. Name it in `attachments` when posting.
@@ -810,7 +862,12 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!await moderates(v, space)) fail(403, 'capability.denied', 'Only moderators change a status');
             const statuses = STATUSES[thread.kind] || [];
             if (!statuses.includes(body.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'This thread has no status');
-            const next = await store.setThreadStatus(db, thread.id, body.status);
+            const fields = moderation.fields(body);
+            const next = await db.tx(async () => {
+                const r = await store.setThreadStatus(db, thread.id, body.status);
+                if (r.status !== thread.status) await logModeration(v, space, { thread, action: 'status', ...fields });
+                return r;
+            });
             const projections = await authors.projectionsFor([next.author_subject]);
             pingThread(space, next);
             return { thread: await shapeThread(next, space, v, projections, null) };
@@ -948,24 +1005,29 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         },
 
         /** Delete a post — the author or a moderator. Deleting the opening post deletes the thread. */
-        async deletePost(v, postId) {
+        async deletePost(v, postId, body = {}) {
             const { post, thread, space } = await postFor(v, postId);
-            if (!(person(v) && post.author_subject === v.subject) && !await moderates(v, space)) fail(403, 'post.not_yours', 'Only the author or a moderator deletes a post');
-            if (post.is_opening) return await removeThread(v, thread, space);
+            const mine = person(v) && post.author_subject === v.subject;
+            if (!mine && !await moderates(v, space)) fail(403, 'post.not_yours', 'Only the author or a moderator deletes a post');
+            if (post.is_opening) return await removeThread(v, thread, space, body);
+            const fields = moderation.fields(body);
             await db.tx(async () => {
                 await store.softDeletePost(db, post.id);
-                if (!(person(v) && post.author_subject === v.subject)) await events.moderationAction(v, 'post.deleted', { type: 'post', id: String(post.id), owner_subject: post.author_subject || null }, { details: { thread: String(thread.id) } });
+                if (!mine) {
+                    await events.moderationAction(v, 'post.deleted', { type: 'post', id: String(post.id), owner_subject: post.author_subject || null }, { details: { thread: String(thread.id) } });
+                    await logModeration(v, space, { thread, post, action: 'delete', ...fields });
+                }
             });
             if (pulse) await hook(async () => await pulse.postGone(post.id));
-            if (relay) await hook(async () => await relay.enqueueDelete(thread.id, post.id, person(v) && post.author_subject === v.subject ? 'deleted by its author' : 'deleted by a moderator'));
+            if (relay) await hook(async () => await relay.enqueueDelete(thread.id, post.id, mine ? 'deleted by its author' : 'deleted by a moderator'));
             pingThread(space, thread);
             return { ok: true, id: post.id };
         },
 
         /** Delete a thread — its author or a moderator. */
-        async deleteThread(v, spaceSlug, threadSlug) {
+        async deleteThread(v, spaceSlug, threadSlug, body = {}) {
             const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
-            return await removeThread(v, thread, space);
+            return await removeThread(v, thread, space, body);
         },
 
         /** Vote { value: 1 | -1 | 0 } → { score, upvotes, downvotes, my_vote } */
@@ -991,9 +1053,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (body.pinned !== undefined) flags.pinned = !!body.pinned;
             if (body.locked !== undefined) flags.locked = !!body.locked;
             if (!Object.keys(flags).length) fail(400, 'thread.nothing_to_change', 'Send pinned and/or locked');
+            const fields = moderation.fields(body);
             const next = await db.tx(async () => {
                 const r = await store.setThreadFlags(db, thread.id, flags);
-                if (flags.locked !== undefined && !!thread.locked !== flags.locked) await events.moderationAction(v, flags.locked ? 'thread.locked' : 'thread.unlocked', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+                if (flags.locked !== undefined && !!thread.locked !== flags.locked) {
+                    await events.moderationAction(v, flags.locked ? 'thread.locked' : 'thread.unlocked', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
+                    await logModeration(v, space, { thread, action: flags.locked ? 'lock' : 'unlock', ...fields });
+                }
+                if (flags.pinned !== undefined && !!thread.pinned !== flags.pinned) {
+                    await logModeration(v, space, { thread, action: flags.pinned ? 'pin' : 'unpin', ...fields });
+                }
                 return r;
             });
             const projections = await authors.projectionsFor([next.author_subject]);

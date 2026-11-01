@@ -11,9 +11,12 @@ const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
 const { timeTag, fmtDate, num, authorHtml } = require('./pages');
+const { RULES: MODERATION_RULES } = require('../forum/moderation');
 
 const SORT_LABELS = { hot: 'Hot', new: 'New', top: 'Top' };
 const STATUS_LABELS = { open: 'Open', planned: 'Planned', in_progress: 'In progress', done: 'Done', declined: 'Declined', paused: 'Paused' };
+const ACTION_LABELS = { lock: 'Locked', unlock: 'Unlocked', pin: 'Pinned', unpin: 'Unpinned', hide: 'Hidden', delete: 'Deleted', status: 'Status changed' };
+const ROLE_LABELS = { moderator: 'Moderator', owner: 'Owner', staff: 'Staff', automatic: 'Automatic' };
 /** A request's or roadmap item's status, and a thread's category. */
 const statusBadge = (t) => (t && t.status ? ` <span class="badge badge-status status-${esc(t.status)}">${esc(STATUS_LABELS[t.status] || t.status)}</span>` : '');
 const categoryBadge = (t, space) => (t && t.category ? ` <a class="badge badge-category" href="${esc(spaceHref(space.slug, { category: t.category.slug }))}">${esc(t.category.name)}</a>` : '');
@@ -35,6 +38,18 @@ function spaceHref(slug, { sort = 'hot', page = 1, category = null, status = nul
     if (page > 1) q.set('page', String(page));
     const s = q.toString();
     return `/s/${encodeURIComponent(slug)}${s ? `?${s}` : ''}`;
+}
+
+/** The optional "Rule applied" select and reason box every moderator form carries. `id` keeps its ids unique. */
+function moderationFields(id) {
+    const suffix = String(id).replace(/[^a-z0-9-]+/gi, '-');
+    const label = (r) => r.charAt(0).toUpperCase() + r.slice(1);
+    return `<label class="sr-only" for="rule-${suffix}">Rule applied</label><select class="mod-rule" id="rule-${suffix}" name="rule"><option value="">Rule applied…</option>${MODERATION_RULES.map((r) => `<option value="${esc(r)}">${esc(label(r))}</option>`).join('')}</select><label class="sr-only" for="reason-${suffix}">Reason (optional, 280 characters)</label><input class="mod-reason" id="reason-${suffix}" name="reason" maxlength="280" placeholder="Reason (optional)" autocomplete="off">`;
+}
+
+/** A moderator's form to remove one post (its opening post removes the thread instead). */
+function postModerationForm(base, post) {
+    return `<form class="post-mod inline-form" method="post" action="${esc(base)}/post/${Number(post.id)}/delete">${moderationFields(`post-${post.id}`)}<button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete post</button></form>`;
 }
 
 function pager(href, page, pages, labels = ['Newer', 'Older']) {
@@ -114,6 +129,7 @@ function spacePage({ space, threads, sort, page, pages, total, user, categories 
     const tabs = Object.keys(SORT_LABELS).filter((s) => s !== 'top' || space.votes !== false).map((s) => `<a class="tab${s === sort ? ' active' : ''}" href="${esc(spaceHref(space.slug, { sort: s, category, status }))}"${s === sort ? ' aria-current="page"' : ''}>${SORT_LABELS[s]}</a>`).join('');
     const filtered = !!(category || status);
     const indexable = space.visibility === 'public' && !space.members_only && !filtered;
+    const feedable = space.visibility === 'public' && !space.members_only;
     const chip = (label, href, on) => `<a class="chip${on ? ' active' : ''}" href="${esc(href)}"${on ? ' aria-current="true"' : ''}>${label}</a>`;
     const categoryNav = categories.length ? `<nav class="chips" aria-label="Categories">${chip('All', spaceHref(space.slug, { sort, status }), !category)}${categories.map((c) => chip(`${esc(c.name)} <span class="muted">${num(c.thread_count || 0)}</span>`, spaceHref(space.slug, { sort, status, category: c.slug }), c.slug === category)).join('')}</nav>` : '';
     const statusNav = (space.statuses || []).length ? `<nav class="chips" aria-label="Status">${chip('Any status', spaceHref(space.slug, { sort, category }), !status)}${space.statuses.map((st) => chip(esc(STATUS_LABELS[st] || st), spaceHref(space.slug, { sort, category, status: st }), st === status)).join('')}</nav>` : '';
@@ -125,7 +141,7 @@ function spacePage({ space, threads, sort, page, pages, total, user, categories 
     const body = `
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › <span aria-current="page">${esc(space.name)}</span></nav>
-  <h1>${esc(space.name)}${visBadge(space)}</h1>
+  <h1>${esc(space.name)}${visBadge(space)}${feedable ? ` <a class="rss-link" href="/s/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="fa-solid fa-rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
   ${start}
 </header>
@@ -136,33 +152,34 @@ ${categoryNav}${statusNav}
   ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? `<p class="empty">Nothing here yet. <a href="${esc(spaceHref(space.slug))}">See everything in ${esc(space.name)}</a>.</p>` : canStart ? `<p class="empty">No threads yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.</p>` : '<p class="empty">Nothing here yet.</p>'}
   ${pager((n) => spaceHref(space.slug, { sort, page: n, category, status }), page, pages)}
 </section>
-${footer}`;
+${footer}
+<footer class="space-foot"><a class="small" href="/s/${esc(space.slug)}/log">Moderation log</a></footer>`;
     return renderPage({
         title: `${space.name}${categoryName ? ` · ${categoryName}` : ''}${status ? ` · ${STATUS_LABELS[status] || status}` : ''} — ${SORT_LABELS[sort].toLowerCase()} threads${page > 1 ? ` (page ${page})` : ''}`,
         description: `${space.description || `Threads in ${space.name}`} ${num(total)} ${total === 1 ? 'thread' : 'threads'} on OpenVibe.Community.`,
         canonicalPath: spaceHref(space.slug, { sort, page, category, status }),
         robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
-        feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
+        feeds: feedable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
         body,
     });
 }
 
-/** The pin / lock / delete / members-only / status / category buttons (no JS). */
+/** The pin / lock / delete / members-only / status / category buttons (no JS), each with rule and reason. */
 function modActions({ base, space, thread, viewer, categories = [] }) {
     return viewer.can_moderate || viewer.can_delete ? `<div class="actions mod-actions">
-    ${viewer.can_moderate ? `<form method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
-    <form method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
-    ${viewer.can_delete ? `<form method="post" action="${esc(base)}/delete"><button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
+    ${viewer.can_moderate ? `<form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}">${moderationFields('pin')}<button class="btn btn-sm" type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
+    <form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}">${moderationFields('lock')}<button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
+    ${viewer.can_delete ? `<form class="mod-form" method="post" action="${esc(base)}/delete">${viewer.can_moderate ? moderationFields('delete') : ''}<button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
     ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
-    ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="inline-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
+    ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="mod-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select>${moderationFields('status')}<button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
     ${categories.length && (viewer.can_moderate || viewer.can_delete) ? `<form class="inline-form" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : ''}
   </div>` : '';
 }
 
 // ── /s/:space/t/:slug ────────────────────────────────────────
-function postHtml(p, n, { base = '', page = 1, catalogue = [] } = {}) {
+function postHtml(p, n, { base = '', page = 1, catalogue = [], canModerate = false } = {}) {
     if (p.deleted) return `<article class="post post-deleted" id="post-${p.id}"><p class="muted small">#${n} · This post was deleted.</p></article>`;
     return `<article class="post${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
     <header class="post-head">${who(p.author)} <span class="sep">·</span> <a class="muted small" href="#post-${p.id}">${timeTag(p.created_at)}</a>${p.revision > 1 ? ` <span class="sep">·</span> <span class="muted small" title="Edited ${esc(fmtDate(p.updated_at))}">edited</span>` : ''}<span class="post-num muted small">#${n}</span></header>
@@ -170,6 +187,7 @@ function postHtml(p, n, { base = '', page = 1, catalogue = [] } = {}) {
     ${postImages(p)}
     ${pasteCards(p)}
     ${reactionBar(p, base, page, catalogue)}
+    ${canModerate && !p.is_opening ? postModerationForm(base, p) : ''}
   </article>`;
 }
 /** Pastes attached to a post: a card with the first lines (highlighted), or the screenshot. */
@@ -260,11 +278,12 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
+      <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
     </div>
   </header>
   ${crosspostBlock(crosspost, base)}
   ${modBlock}
-  <div class="posts">${posts.map((p, i) => postHtml(p, first + i + 1, { base, page, catalogue: reactions })).join('\n')}</div>
+  <div class="posts">${posts.map((p, i) => postHtml(p, first + i + 1, { base, page, catalogue: reactions, canModerate: viewer.can_moderate })).join('\n')}</div>
   ${pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Earlier', 'Later'])}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
@@ -281,7 +300,10 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
-        feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
+        feeds: [
+            ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : []),
+            { title: `OpenVibe.Community — ${thread.title}`, href: `${base}/feed.xml` },
+        ],
         jsonLd: [
             ...(gated ? [] : [ld.threadLd({ space, thread, posts, opening, description })]),
             ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
@@ -359,7 +381,54 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
     });
 }
 
+// ── /s/:space/log ────────────────────────────────────────────
+/** What a log row removed, as the public log may name it: a live title, a post in it, or a removed thread. */
+function logTarget(e) {
+    if (!e.thread) return '<span class="muted">a removed thread</span>';
+    const title = `<a href="${esc(e.thread.url)}">${esc(e.thread.title)}</a>`;
+    return e.post_id ? `a post in ${title}` : title;
+}
+
+/**
+ * A space's public moderation log: a plain table on a computer and stacked rows on a phone (the
+ * board table's own small-screen rules). No moderator is named — only the role that acted.
+ */
+function moderationLogPage({ space, entries }) {
+    // On a phone each row is a card (public/css/community.css, .mod-log): the action and what it touched, the reason,
+    // then the rule, who and when in one small line. A missing rule or reason is "—" on the table and left out there.
+    const rows = entries.map((e) => `<tr>
+      <td data-label="When" class="log-when">${timeTag(e.created_at)}</td>
+      <td data-label="What" class="log-what">${logTarget(e)}</td>
+      <td data-label="Action" class="log-act"><span class="badge">${esc(ACTION_LABELS[e.action] || e.action)}</span></td>
+      <td data-label="Rule" class="log-rule${e.rule ? '' : ' is-none'}">${e.rule ? esc(e.rule) : '<span class="muted">—</span>'}</td>
+      <td data-label="Reason" class="log-reason${e.reason ? '' : ' is-none'}">${e.reason ? esc(e.reason) : '<span class="muted">—</span>'}</td>
+      <td data-label="By" class="log-by">${esc(ROLE_LABELS[e.actor_role] || e.actor_role)}</td>
+    </tr>`).join('');
+    const body = `
+<header class="page-head">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">Moderation log</span></nav>
+  <h1>Moderation log</h1>
+  <p class="muted">What moderation did in ${esc(space.name)} and why. Newest first; who acted is shown by role only.</p>
+</header>
+${entries.length ? `<table class="board-table mod-log"><caption class="sr-only">Moderation actions in ${esc(space.name)}</caption>
+  <thead><tr><th scope="col">When</th><th scope="col">What</th><th scope="col">Action</th><th scope="col">Rule</th><th scope="col">Reason</th><th scope="col">By</th></tr></thead>
+  <tbody>${rows}</tbody></table>` : '<p class="empty">No moderation actions in this forum yet.</p>'}
+<footer class="space-foot"><a class="small" href="/s/${esc(space.slug)}">Back to ${esc(space.name)}</a>${space.visibility === 'public' && !space.members_only ? `<span class="sep"> · </span><a class="small" href="/s/${esc(space.slug)}/feed.xml">RSS</a>` : ''}</footer>`;
+    return renderPage({
+        title: `Moderation log · ${space.name}`,
+        description: `What moderation did in ${space.name} on OpenVibe.Community, and why: the action, the rule and the reason.`,
+        canonicalPath: `/s/${space.slug}/log`,
+        robots: space.visibility === 'public' && !space.members_only ? 'index,follow' : 'noindex,nofollow',
+        active: 'spaces',
+        footerVariant: 'compact',
+        pageCss: ['modlog.css'],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: 'Moderation log', url: `/s/${space.slug}/log` }])],
+        body,
+    });
+}
+
 module.exports = {
-    spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, spaceHref, who, chatRoomBox,
+    spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, moderationLogPage, spaceHref, who, chatRoomBox,
     pager, visBadge, vipBadge, statusBadge, categoryBadge, voteForm, modActions, reactionBar, postImages, imageField, pasteField, pasteCards, crosspostBlock, STATUS_LABELS,
+    postModerationForm,
 };

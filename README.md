@@ -134,10 +134,14 @@ Pages (server-rendered HTML):
 | `GET /new`, `POST /new` | Create (signed-in or anonymous). `?fork=slug` prefills. The POST is the no-JS fallback; with JS the form talks to `/api/pastes` |
 | `GET /my` | The signed-in user's pastes (public, unlisted and private); anonymous → sign-in |
 | `GET /s` | The Forum (board index); `GET /forum[/…]` answers 301 → `/s[/…]` |
-| `GET /s/:space` | Threads — `?sort=hot\|new\|top`, `?page=` |
-| `GET /s/:space/t/:slug` | A thread with its posts (`?page=`), reply / vote / moderation forms |
+| `GET /s/:space` | Threads — `?sort=hot\|new\|top`, `?page=`, and the small RSS link beside its title |
+| `GET /s/:space/t/:slug` | A thread with its posts (`?page=`), reply / vote / moderation forms, and "Follow this thread by RSS" |
+| `GET /s/:space/log` | The space's public moderation log (newest 100): when, what, action, rule, reason, and the actor's role only |
+| `GET /s/:space/t/:slug/feed.xml` | RSS of the thread's newest 50 posts, under the thread's own visibility |
 | `GET /s/:space/new`, `POST /s/:space/new` | Start a thread (signed in) |
-| `POST /s/:space/t/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete) |
+| `POST /s/:space/t/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete); moderator forms take an optional `rule` and `reason` |
+| `POST /s/:space/t/:slug/status` | The no-JS status form (moderators), with the same optional `rule` and `reason` |
+| `POST /s/:space/t/:slug/post/:id/delete` | A moderator removes one post, with the same optional `rule` and `reason` |
 | `GET /pulse` | Public activity across the network — `?origin=user\|ai\|system`, `?after=` |
 | `GET /submissions`, `POST /submissions` | Accepted submissions — `?kind=clip\|art\|idea\|report`, `?mine=1` (your own, any status), `?after=`; signed-in people submit with the no-JS form |
 | `GET /submissions/:slug` | One submission — accepted: anyone (canonical, Open Graph); pending, rejected, withdrawn: its author and moderators only (`noindex`), 404 for anyone else |
@@ -167,6 +171,7 @@ API and machine endpoints:
 | `GET /robots.txt`, `GET /sitemap.xml`, `GET /feed.xml` | SEO + RSS of the latest pastes |
 | `GET /llms.txt`, `GET /llms-full.txt` | The site map for language models, and the latest public threads and text pastes in full |
 | `GET /s/feed.xml`, `GET /s/:space/feed.xml` | RSS of the latest threads (public spaces) |
+| `GET /s/:space/t/:slug/feed.xml` | RSS of a thread's newest 50 posts (the thread's own visibility) |
 
 **Readiness and metrics (Track O).** `GET /api/ready` (openvibe-shared/ready) answers 503 only
 when the required `db` check fails (a real round trip that names the store, postgresql or pglite, and a migrated schema). `network_jwks` (the
@@ -395,6 +400,7 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | Route | What |
 | --- | --- |
 | `GET /spaces` · `GET /spaces/:space` | Spaces the caller can open · one space |
+| `GET /spaces/:space/moderation-log` | The space's newest 100 moderation rows `{ space, entries: [{ action, rule, reason, actor_role, created_at, thread, post_id }] }` — in role only, never the moderator's subject; public for public spaces |
 | `GET /spaces/:space/threads?sort=&page=&limit=&category=&status=` | Threads (server pagination: `page`, `pages`, `total`), the space's `categories`, optionally one category or status |
 | `POST /spaces/:space/threads` `{ title, body, category?, members_only? }` | New thread (`community.post.create` for services); `members_only: true` gates it to the author's VIP members |
 | `POST /spaces/:space/attachments` (multipart `file`) | An image for a new thread or reply → `{ attachment: { media_id, url, … } }`; name it in `attachments: [media_id]` when posting |
@@ -403,17 +409,17 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `POST /spaces/:space/threads/:slug/crosspost` `{ to }` | Crosspost to another space |
 | `POST /posts/:id/reactions` `{ reaction \| null }` | Rate a post |
 | `PUT /spaces/:space/threads/:slug/category` `{ category: slug \| null }` | The author or moderators |
-| `PUT /spaces/:space/threads/:slug/status` `{ status }` | Moderators: requests `open`/`planned`/`in_progress`/`done`/`declined`, roadmap items `planned`/`in_progress`/`done`/`paused` |
+| `PUT /spaces/:space/threads/:slug/status` `{ status, rule?, reason? }` | Moderators: requests `open`/`planned`/`in_progress`/`done`/`declined`, roadmap items `planned`/`in_progress`/`done`/`paused` |
 | `GET /spaces/:space/threads/:slug?page=` | Thread + posts (`body_markdown` and rendered `body_html`) |
-| `DELETE /spaces/:space/threads/:slug` | Author or moderator |
+| `DELETE /spaces/:space/threads/:slug` `{ rule?, reason? }` | Author or moderator |
 | `POST /spaces/:space/threads/:slug/posts` `{ body }` | Reply |
 | `POST /spaces/:space/threads/:slug/votes` `{ value: 1\|-1\|0 }` | Vote |
-| `PUT /spaces/:space/threads/:slug/state` `{ pinned?, locked? }` | Moderators |
+| `PUT /spaces/:space/threads/:slug/state` `{ pinned?, locked?, rule?, reason? }` | Moderators |
 | `PUT /spaces/:space/members-only` `{ owner: 'usr_…' \| null }` | Moderators: gate a space to a creator's VIP members (or open it) |
 | `PUT /spaces/:space/threads/:slug/members-only` `{ owner: 'usr_…' \| true \| null }` | The author (to their own members) or moderators (any creator) |
 | `PUT /spaces/:space/chat-room` `{ room: slug \| https://openvibe.chat/r/<slug> }` | The space's owner or staff, signed in themselves: attach a chat room (201; the same room again 200) |
 | `DELETE /spaces/:space/chat-room` | The space's owner or staff (moderator services too): detach it (idempotent) |
-| `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` · `GET /posts/:id/versions` | Author or moderator |
+| `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` `{ rule?, reason? }` · `GET /posts/:id/versions` | Author or moderator |
 | `GET /spaces/:space/moderators` | The space's own moderators `{ space, moderators: [{ subject, username, display_name, added_by, added_at }] }` (whoever can read the space) |
 | `PUT`/`DELETE /spaces/:space/moderators/:subject` | The space's moderators or staff: add (blocks refuse, 403 `community.blocked`) or remove one (idempotent). `:subject` is a Network user subject (`usr_…`) or an `@username`, resolved through the Network (404 `moderator.unknown_user` when nobody holds it). The space page shows its moderators a Moderators box (list, remove or step down, add by @username); its no-JS forms are `POST /s/:space/moderators` and `POST /s/:space/moderators/remove` `{ subject }`, and a refusal comes back as a notice in the box |
 
