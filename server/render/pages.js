@@ -28,6 +28,12 @@ function mediaAbs(u) {
     if (/^https?:\/\//i.test(u)) return u;
     return `${config.mediaUrl}${u.startsWith('/') ? '' : '/'}${u}`;
 }
+// A Media object is stored at full size: ask its resize ladder for the width drawn here (96 for the 22 px author
+// avatar, 160 for the 64 px postbit one). Any other picture address — the network's avatar endpoint, a picture that
+// already carries a query — is used unchanged.
+function mediaW(u, w) {
+    return /^https:\/\/openvibe\.media\/o\/med_[0-9A-Za-z]+$/.test(String(u || '')) ? `${u}?w=${w}` : u;
+}
 /** A screenshot's Media address when the stored row has no screenshot_url. */
 function screenshotFallback(slug) { return `${config.mediaUrl}/p/${encodeURIComponent(slug)}/screenshot`; }
 
@@ -76,7 +82,7 @@ function authorHtml(p, { link = true } = {}) {
     // picture, or a generated initial), so an author looks the same here as on every other OpenVibe site.
     const netAvatar = !avatarSrc && p.username ? `${config.networkUrl}/avatar/${encodeURIComponent(p.username)}?s=44` : null;
     const avatar = (avatarSrc || netAvatar)
-        ? `<img class="avatar" src="${esc(avatarSrc || netAvatar)}" alt="" loading="lazy" width="22" height="22">`
+        ? `<img class="avatar" src="${esc(mediaW(avatarSrc || netAvatar, 96))}" alt="" loading="lazy" width="22" height="22">`
         : `<span class="avatar avatar-letter" aria-hidden="true">${initial}</span>`;
     const wearer = wearerOf(p);
     const inner = `${avatar}${wearer ? wearName(p, name) : `<span>${esc(name)}</span>`}`;
@@ -597,4 +603,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, wearName };
+module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, mediaW, wearName };
