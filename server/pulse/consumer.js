@@ -189,7 +189,9 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
         const item = itemFor(event);
         if (typeof item === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: item }); }
         try {
-            const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: (await store.upsertItem(db, item)).created ? 'pulse:created' : 'pulse:updated' }));
+            // A reconnect is a new Live session and a new event; the stream itself is one broadcast.
+            const put = item.source_service === 'live' && item.source_type === 'stream' ? store.upsertLiveItem : store.upsertItem;
+            const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: (await put(db, item)).created ? 'pulse:created' : 'pulse:updated' }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;
             return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
         } catch (err) {
