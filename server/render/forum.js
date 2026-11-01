@@ -394,13 +394,15 @@ function logTarget(e) {
  * board table's own small-screen rules). No moderator is named — only the role that acted.
  */
 function moderationLogPage({ space, entries }) {
+    // On a phone each row is a card (public/css/community.css, .mod-log): the action and what it touched, the reason,
+    // then the rule, who and when in one small line. A missing rule or reason is "—" on the table and left out there.
     const rows = entries.map((e) => `<tr>
-      <td data-label="When">${timeTag(e.created_at)}</td>
-      <td data-label="What">${logTarget(e)}</td>
-      <td data-label="Action"><span class="badge">${esc(ACTION_LABELS[e.action] || e.action)}</span></td>
-      <td data-label="Rule">${e.rule ? esc(e.rule) : '<span class="muted">—</span>'}</td>
-      <td data-label="Reason" class="log-reason">${e.reason ? esc(e.reason) : '<span class="muted">—</span>'}</td>
-      <td data-label="By">${esc(ROLE_LABELS[e.actor_role] || e.actor_role)}</td>
+      <td data-label="When" class="log-when">${timeTag(e.created_at)}</td>
+      <td data-label="What" class="log-what">${logTarget(e)}</td>
+      <td data-label="Action" class="log-act"><span class="badge">${esc(ACTION_LABELS[e.action] || e.action)}</span></td>
+      <td data-label="Rule" class="log-rule${e.rule ? '' : ' is-none'}">${e.rule ? esc(e.rule) : '<span class="muted">—</span>'}</td>
+      <td data-label="Reason" class="log-reason${e.reason ? '' : ' is-none'}">${e.reason ? esc(e.reason) : '<span class="muted">—</span>'}</td>
+      <td data-label="By" class="log-by">${esc(ROLE_LABELS[e.actor_role] || e.actor_role)}</td>
     </tr>`).join('');
     const body = `
 <header class="page-head">

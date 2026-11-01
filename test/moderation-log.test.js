@@ -122,6 +122,7 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         const feed = await t.get(`/s/feedback/t/${feedback.slug}/feed.xml`);
         assert.strictEqual(feed.status, 200, feed.text);
         assert.match(feed.headers.get('content-type'), /application\/rss\+xml/);
+        assert.match(feed.headers.get('cache-control'), /^public/, 'a public thread\'s feed may be cached');
         has(feed.text, 'A request whose status changes');
         has(feed.text, `Re: A request whose status changes`);
         has(feed.text, 'A feed reply with markup');
@@ -143,6 +144,11 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         assert.notStrictEqual(anon.status, 200, 'signed out: no page');
         assert.strictEqual((await t.get('/s/insiders/log', { cookies: [`ov_token=${alexJwt}`] })).status, 200, 'a signed-in member reads it');
         assert.strictEqual((await call('/api/v1/spaces/insiders/moderation-log', { cookie: alexJwt })).status, 200);
+        const feedUrl = `/s/insiders/t/${insider.json().thread.slug}/feed.xml`;
+        assert.notStrictEqual((await t.get(feedUrl)).status, 200, 'signed out: no feed of a members thread');
+        const own = await t.get(feedUrl, { cookies: [`ov_token=${alexJwt}`] });
+        assert.strictEqual(own.status, 200, own.text);
+        assert.strictEqual(own.headers.get('cache-control'), 'private, no-store', 'a members thread\'s feed is never kept by a shared cache');
     });
 
     await check('a removed thread is shown as "a removed thread"', async () => {

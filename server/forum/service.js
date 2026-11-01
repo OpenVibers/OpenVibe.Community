@@ -688,6 +688,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             return {
                 space: await shapeSpace(space, await membersOnly(space.members_only_owner)),
                 thread: { slug: thread.slug, title: thread.title },
+                // Only a public, open thread's feed may sit in a shared cache; any other is the reader's own copy.
+                shared: space.visibility === 'public' && !space.members_only_owner && !thread.members_only_owner,
                 posts: await store.recentPosts(db, thread.id, 50),
             };
         },

@@ -143,7 +143,8 @@ function createForumRoutes({ forum, viewers, config }) {
         try {
             const out = await forum.threadFeed(req.viewer, req.params.space, req.params.slug);
             const base = `${config.baseUrl}/s/${out.space.slug}/t/${out.thread.slug}`;
-            res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.feedXml({
+            // A private or members-only thread's feed is the member's own: never kept by Cloudflare or a proxy.
+            res.type('application/rss+xml').set('Cache-Control', out.shared ? cache.htmlHeaders({ maxAge: 300 }) : 'private, no-store').send(seo.feedXml({
                 title: `${SITE_NAME} — ${out.thread.title}`,
                 link: base,
                 description: `New posts in ${out.thread.title} on ${out.space.name}.`,
