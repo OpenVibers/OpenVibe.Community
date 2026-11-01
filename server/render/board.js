@@ -133,6 +133,7 @@ ${rows ? `<ul class="mod-list">${rows}</ul>` : '<p class="muted small">No one mo
 function forumSpacePage({ space, threads, page, pages, total, user, categories = [], category = null, status = null, viewer = {}, children = [], groups = [], chatRoom = '', moderators = [], me = null, modError = null }) {
     const filtered = !!(category || status);
     const indexable = space.visibility === 'public' && !space.members_only && !filtered;
+    const feedable = space.visibility === 'public' && !space.members_only;
     const href = (o = {}) => f.spaceHref(space.slug, { sort: 'active', category, status, ...o }).replace(/[?&]sort=active/, '').replace(/\?&/, '?').replace(/\?$/, '');
     const chip = (label, h, on) => `<a class="chip${on ? ' active' : ''}" href="${esc(h)}"${on ? ' aria-current="true"' : ''}>${label}</a>`;
     const tags = categories.length ? `<nav class="chips" aria-label="Categories">${chip('All', href({ category: null }), !category)}${categories.map((c) => chip(esc(c.name), href({ category: c.slug }), c.slug === category)).join('')}</nav>` : '';
@@ -144,7 +145,7 @@ function forumSpacePage({ space, threads, page, pages, total, user, categories =
     const body = `
 <header class="page-head">
   ${crumbs([...trail(space), [space.name, `/s/${space.slug}`]])}
-  <h1>${esc(space.name)}${f.visBadge(space)}</h1>
+  <h1>${esc(space.name)}${f.visBadge(space)}${feedable ? ` <a class="rss-link" href="/s/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="fa-solid fa-rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
 </header>
 ${children.length ? `<section class="board-group" aria-label="Child boards">${boardTable(children, 'Child boards')}</section>` : ''}
@@ -157,14 +158,15 @@ ${threads.length ? `<table class="board-table topic-table"><caption class="sr-on
   <tbody>${threads.map((t) => topicRow(t, space)).join('')}</tbody></table>` : `<p class="empty">${filtered ? `Nothing here yet. <a href="${esc(href({ category: null, status: null }))}">See every topic</a>.` : viewer.can_start !== false ? `No topics yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.` : 'Nothing here yet.'}</p>`}
 ${pagerHtml}
 </section>
-${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moderators, { me, error: modError }) : ''}`;
+${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moderators, { me, error: modError }) : ''}
+<footer class="space-foot"><a class="small" href="/s/${esc(space.slug)}/log">Moderation log</a></footer>`;
     return renderPage({
         title: `${space.name}${page > 1 ? ` (page ${page})` : ''}`,
         description: `${space.description || `Topics in ${space.name}`} ${plural(total, 'topic', 'topics')} on OpenVibe.Community.`,
         canonicalPath: href({ page }),
         robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
-        feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
+        feeds: feedable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
         body,
     });
@@ -187,7 +189,7 @@ function authorPanel(p) {
     </aside>`;
 }
 
-function postbit(p, n, { base, page, catalogue, canReply }) {
+function postbit(p, n, { base, page, catalogue, canReply, canModerate }) {
     if (p.deleted) return `<article class="postbit post-deleted" id="post-${p.id}"><div class="postbit-main"><p class="muted small">#${n} · This post was deleted.</p></div></article>`;
     const quote = canReply ? ` <a class="small" href="${esc(base)}?quote=${Number(p.id)}#reply"><i class="fa-solid fa-quote-left" aria-hidden="true"></i> Quote</a>` : '';
     return `<article class="postbit${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
@@ -198,6 +200,7 @@ function postbit(p, n, { base, page, catalogue, canReply }) {
       ${f.postImages(p)}
       ${f.pasteCards(p)}
       ${f.reactionBar(p, base, page, catalogue)}
+      ${canModerate && !p.is_opening ? f.postModerationForm(base, p) : ''}
     </div>
   </article>`;
 }
@@ -229,13 +232,13 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
     <div>
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Sticky" aria-label="Sticky"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${f.statusBadge(thread)}${f.categoryBadge(thread, space)}</p>` : ''}
-      <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')}</p>
+      <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
     </div>
   </header>
   ${f.crosspostBlock(crosspost, base)}
   ${f.modActions({ base, space, thread, viewer, categories })}
   ${pagerHtml}
-  <div class="postbits">${posts.map((p, i) => postbit(p, first + i + 1, { base, page, catalogue: reactions, canReply: viewer.can_reply })).join('\n')}</div>
+  <div class="postbits">${posts.map((p, i) => postbit(p, first + i + 1, { base, page, catalogue: reactions, canReply: viewer.can_reply, canModerate: viewer.can_moderate })).join('\n')}</div>
   ${pagerHtml}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
@@ -252,7 +255,10 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
-        feeds: indexable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
+        feeds: [
+            ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : []),
+            { title: `OpenVibe.Community — ${thread.title}`, href: `${base}/feed.xml` },
+        ],
         jsonLd: [
             ...(gated ? [] : [ld.threadLd({ space, thread, posts, opening, description })]),
             ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),

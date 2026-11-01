@@ -8,9 +8,12 @@
  *   GET  /s/feed.xml                     RSS: latest threads in public spaces
  *   GET  /s/:space                       threads (?sort=hot|new|top&page=)
  *   GET  /s/:space/feed.xml              RSS: latest threads of one public space
+ *   GET  /s/:space/log                   the space's public moderation log (newest 100)
+ *   GET  /s/:space/t/:slug/feed.xml      RSS: a thread's newest posts, same visibility as the thread
  *   GET  /s/:space/new   POST /s/:space/new               start a thread
  *   GET  /s/:space/t/:slug                                a thread (?page=)
  *   POST /s/:space/t/:slug/reply | /vote | /state | /delete | /members-only   no-JS forms
+ *   POST /s/:space/t/:slug/post/:id/delete                 a moderator removes a post (rule and reason)
  *   POST /s/:space/chat-room, /s/:space/chat-room/detach   the space's chat room (its owner or staff)
  *
  * A members-only (OpenVibe.VIP) space or thread the viewer may not use renders a teaser with the
@@ -135,6 +138,33 @@ function createForumRoutes({ forum, viewers, config }) {
         await threadFeed(res, space);
     }));
 
+    // A thread's replies as RSS: newest 50, under the same visibility rule as the thread itself.
+    router.get('/s/:space/t/:slug/feed.xml', withViewer, wrap(async (req, res, next) => {
+        try {
+            const out = await forum.threadFeed(req.viewer, req.params.space, req.params.slug);
+            const base = `${config.baseUrl}/s/${out.space.slug}/t/${out.thread.slug}`;
+            res.type('application/rss+xml').set('Cache-Control', cache.htmlHeaders({ maxAge: 300 })).send(seo.feedXml({
+                title: `${SITE_NAME} — ${out.thread.title}`,
+                link: base,
+                description: `New posts in ${out.thread.title} on ${out.space.name}.`,
+                language: 'en',
+                selfUrl: `${base}/feed.xml`,
+                items: discovery.postFeedItems(out.space, out.thread, out.posts),
+            }, { format: 'rss' }));
+        } catch (err) {
+            if (err instanceof ApiError) return res.status(err.status).type('text/plain').send(err.message);
+            next(err);
+        }
+    }));
+
+    // The space's public moderation log: what moderation did and why, in role only.
+    router.get('/s/:space/log', withViewer, wrap(async (req, res, next) => {
+        try {
+            const out = await forum.moderationLog(req.viewer, req.params.space);
+            html(res, forumPages.moderationLogPage(out));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
     router.get('/s/:space', withViewer, wrap(async (req, res, next) => {
         try {
             const out = await forum.listThreads(req.viewer, req.params.space, { sort: req.query.sort, page: req.query.page, category: req.query.category, status: req.query.status });
@@ -233,7 +263,7 @@ function createForumRoutes({ forum, viewers, config }) {
 
     router.post('/s/:space/t/:slug/state', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         const b = req.body || {};
-        const flags = {};
+        const flags = { rule: b.rule, reason: b.reason };
         if (b.pinned !== undefined) flags.pinned = b.pinned === '1';
         if (b.locked !== undefined) flags.locked = b.locked === '1';
         try {
@@ -315,8 +345,9 @@ function createForumRoutes({ forum, viewers, config }) {
 
     // Status (moderators) and category (the author or moderators), no JS.
     router.post('/s/:space/t/:slug/status', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        const b = req.body || {};
         try {
-            await forum.setThreadStatus(req.viewer, req.params.space, req.params.slug, { status: String((req.body || {}).status || '') });
+            await forum.setThreadStatus(req.viewer, req.params.space, req.params.slug, { status: String(b.status || ''), rule: b.rule, reason: b.reason });
             res.redirect(303, back(req));
         } catch (err) { failPage(req, res, err, next); }
     }));
@@ -328,9 +359,17 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
+    // A moderator removes one post (its opening post removes the thread): rule and reason are optional.
+    router.post('/s/:space/t/:slug/post/:id/delete', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            await forum.deletePost(req.viewer, req.params.id, req.body || {});
+            res.redirect(303, back(req));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
     router.post('/s/:space/t/:slug/delete', withViewer, sameOrigin, form, async (req, res, next) => {
         try {
-            await forum.deleteThread(req.viewer, req.params.space, req.params.slug);
+            await forum.deleteThread(req.viewer, req.params.space, req.params.slug, req.body || {});
             discovery.resetCaches();
             res.redirect(303, `/s/${encodeURIComponent(req.params.space)}`);
         } catch (err) { failPage(req, res, err, next); }

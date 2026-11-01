@@ -319,6 +319,25 @@ async function countPostsSince(db, subject, sinceSql) {
     return (await db.prepare("SELECT COUNT(*) AS c FROM posts WHERE author_subject = ? AND created_at > datetime('now', ?)").get(subject, sinceSql)).c;
 }
 
+// ── public moderation log ────────────────────────────────────
+/** One public log row. The actor is named by role only; never pass a subject here. */
+async function addModerationLog(db, { space_id, thread_id = null, post_id = null, action, rule = null, reason = null, actor_role }) {
+    await db.prepare(`INSERT INTO forum_moderation_log (space_id, thread_id, post_id, action, rule, reason, actor_role)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(space_id, thread_id, post_id, action, rule, reason, actor_role);
+}
+
+/** A space's newest log rows (100 by default), with enough of a thread to name it, even after deletion. */
+async function listModerationLog(db, spaceId, { limit = 100 } = {}) {
+    return await db.prepare(`SELECT l.*, t.title AS thread_title, t.slug AS thread_slug, t.deleted_at AS thread_deleted_at
+                             FROM forum_moderation_log l LEFT JOIN threads t ON t.id = l.thread_id
+                             WHERE l.space_id = ? ORDER BY l.created_at DESC, l.id DESC LIMIT ?`).all(spaceId, limit);
+}
+
+/** The newest live posts of a thread (its feed): opening post included, tombstones left out. */
+async function recentPosts(db, threadId, limit = 50) {
+    return await db.prepare('SELECT * FROM posts WHERE thread_id = ? AND deleted_at IS NULL ORDER BY id DESC LIMIT ?').all(threadId, limit);
+}
+
 module.exports = {
     SORTS, slugify,
     listSpaces, getSpace, getSpaceById,
@@ -327,4 +346,5 @@ module.exports = {
     lastPosts, listGroups, updateSpace, createSpace, authorStats, bumpViews,
     listModerators, moderatesSpace, addModerator, removeModerator,
     getPost, addPost, listPosts, editPost, listPostVersions, softDeletePost, countPostsSince,
+    addModerationLog, listModerationLog, recentPosts,
 };
