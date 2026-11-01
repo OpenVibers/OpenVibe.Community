@@ -421,6 +421,7 @@ ${entries.length ? `<table class="board-table mod-log"><caption class="sr-only">
         robots: space.visibility === 'public' && !space.members_only ? 'index,follow' : 'noindex,nofollow',
         active: 'spaces',
         footerVariant: 'compact',
+        pageCss: ['modlog.css'],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: 'Moderation log', url: `/s/${space.slug}/log` }])],
         body,
     });

@@ -1,0 +1,25 @@
+/* OpenVibe.Community: the moderation log page (/s/:space/log), linked by that page alone (renderPage pageCss) so the
+   other pages carry none of it. A table on a computer; on a phone each row is a card. */
+.mod-log th:first-child { width: 7.5em; }
+.mod-log th:nth-child(3) { width: 7em; }
+.mod-log th:nth-child(4) { width: 9em; }
+.mod-log th:last-child { width: 7em; }
+.mod-log .log-reason { overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  /* The moderation log as cards: [Action] what · the reason · "Rule duplicate · Staff · 2 h ago" */
+  .mod-log tr { display: flex; flex-wrap: wrap; align-items: baseline; padding: 12px 14px; }
+  .mod-log tr::before { content: ''; order: 3; flex-basis: 100%; }
+  .mod-log td { padding: 0; width: auto; min-width: 0; }
+  .mod-log .log-act { order: 1; margin-right: 8px; }
+  .mod-log .log-what { order: 2; flex: 1 1 12em; }
+  .mod-log .log-reason { order: 4; flex-basis: 100%; margin-top: 6px; }
+  .mod-log .log-rule { order: 5; }
+  .mod-log .log-by { order: 6; }
+  .mod-log .log-when { order: 7; }
+  .mod-log .log-rule, .mod-log .log-by, .mod-log .log-when { margin-top: 6px; font-size: .8rem; color: var(--text-secondary); white-space: nowrap; }
+  .mod-log .log-rule::before { content: 'Rule '; }
+  .mod-log .log-by::before, .mod-log .log-when::before { content: '\00b7'; padding: 0 6px; }
+  .mod-log .log-rule.is-none, .mod-log .log-reason.is-none { display: none; }
+  .mod-log .log-rule.is-none + .log-reason + .log-by::before { content: none; padding: 0; }
+  .mod-log th { width: auto; }
+}
