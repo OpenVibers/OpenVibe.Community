@@ -95,7 +95,7 @@ ${list}`;
 
 // ── /s/:space ────────────────────────────────────────────────
 function threadRow(t, space) {
-    const flags = `${t.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${t.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}`;
+    const flags = `${t.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${t.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}`;
     return `<li class="thread-row${space.votes === false ? ' no-votes' : ''}">
     ${space.votes === false ? '' : `<span class="thread-score" title="Score">${num(t.score)}</span>`}
     <div class="thread-main">
@@ -275,7 +275,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
   <header class="thread-head">
     ${space.votes === false ? '' : voteForm(base, thread, viewer)}
     <div>
-      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-label="Pinned"></i> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-label="Locked"></i> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
+      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
       <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
