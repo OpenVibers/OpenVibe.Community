@@ -146,8 +146,6 @@ function renderPage(o) {
             `<link rel="stylesheet" href="${asset('css/community.css')}">`,
             ...(o.pageCss || []).map((name) => `<link rel="stylesheet" href="${asset(`css/${name}`)}">`),
             `<script src="${asset('js/community.js')}" defer></script>`,
-            // The OpenVibe glyphs draw every fa- icon here (no Font Awesome since 2026-11-01).
-            `<script id="ov-glyphs-loader" src="${ovServe.url('ov-glyphs.js')}" defer></script>`,
             // openvibe-shared items.js + items.css: community.js loads them only on a page that shows someone.
             `<meta name="ov-items" content="${escapeHtml(ovServe.url('items.js'))} ${escapeHtml(ovServe.url('items.css'))}">`,
             // openvibe-shared kit-web.js (rails' arrows, card menus, copy buttons): community.js loads it only on a page
