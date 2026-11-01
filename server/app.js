@@ -96,9 +96,9 @@ async function createApp(opts = {}) {
                 // Shared chrome (theme-loader, navbar, footer, history, ov-mark) comes from the Network.
                 // Cloudflare Web Analytics: Cloudflare injects its beacon at the edge and the privacy text says it may
                 // measure performance; script-src loads the beacon, connect-src is where it reports.
-                scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://cdnjs.cloudflare.com', 'https://static.cloudflareinsights.com'],
-                styleSrc: ["'self'", "'unsafe-inline'", 'https://cdnjs.cloudflare.com', 'https://fonts.googleapis.com', 'https://openvibe.network'],
-                fontSrc: ["'self'", 'https://cdnjs.cloudflare.com', 'https://fonts.gstatic.com', 'data:'],
+                scriptSrc: ["'self'", "'unsafe-inline'", 'https://openvibe.network', 'https://static.cloudflareinsights.com'],
+                styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://openvibe.network'],
+                fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
                 // Screenshots serve from openvibe.media (which may 302 to object storage); avatars from Live/Network.
                 imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
                 connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.live', 'https://openvibe.media', 'https://openvibe.events', 'https://inventory.openvibe.network', 'https://cloudflareinsights.com'],   // inventory: what people wear (items.js)

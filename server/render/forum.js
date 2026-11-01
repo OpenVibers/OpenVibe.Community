@@ -189,9 +189,9 @@ function pasteCards(p) {
  */
 function crosspostBlock(c, base) {
     if (!c) return '';
-    const from = c.from ? `<p class="crosspost-note"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> Crossposted from <strong>${esc(c.from.space)}</strong>: <a href="${esc(c.from.url)}">${esc(c.from.title)}</a></p>` : '';
+    const from = c.from ? `<p class="crosspost-note"><i class="fa-solid fa-right-left" aria-hidden="true"></i> Crossposted from <strong>${esc(c.from.space)}</strong>: <a href="${esc(c.from.url)}">${esc(c.from.title)}</a></p>` : '';
     const to = (c.to || []).length ? `<p class="crosspost-note small muted">Also in ${c.to.map((x) => `<a href="${esc(x.url)}">${esc(x.space)}</a>`).join(', ')}</p>` : '';
-    const form = (c.targets || []).length ? `<details class="crosspost-form"><summary><i class="fa-solid fa-shuffle" aria-hidden="true"></i> Crosspost</summary>
+    const form = (c.targets || []).length ? `<details class="crosspost-form"><summary><i class="fa-solid fa-right-left" aria-hidden="true"></i> Crosspost</summary>
       <form class="inline-form" method="post" action="${esc(base)}/crosspost"><label class="sr-only" for="crosspost-to">Crosspost to</label><select id="crosspost-to" name="to">${c.targets.map((t) => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Crosspost</button></form></details>` : '';
     return from || to || form ? `<div class="crosspost">${from}${to}${form}</div>` : '';
 }

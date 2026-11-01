@@ -80,7 +80,7 @@ function topicPages(base, pages) {
 
 function topicRow(t, space) {
     const base = `/s/${space.slug}/t/${t.slug}`;
-    const icon = t.locked ? 'fa-lock' : t.pinned ? 'fa-thumbtack' : t.reply_count >= 15 ? 'fa-fire-flame-curved' : 'fa-comment';
+    const icon = t.locked ? 'fa-lock' : t.pinned ? 'fa-thumbtack' : t.reply_count >= 15 ? 'fa-fire' : 'fa-comment';
     const label = t.locked ? 'Locked' : t.pinned ? 'Sticky' : t.reply_count >= 15 ? 'Hot topic' : 'Topic';
     const who = (a) => (a ? wearName(a, a.display_name || a.username || 'someone') : 'someone');
     return `<tr class="${t.pinned ? 'sticky' : ''}">
