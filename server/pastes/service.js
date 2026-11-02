@@ -18,7 +18,6 @@
 const crypto = require('crypto');
 const events = require('../events');
 const store = require('./store');
-const looks = require('./no-looks');
 const spam = require('./spam');
 const commentStore = require('../comments/store');
 const { discussionModerator } = require('../identity/capabilities');
@@ -300,8 +299,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     function aiFields(v, body) {
         if (!isService(v) || body.ai_summary == null) return {};
         const tags = body.ai_tags == null ? null : (typeof body.ai_tags === 'string' ? body.ai_tags : JSON.stringify(body.ai_tags)).slice(0, 2000);
-        // Public AI text never describes a person (./no-looks.js).
-        return { ai_summary: looks.summary(String(body.ai_summary).slice(0, 2000)), ai_tags: looks.tags(tags), ai_analyzed_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
+        // AI text is stored as written: describing people is fine (owner, 2026-10-31).
+        return { ai_summary: String(body.ai_summary).slice(0, 2000), ai_tags: tags, ai_analyzed_at: new Date().toISOString().replace('T', ' ').slice(0, 19) };
     }
 
     /**
@@ -432,8 +431,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'paste',
                 // An AI paste's title and body are AI text too; a person's are theirs, as written.
-                title: store.sanitizeTitle(v.origin === 'ai' ? looks.title(body.title) : body.title),
-                content: v.origin === 'ai' ? looks.body(content.trim()) : content.trim(),
+                title: store.sanitizeTitle(body.title),
+                content: content.trim(),
                 language: store.detectLanguage(content, body.language),
                 visibility,
                 stream_ref: streamRefFor(v, body),
@@ -479,8 +478,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 owner_subject: v.subject || null,
                 origin: v.origin === 'ai' ? 'ai' : 'user',
                 type: 'screenshot',
-                title: store.sanitizeTitle(v.origin === 'ai' ? looks.title(body.title || 'Screenshot') : (body.title || 'Screenshot')),
-                content: v.origin === 'ai' ? looks.body(String(body.description || body.content || '')) : String(body.description || body.content || ''),
+                title: store.sanitizeTitle(body.title || 'Screenshot'),
+                content: String(body.description || body.content || ''),
                 language: 'text',
                 visibility,
                 screenshot_url: stored.url,
@@ -734,8 +733,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         async setAi(v, slug, body = {}) {
             const p = await store.getBySlug(db, String(slug));
             if (!p) fail(404, 'Paste not found');
-            const summary = body.ai_summary == null ? null : looks.summary(String(body.ai_summary).slice(0, 2000));
-            const tags = body.ai_tags == null ? null : looks.tags((typeof body.ai_tags === 'string' ? body.ai_tags : JSON.stringify(body.ai_tags)).slice(0, 2000));
+            const summary = body.ai_summary == null ? null : String(body.ai_summary).slice(0, 2000);
+            const tags = body.ai_tags == null ? null : (typeof body.ai_tags === 'string' ? body.ai_tags : JSON.stringify(body.ai_tags)).slice(0, 2000);
             const row = await store.setAi(db, p.id, summary, tags);
             pingIndexNow(row);
             return { ok: true, paste: await shapeOne(row, v) };
