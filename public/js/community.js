@@ -76,7 +76,7 @@
     var codeWrap = $('[data-code]');
     // A Markdown paste shows its document; its source (inside "Markdown source") already wraps.
     if (codeWrap && !codeWrap.closest('.paste-source')) {
-      var wrapBtn = document.createElement('button'); wrapBtn.type = 'button'; wrapBtn.className = 'btn btn-sm'; wrapBtn.innerHTML = '<i class="fa-solid fa-text-width" aria-hidden="true"></i> Wrap';
+      var wrapBtn = document.createElement('button'); wrapBtn.type = 'button'; wrapBtn.className = 'btn btn-sm'; wrapBtn.innerHTML = '<i class="fa-solid fa-align-left" aria-hidden="true"></i> Wrap';
       wrapBtn.addEventListener('click', function () { codeWrap.classList.toggle('wrap'); }, { signal });
       var actions = $('.actions'); if (actions) actions.appendChild(wrapBtn);
     }

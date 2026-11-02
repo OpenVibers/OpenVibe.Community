@@ -86,6 +86,55 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', change: 'delete' } }))).json.outcome, 'ignored:change');
     assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', change: 'updated', keys: ['level'] } }))).json.outcome, 'ignored:payload', 'no public level, nothing read');
     assert.strictEqual((await items()).length, 4);
+    // A dropped connection is a new Live session (a new subject id), but the stream is one broadcast.
+    const store = require('../server/pulse/store');
+    const T = Date.parse('2026-06-01T10:00:00.000Z');
+    const liveAt = (stream, at, title, { actor = USR, ...over } = {}) => evt({
+        subject: { type: 'stream', id: String(stream), revision: 1 },
+        payload: { stream_id: stream, channel: { username: 'goosely', display_name: 'Goosely', url: 'https://openvibe.live/@goosely', subject: { type: 'user', id: actor } }, title, started_at: new Date(at).toISOString() },
+        ...over,
+    });
+    const shows = async (title) => await db.prepare("SELECT id, source_id, occurred_at FROM pulse_items WHERE source_service = 'live' AND source_type = 'stream' AND title = ? ORDER BY id").all(title);
+    const REPEAT = 'Goosely went live: Repeat show';
+    r = await post(liveAt(9001, T, 'Repeat show'));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    r = await post(liveAt(9002, T + 20 * 60_000, 'Repeat show'));
+    assert.strictEqual(r.json.outcome, 'pulse:updated', 'a reconnect within six hours is the same broadcast');
+    let shown = await shows(REPEAT);
+    assert.strictEqual(shown.length, 1, 'one item, not one per session');
+    assert.strictEqual(shown[0].source_id, '9001', 'the item keeps its id (and source)');
+    assert.strictEqual(shown[0].occurred_at, new Date(T + 20 * 60_000).toISOString(), 'its time is the later start');
+
+    r = await post(liveAt(9003, T + 30 * 60_000, 'New show'));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    assert.strictEqual((await shows(REPEAT)).length, 1, 'the older broadcast is untouched');
+    assert.strictEqual((await shows('Goosely went live: New show')).length, 1, 'a different title is a new item');
+    assert.strictEqual((await items()).length, 6);
+
+    r = await post(liveAt(9004, T + 7 * 3_600_000, 'Repeat show'));
+    assert.strictEqual(r.json.outcome, 'pulse:created', 'more than six hours later is a new broadcast');
+    assert.strictEqual((await shows(REPEAT)).length, 2);
+    assert.strictEqual((await items()).length, 7);
+
+    // The channel URL is the identity too, when the event names another acting subject for it.
+    r = await post(liveAt(9005, T + 10 * 60_000, 'URL show'));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    r = await post(liveAt(9006, T + 25 * 60_000, 'URL show', { actor: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPS' }));
+    assert.strictEqual(r.json.outcome, 'pulse:updated');
+    assert.strictEqual((await shows('Goosely went live: URL show')).length, 1);
+    assert.strictEqual((await items()).length, 8);
+
+    // Duplicates already in the table: the feed read shows one line per channel+title per six hours,
+    // at the newest time, without deleting the rows.
+    const PRE = 'Goosely went live: Old repeat';
+    const pre = db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, occurred_at)
+                VALUES ('live', 'stream', ?, ?, 'https://openvibe.live/@old', ?, 'user', ?)`);
+    await pre.run('pre1', PRE, USR, '2026-06-02T10:00:00.000Z');
+    await pre.run('pre2', PRE, USR, '2026-06-02T10:20:00.000Z');
+    await pre.run('pre3', PRE, USR, '2026-06-02T17:00:00.000Z');
+    const feed = await store.listItems(db, { limit: 100 });
+    assert.deepStrictEqual(feed.rows.filter((x) => x.title === PRE).map((x) => x.source_id), ['pre3', 'pre2'], 'one line per six-hour window, at the newest time');
+    assert.strictEqual((await db.prepare('SELECT COUNT(*)::int AS n FROM pulse_items WHERE title = ?').get(PRE)).n, 3, 'the rows themselves stay');
     srv.close();
     console.log('pulse consumer: all checks passed');
     process.exit(0);

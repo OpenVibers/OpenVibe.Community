@@ -107,6 +107,17 @@ function threadFeedItems(threads) {
     });
 }
 
+/** A thread's newest posts for /s/:space/t/:slug/feed.xml (opening post and replies). */
+function postFeedItems(space, thread, posts) {
+    const { markdownToText } = require('./render/markdown');
+    return posts.map((p) => {
+        const url = abs(`/s/${space.slug}/t/${thread.slug}#post-${p.id}`);
+        const description = markdownToText(p.body_markdown || '', 300);
+        return { title: p.is_opening ? thread.title : `Re: ${thread.title}`, link: url, guid: url, description, content: description,
+            author: undefined, published: isoDate(p.created_at), updated: isoDate(p.updated_at || p.created_at) };
+    });
+}
+
 function resetCaches() { _sitemap = null; _sitemapAt = 0; }
 
-module.exports = { ROBOTS_DISALLOW, SUMMARY, CONTENT_LABELS, llmsSections, llmsFullSections, sitemapRows, pasteFeedItems, threadFeedItems, useForum, resetCaches };
+module.exports = { ROBOTS_DISALLOW, SUMMARY, CONTENT_LABELS, llmsSections, llmsFullSections, sitemapRows, pasteFeedItems, threadFeedItems, postFeedItems, useForum, resetCaches };

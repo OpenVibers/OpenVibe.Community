@@ -93,7 +93,7 @@ const { boot, check, done } = require('./helpers/app');
         has(head, '<link rel="alternate" type="application/rss+xml" title="OpenVibe.Community — latest pastes" href="/feed.xml">');
         has(head, '/css/community.css?v=');
         has(head, '/js/community.js?v=');
-        has(head, 'font-awesome');
+        assert.ok(!head.includes('font-awesome'), 'the head carries no Font Awesome stylesheet');
         has(head, '<link rel="icon"');
         assert.match(head, /<meta name="ov-boost" content="community@[^"]+">/);
         for (const js of ['theme-loader.js', 'navbar.js', 'footer.js', 'boost.js']) has(head, `/shared/${js}?v=`);

@@ -14,7 +14,7 @@ const showcase = require('openvibe-shared/showcase');
 const kit = require('openvibe-shared/kit');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 const { renderMarkdown } = require('./markdown');
-const { pickBlock, pickRules, foldBlock } = require('./short');
+const { pickBlock, foldBlock } = require('./short');
 
 // Languages read as prose: their lines wrap by default (the Wrap button still toggles), so a phone shows the whole text.
 const PROSE = new Set(['markdown', 'plaintext', 'text']);
@@ -27,6 +27,12 @@ function mediaAbs(u) {
     if (!u) return null;
     if (/^https?:\/\//i.test(u)) return u;
     return `${config.mediaUrl}${u.startsWith('/') ? '' : '/'}${u}`;
+}
+// A Media object is stored at full size: ask its resize ladder for the width drawn here (96 for the 22 px author
+// avatar, 160 for the 64 px postbit one). Any other picture address — the network's avatar endpoint, a picture that
+// already carries a query — is used unchanged.
+function mediaW(u, w) {
+    return /^https:\/\/openvibe\.media\/o\/med_[0-9A-Za-z]+$/.test(String(u || '')) ? `${u}?w=${w}` : u;
 }
 /** A screenshot's Media address when the stored row has no screenshot_url. */
 function screenshotFallback(slug) { return `${config.mediaUrl}/p/${encodeURIComponent(slug)}/screenshot`; }
@@ -76,7 +82,7 @@ function authorHtml(p, { link = true } = {}) {
     // picture, or a generated initial), so an author looks the same here as on every other OpenVibe site.
     const netAvatar = !avatarSrc && p.username ? `${config.networkUrl}/avatar/${encodeURIComponent(p.username)}?s=44` : null;
     const avatar = (avatarSrc || netAvatar)
-        ? `<img class="avatar" src="${esc(avatarSrc || netAvatar)}" alt="" loading="lazy" width="22" height="22">`
+        ? `<img class="avatar" src="${esc(mediaW(avatarSrc || netAvatar, 96))}" alt="" loading="lazy" width="22" height="22">`
         : `<span class="avatar avatar-letter" aria-hidden="true">${initial}</span>`;
     const wearer = wearerOf(p);
     const inner = `${avatar}${wearer ? wearName(p, name) : `<span>${esc(name)}</span>`}`;
@@ -174,7 +180,7 @@ function pasteKitCard(p) {
         corner: isShot ? '' : languageLabel(p.language || 'text'),
         preview: !isShot && !p.is_nsfw ? String(p.content || '') : '',
         who: authorName(p), avatar: avatarUrl(p, 68) || '',
-        count: [Number(p.views) || 0, 'views'], when: p.created_at || null,
+        count: [Number(p.views) || 0, Number(p.views) === 1 ? 'view' : 'views'], when: p.created_at || null,
     });
 }
 
@@ -269,11 +275,6 @@ function pickWhatIsHappening(roadmap, activity) {
     return pickBlock({ key: 'happening', label: 'What is happening', head: 'What is happening', panes, bodyClass: 'cm-pair' });
 }
 
-/** The rules that show the picked shelf of the home's pick block: one per shelf, written for this page. */
-function happeningRules() {
-    const ids = ['shelf-roadmap', 'shelf-pulse'];
-    return `@supports selector(:has(*)){@media (max-width:640px){${pickRules('happening', ids)}}}`;
-}
 
 function homePage({ latest, fromStreams = [], languages, user, spaces = [], roadmap = [], activity = [], counts = {} }) {
     const body = showcase.hero({
@@ -308,7 +309,6 @@ ${homeFaq()}
         // The kit's controls (kit.css) and its cards and rails (room.css, after it); kit-web.js comes with community.js.
         styles: [showcase.STYLESHEET, 'kit.css', 'room.css'],
         // The rule that shows the picked shelf: one per shelf, so the CSS is written for this page.
-        inlineStyles: [happeningRules()],
         bodyClass: 'cm-home',
         body,
     });
@@ -597,4 +597,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, wearName };
+module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, mediaW, wearName };

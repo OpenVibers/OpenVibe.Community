@@ -16,6 +16,7 @@
  * the services validate; response properties are the DTOs' output where the shape is read from code.
  */
 const pkg = require('../package.json');
+const { RULES: MODERATION_RULES } = require('./forum/moderation');
 
 const SITE = 'https://openvibe.community';
 
@@ -360,6 +361,22 @@ route('get', '/api/v1/spaces/{space}', {
     parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' }))],
     responses: { 200: json('The space, its categories and moderators', { type: 'object' }), ...errors([404, 429]) },
 });
+route('get', '/api/v1/spaces/{space}/moderation-log', {
+    operationId: 'getModerationLog', summary: 'A space\'s public moderation log (newest 100)', tags: ['spaces'], security: ANONYMOUS,
+    parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' }))],
+    description: 'Every moderator action with its rule and reason, in role only (staff, moderator, owner, automatic); never the moderator\'s identity. Public for public spaces; a members-only space keeps it for signed-in members, a staff space for staff.',
+    responses: { 200: json('The space and its entries', { type: 'object', properties: {
+        space: ref('Space'),
+        entries: arrayOf({ type: 'object', properties: {
+            id: { type: 'integer' }, action: { type: 'string', enum: ['lock', 'unlock', 'pin', 'unpin', 'hide', 'delete', 'status'] },
+            rule: nullable('string', { enum: MODERATION_RULES }), reason: nullable('string', { maxLength: 280 }),
+            actor_role: { type: 'string', enum: ['moderator', 'owner', 'staff', 'automatic'] },
+            created_at: str({ format: 'date-time' }),
+            thread: nullable('object', { properties: { slug: str(), title: str(), url: str() }, description: 'Null when the thread was removed' }),
+            post_id: nullable('integer'),
+        } }),
+    } }), ...errors([401, 404, 429]) },
+});
 route('get', '/api/v1/spaces/{space}/threads', {
     operationId: 'listThreads', summary: 'A space\'s threads', tags: ['spaces'], security: ANONYMOUS, parameters: [
         path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' })),
@@ -402,6 +419,7 @@ route('put', '/api/v1/spaces/{space}/threads/{slug}/status', {
     parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' })), path('slug', str())],
     requestBody: body({ type: 'object', required: ['status'], properties: {
         status: { type: 'string', enum: ['open', 'planned', 'in_progress', 'done', 'declined', 'paused'] },
+        rule: str({ enum: MODERATION_RULES, description: 'The rule applied, if any' }), reason: str({ maxLength: 280 }),
     } }),
     responses: { 200: json('The thread'), ...errors([400, 404, 429]) },
 });
@@ -431,6 +449,7 @@ route('get', '/api/v1/spaces/{space}/threads/{slug}', {
 route('delete', '/api/v1/spaces/{space}/threads/{slug}', {
     operationId: 'deleteThread', summary: 'Delete a thread (its author or a moderator)', tags: ['spaces'], security: PERSON,
     parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' })), path('slug', str())],
+    requestBody: body({ type: 'object', properties: { rule: str({ enum: MODERATION_RULES }), reason: str({ maxLength: 280 }) } }, false),
     responses: { 200: json('What was deleted'), ...errors([404, 429]) },
 });
 route('post', '/api/v1/spaces/{space}/threads/{slug}/posts', {
@@ -452,7 +471,10 @@ route('post', '/api/v1/spaces/{space}/threads/{slug}/votes', {
 route('put', '/api/v1/spaces/{space}/threads/{slug}/state', {
     operationId: 'moderateThread', summary: 'Pin or lock a thread (moderators)', tags: ['spaces'], security: PERSON,
     parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' })), path('slug', str())],
-    requestBody: body({ type: 'object', properties: { pinned: { type: 'boolean' }, locked: { type: 'boolean' } } }),
+    requestBody: body({ type: 'object', properties: {
+        pinned: { type: 'boolean' }, locked: { type: 'boolean' },
+        rule: str({ enum: MODERATION_RULES, description: 'The rule applied, if any' }), reason: str({ maxLength: 280 }),
+    } }),
     responses: { 200: json('The thread'), ...errors([400, 404, 429]) },
 });
 route('put', '/api/v1/spaces/{space}/threads/{slug}/members-only', {
@@ -517,6 +539,7 @@ route('delete', '/api/v1/posts/{id}', {
     operationId: 'deletePost', summary: 'Delete a post (its author or a moderator)', tags: ['posts'], security: PERSON,
     parameters: [path('id', { type: 'string' })],
     description: 'community.post.delete.',
+    requestBody: body({ type: 'object', properties: { rule: str({ enum: MODERATION_RULES }), reason: str({ maxLength: 280 }) } }, false),
     responses: { 200: json('What was deleted'), ...errors([404, 429]) },
 });
 route('get', '/api/v1/posts/{id}/versions', {

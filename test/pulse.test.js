@@ -188,6 +188,16 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(r.text.includes('href="/pulse?origin=system"'), 'system items exist here, so the tab shows');
     });
 
+    await check('an author avatar on a Media object asks for the width the page draws; other addresses are left alone', () => {
+        const { authorHtml } = require('../server/render/pages');
+        const obj = 'https://openvibe.media/o/med_01M644DY8BFX4H7MTRKPGG052R';
+        assert.ok(authorHtml({ display_name: 'Alex', username: 'alex', avatar_url: obj }).includes(`<img class="avatar" src="${obj}?w=96"`), 'the 22 px author avatar asks for 96');
+        const sized = authorHtml({ display_name: 'Alex', username: 'alex', avatar_url: `${obj}?w=64` });
+        assert.ok(sized.includes(`src="${obj}?w=64"`) && !sized.includes('?w=64?w='), 'an already sized URL is used as stored, with no second query');
+        const relative = authorHtml({ display_name: 'Alex', username: 'alex', avatar_url: '/data/avatars/alex.png' });
+        assert.ok(relative.includes('/data/avatars/alex.png"') && !relative.includes('/data/avatars/alex.png?w='), 'a non-Media avatar is used unchanged');
+    });
+
     await t.close();
     done();
 })();
