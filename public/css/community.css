@@ -448,3 +448,11 @@ button.rx:hover { border-color: var(--accent); }
 } }
 /* The fold holds the questions, so its list gets the room the card gives it. */
 .hm-fold-block .cm-faq { margin: 0; padding: 0 16px 16px; }
+
+/* Content labels (L1): what a thread carries, in words beside its title (as Shared's kit.labels draws them); each
+   reader's own choice (Shared's ov-labels.js) shows, covers or hides it. */
+.ovk-labels { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+.ovk-label { display: inline-flex; align-items: center; min-height: 20px; padding: 0 8px; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .02em; line-height: 1.2;
+  color: var(--text-secondary, #a8b3c7); background: color-mix(in srgb, var(--text-primary, #e6edf7) 7%, transparent); border: 1px solid var(--border, rgba(255,255,255,.1)); }
+.ovk-label--adult { color: var(--warning-text, #fbbf24); border-color: color-mix(in srgb, var(--warning-text, #fbbf24) 45%, transparent); background: color-mix(in srgb, var(--warning-text, #fbbf24) 9%, transparent); }
+.thread-head .ovk-labels { margin: 2px 0 6px; }

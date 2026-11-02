@@ -1,0 +1,35 @@
+/* OpenVibe.Community: content labels (L1) in a form: the new-thread form and the author's Labels box on a thread.
+   Loaded only on those pages (layout pageCss). Six toggles, two or three to a row, each saying what it covers. */
+.ovl-pick { border: 0; margin: 4px 0 0; padding: 0; min-width: 0; }
+.ovl-pick legend { padding: 0; margin-bottom: 4px; font-size: .9rem; font-weight: 700; }
+.ovl-help { margin: 0 0 8px; font-size: .82rem; line-height: 1.4; color: var(--text-muted, #7386a3); max-width: 62ch; }
+.ovl-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.ovl-pick .ovl-opt { position: relative; display: block; cursor: pointer; font-size: 1rem; font-weight: 400; color: inherit; }
+.ovl-opt input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.ovl-card { position: relative; display: grid; align-content: start; gap: 2px; height: 100%; box-sizing: border-box; padding: 10px 12px 10px 36px; border-radius: 12px;
+  border: 1px solid var(--border-light, #2c3d5c); background: color-mix(in srgb, var(--bg-card, #131c2e) 70%, transparent); transition: border-color .15s, background .15s; }
+.ovl-card::before { content: ""; position: absolute; left: 12px; top: 12px; width: 16px; height: 16px; box-sizing: border-box; border-radius: 5px;
+  border: 1.5px solid var(--border-light, #2c3d5c); background: var(--bg-input, var(--bg-primary, #0a0f1c)); }
+.ovl-card b { font-size: .9rem; font-weight: 700; color: var(--text-primary, #e6edf7); }
+.ovl-card small { font-size: .76rem; line-height: 1.3; color: var(--text-muted, #7386a3); }
+.ovl-sug { justify-self: start; margin-top: 3px; padding: 0 7px; border-radius: 999px; font-style: normal; font-size: .7rem; font-weight: 700;
+  color: var(--accent-light, #60a5fa); border: 1px dashed color-mix(in srgb, var(--accent, #3b82f6) 55%, transparent); }
+.ovl-opt input:checked + .ovl-card { border-color: var(--accent, #3b82f6); background: color-mix(in srgb, var(--accent, #3b82f6) 13%, var(--bg-card, #131c2e)); }
+.ovl-opt input:checked + .ovl-card::before { border-color: var(--accent, #3b82f6); background: var(--accent, #3b82f6)
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.2l3 3 6-6.4' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat; }
+.ovl-opt--adult input:checked + .ovl-card { border-color: var(--warning-text, #fbbf24); background: color-mix(in srgb, var(--warning-text, #fbbf24) 10%, var(--bg-card, #131c2e)); }
+.ovl-opt--adult input:checked + .ovl-card::before { border-color: var(--warning-text, #fbbf24); background-color: var(--warning-text, #fbbf24); }
+.ovl-opt input:focus-visible + .ovl-card { outline: 3px solid var(--accent, #3b82f6); outline-offset: 2px; }
+.ovl-opt:hover .ovl-card { border-color: color-mix(in srgb, var(--accent, #3b82f6) 60%, var(--border-light, #2c3d5c)); }
+
+/* The author's Labels box: a fold whose line says what is set. */
+.labels-box { margin: 10px 0 14px; border: 1px solid var(--border, #1f2d47); border-radius: var(--radius, 12px); background: var(--bg-card, #131c2e); }
+.labels-box > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 14px; cursor: pointer; list-style: none; min-height: 44px; box-sizing: border-box; }
+.labels-box > summary::-webkit-details-marker { display: none; }
+.labels-box > summary::after { content: "+"; margin-left: auto; font-weight: 700; color: var(--text-secondary, #96a7c2); }
+.labels-box[open] > summary::after { content: "\2212"; }
+.labels-box-title { font-weight: 700; }
+.labels-box-title i { color: var(--accent-light, #60a5fa); margin-right: 4px; }
+.labels-box-line { font-size: .85rem; color: var(--text-secondary, #96a7c2); }
+.labels-form { padding: 0 14px 14px; display: grid; gap: 12px; }
+@media (prefers-reduced-motion: reduce) { .ovl-card { transition: none; } }

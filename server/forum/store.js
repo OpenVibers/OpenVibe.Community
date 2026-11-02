@@ -108,11 +108,12 @@ async function getThreadBySlug(db, spaceId, slug) {
 }
 
 /** New thread + its opening post, in one transaction. → { thread, post } */
-async function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null, kind = 'discussion', status = null, category_id = null, external_key = null, crosspost_of = null }) {
+async function createThread(db, { space_id, title, author_subject = null, origin = 'user', body_markdown, members_only_owner = null, kind = 'discussion', status = null, category_id = null, external_key = null, crosspost_of = null, content_labels = null }) {
     return await db.tx(async () => {
         const slug = await uniqueSlug(db, space_id, slugify(title));
-        const info = await db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key, crosspost_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id')
-            .run(space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key, crosspost_of);
+        // content_labels: the column's default (none) unless the author labelled the thread as they posted it.
+        const info = await db.prepare('INSERT INTO threads (space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key, crosspost_of, content_labels) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::jsonb, \'{"labels": [], "suggested": []}\'::jsonb)) RETURNING id')
+            .run(space_id, slug, title, author_subject, origin, members_only_owner, kind, status, category_id, external_key, crosspost_of, content_labels ? JSON.stringify(content_labels) : null);
         const threadId = info.lastInsertRowid;
         const p = await db.prepare('INSERT INTO posts (thread_id, author_subject, origin, is_opening, body_markdown) VALUES (?, ?, ?, 1, ?) RETURNING id')
             .run(threadId, author_subject, origin, body_markdown);
@@ -216,6 +217,11 @@ async function setThreadFlags(db, id, { pinned, locked }) {
 }
 
 /** Members-only for a creator's VIP members (owner = their usr_ subject), or open (null). */
+/** A thread's content labels ({ labels, suggested }, common.content-labels@1). */
+async function setThreadLabels(db, id, contentLabels) {
+    await db.prepare('UPDATE threads SET content_labels = ?::jsonb WHERE id = ?').run(JSON.stringify(contentLabels), id);
+    return await getThread(db, id);
+}
 async function setThreadMembersOnly(db, id, owner) {
     await db.prepare('UPDATE threads SET members_only_owner = ? WHERE id = ?').run(owner || null, id);
     return await getThread(db, id);
@@ -341,7 +347,7 @@ async function recentPosts(db, threadId, limit = 50) {
 module.exports = {
     SORTS, slugify,
     listSpaces, getSpace, getSpaceById,
-    getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
+    getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setThreadLabels, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
     listCategories, getCategory, getCategoryById, upsertCategory, deleteCategory, setThreadCategory, setThreadStatus, getThreadByKey,
     lastPosts, listGroups, updateSpace, createSpace, authorStats, bumpViews,
     listModerators, moderatesSpace, addModerator, removeModerator,

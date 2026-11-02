@@ -94,6 +94,8 @@ const TITLE_MIN = 3, TITLE_MAX = 200;
 const BODY_MAX = 40_000;
 const THREADS_PER_DAY = 20;
 
+const contentLabels = require('./labels');
+
 function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {}, config = {}, indexnow = null } = {}) {
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
@@ -259,6 +261,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             pages: Math.max(Math.ceil(((t.reply_count || 0) + 1) / POSTS_PER_PAGE), 1),
             last_post: t.last_post_id ? { id: t.last_post_id, author: authors.author(t.last_author_subject, t.last_origin, projections || new Map()) } : null,
             crosspost_of: t.crosspost_of || null,
+            // L1: what the thread carries; each reader's own choice decides what they see (never a ban).
+            content_labels: contentLabels.labelsOf(t.content_labels),
             last_activity_at: isoTime(t.last_activity_at), created_at: isoTime(t.created_at),
             my_vote: (votes && votes.get(t.id)) || 0,
         };
@@ -914,6 +918,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                     can_moderate: mod,
                     can_delete: mod || (person(v) && thread.author_subject === v.subject),
                     can_gate: mod || (person(v) && thread.author_subject === v.subject),
+                    can_label: mod || (person(v) && thread.author_subject === v.subject),
                 },
             };
         },
@@ -934,6 +939,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (body.category && !category) fail(404, 'category.not_found', 'No such category in this forum');
             const title = cleanTitle(body.title);
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
+            const labels = body.labels === undefined || body.labels === null ? null : contentLabels.parseLabels(body.labels);
+            if (body.labels !== undefined && body.labels !== null && labels === null) fail(400, 'thread.labels_invalid', `Labels are from this list: ${contentLabels.LABELS.join(', ')}`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
             const images = await claimable(w, body.attachments);
             const pasteRows = await claimPastes(body.pastes);
@@ -942,7 +949,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 if (threadsPerDay > 0 && await store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
             }
             const { thread, post } = await store.createThread(db, { space_id: space.id, title, author_subject: w.author, origin: w.origin, body_markdown: text, members_only_owner: gate,
-                kind, status: FIRST_STATUS[kind] || null, category_id: category ? category.id : null });
+                kind, status: FIRST_STATUS[kind] || null, category_id: category ? category.id : null, content_labels: labels && labels.length ? contentLabels.shape(labels) : null });
             threadLimiter.record(w.key, title);
             await attach(images, post.id);
             await attachPastes(pasteRows, post.id);
@@ -1088,6 +1095,24 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (owner) await hideGated([thread.id]);
             const projections = await authors.projectionsFor([next.author_subject, next.members_only_owner]);
             pingThread(space, thread);
+            pingThread(space, next);
+            return { thread: await shapeThread(next, space, v, projections, null) };
+        },
+
+        /**
+         * A thread's content labels { labels: [...] } (L1), by its author or a moderator. A suggestion they confirm leaves
+         * `suggested`. → { thread }
+         */
+        async setThreadLabels(v, spaceSlug, threadSlug, body = {}) {
+            const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
+            const mine = person(v) && thread.author_subject === v.subject;
+            const mod = await moderates(v, space);
+            if (!mine && !mod) fail(403, 'thread.not_yours', 'Only the author or a moderator labels a thread');
+            await requireMembership(v, space, thread);
+            const labels = contentLabels.parseLabels(body.labels);
+            if (labels === null) fail(400, 'thread.labels_invalid', `Labels are from this list: ${contentLabels.LABELS.join(', ')}`);
+            const next = await store.setThreadLabels(db, thread.id, contentLabels.confirmed(thread.content_labels, labels));
+            const projections = await authors.projectionsFor([next.author_subject, next.members_only_owner]);
             pingThread(space, next);
             return { thread: await shapeThread(next, space, v, projections, null) };
         },

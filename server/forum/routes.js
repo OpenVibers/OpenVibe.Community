@@ -23,6 +23,7 @@
  * visitor); an Origin header from somewhere else is refused as well.
  */
 const express = require('express');
+const labelsUi = require('../render/labels');
 const multer = require('multer');
 const seo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
@@ -194,6 +195,8 @@ function createForumRoutes({ forum, viewers, config }) {
         if ((req.body || {}).members_only === '1') values.members_only = true;
         if ((req.body || {}).category) values.category = String(req.body.category).slice(0, 40);
         if ((req.body || {}).pastes) values.pastes = String(req.body.pastes).slice(0, 400);
+        const labels = labelsUi.fromForm(req.body);
+        if (labels !== undefined) values.labels = labels === null ? ['not-a-label'] : labels;
         try {
             // Images go to Media only when the rest can be saved (no strays from an empty form).
             if (worthUploading(values.title, values.body)) { const ids = await uploadImages(req); if (ids.length) values.attachments = ids; }
@@ -259,6 +262,16 @@ function createForumRoutes({ forum, viewers, config }) {
             await forum.setThreadMembersOnly(req.viewer, req.params.space, req.params.slug, { members_only: (req.body || {}).on === '1' ? true : null });
             discovery.resetCaches();
             res.redirect(303, back(req));
+        } catch (err) { failPage(req, res, err, next); }
+    }));
+
+    // Content labels (L1, no JS): the author or a moderator ticks what the thread carries.
+    router.post('/s/:space/t/:slug/labels', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
+        try {
+            const labels = labelsUi.fromForm(req.body);
+            await forum.setThreadLabels(req.viewer, req.params.space, req.params.slug, { labels: labels === undefined ? [] : (labels === null ? ['not-a-label'] : labels) });
+            discovery.resetCaches();
+            res.redirect(303, `${back(req)}?labelled=1`);
         } catch (err) { failPage(req, res, err, next); }
     }));
 
