@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Threads carry content labels (L1, labels and choices, 2026-11-02): `migrations/0013_thread_content_labels.sql` adds
+  `threads.content_labels` (`{ labels, suggested }`, common.content-labels@1). The author or a moderator sets them on the
+  new-thread form, in a Labels box on the thread, or with `PUT /api/v1/spaces/:space/threads/:slug/labels`. Lists and
+  thread pages in both styles show them in words and carry `data-ov-labels` with the author's subject, so each reader's
+  own choice on openvibe.network (Shared's ov-labels.js) shows, blurs or hides them, and the author always sees their
+  own; a thread's own page is opened, so hide covers it instead of emptying the page. Ticking nothing clears them.
 - The forum publishes its moderation (market outcome 5): `migrations/0012_forum_moderation_log.sql` adds `forum_moderation_log`, and every moderator lock, unlock, pin, unpin, post/thread delete and status change writes one row in the same transaction, with the optional rule and reason the forms now take. The row names the actor's role only (staff, moderator, owner, automatic), never their Network subject. `GET /s/:space/log` (and `GET /api/v1/spaces/:space/moderation-log`) shows the newest 100, with a removed thread shown as "a removed thread"; public spaces publish it, private spaces keep the same sign-in rule as their page.
 - Each thread has an RSS feed of its newest 50 posts (`GET /s/:space/t/:slug/feed.xml`), the space and thread pages advertise their feeds in the head, and each shows a small RSS link.
 

@@ -16,6 +16,7 @@
  *   PUT    /spaces/:space/threads/:slug/state { pinned?, locked?, rule?, reason? }   moderators
  *   PUT    /spaces/:space/members-only { owner: 'usr_…' | null }        moderators (OpenVibe.VIP gate)
  *   PUT    /spaces/:space/threads/:slug/members-only { owner | true | null }   the author (own members) or moderators
+ *   PUT    /spaces/:space/threads/:slug/labels { labels: [...] }          the author or moderators (content labels, L1)
  *   POST   /spaces/:space/threads { …, members_only: true | { owner } }        start a members-only thread
  *   POST   /spaces/:space/attachments (multipart `file`)  an image for a new thread or reply → { attachment: { media_id, url, … } };
  *                                                         then POST …/threads or …/posts with { attachments: [media_id] } (at most 4)
@@ -101,6 +102,7 @@ function createSpacesApi({ forum, viewers, limits }) {
     router.post('/:space/threads/:slug/votes', write, limits('community.thread.vote', { minute: 120, hour: 1200 }), jsonBody, run(async (req) => await forum.voteThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/threads/:slug/state', configure, spaceMod, jsonBody, run(async (req) => await forum.moderateThread(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/threads/:slug/members-only', writeOrMod, editThread, jsonBody, run(async (req) => await forum.setThreadMembersOnly(req.viewer, p(req).space, p(req).slug, req.body || {})));
+    router.put('/:space/threads/:slug/labels', writeOrMod, editThread, jsonBody, run(async (req) => await forum.setThreadLabels(req.viewer, p(req).space, p(req).slug, req.body || {})));
     router.put('/:space/members-only', configure, spaceMod, jsonBody, run(async (req) => await forum.setSpaceMembersOnly(req.viewer, p(req).space, req.body || {})));
     // A chat room (OpenVibe.Chat): people attach with their own token; moderator services may only detach.
     router.put('/:space/chat-room', configure, jsonBody, run(async (req) => await forum.attachChatRoom(req.viewer, p(req).space, req.body || {}), (out) => (out.created ? 201 : 200)));
