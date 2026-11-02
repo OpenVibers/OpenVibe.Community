@@ -3,7 +3,9 @@
 .ovl-pick { border: 0; margin: 4px 0 0; padding: 0; min-width: 0; }
 .ovl-pick legend { padding: 0; margin-bottom: 4px; font-size: .9rem; font-weight: 700; }
 .ovl-help { margin: 0 0 8px; font-size: .82rem; line-height: 1.4; color: var(--text-muted, #7386a3); max-width: 62ch; }
-.ovl-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+/* Six toggles: three to a row, two on a phone, so no row is left with one. */
+.ovl-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 760px; }
+@media (max-width: 560px) { .ovl-opts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .ovl-pick .ovl-opt { position: relative; display: block; cursor: pointer; font-size: 1rem; font-weight: 400; color: inherit; }
 .ovl-opt input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
 .ovl-card { position: relative; display: grid; align-content: start; gap: 2px; height: 100%; box-sizing: border-box; padding: 10px 12px 10px 36px; border-radius: 12px;
