@@ -180,7 +180,7 @@ function pasteKitCard(p) {
         corner: isShot ? '' : languageLabel(p.language || 'text'),
         preview: !isShot && !p.is_nsfw ? String(p.content || '') : '',
         who: authorName(p), avatar: avatarUrl(p, 68) || '',
-        count: [Number(p.views) || 0, 'views'], when: p.created_at || null,
+        count: [Number(p.views) || 0, Number(p.views) === 1 ? 'view' : 'views'], when: p.created_at || null,
     });
 }
 
