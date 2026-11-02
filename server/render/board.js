@@ -14,6 +14,7 @@ const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
 const { timeTag, fmtDate, num, avatarUrl, mediaW, authorHtml, wearName } = require('./pages');
 const f = require('./forum');
+const labelsUi = require('./labels');
 
 const STYLE_LABELS = { forum: 'Classic', feed: 'Feed' };   // the two styles, as the Forum page and the settings name them
 const monthYear = (iso) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : null; };
@@ -83,9 +84,11 @@ function topicRow(t, space) {
     const icon = t.locked ? 'fa-lock' : t.pinned ? 'fa-thumbtack' : t.reply_count >= 15 ? 'fa-fire' : 'fa-comment';
     const label = t.locked ? 'Locked' : t.pinned ? 'Sticky' : t.reply_count >= 15 ? 'Hot topic' : 'Topic';
     const who = (a) => (a ? wearName(a, a.display_name || a.username || 'someone') : 'someone');
-    return `<tr class="${t.pinned ? 'sticky' : ''}">
+    const labels = labelsUi.inForce(t);
+    return `<tr class="${t.pinned ? 'sticky' : ''}"${labelsUi.attrs(labels, { owner: t.author && t.author.subject })}>
       <td class="topic-icon" aria-hidden="true"><i class="fa-solid ${icon}" title="${label}"></i></td>
-      <td class="topic-main">${t.pinned ? '<span class="badge badge-sticky">Sticky</span> ' : ''}<a class="topic-title" href="${esc(base)}">${esc(t.title)}</a>${f.statusBadge(t)}${f.categoryBadge(t, space)}${f.vipBadge(t)}
+      <td class="topic-main"${labels.length ? ' data-ov-labels-media' : ''}>${t.pinned ? '<span class="badge badge-sticky">Sticky</span> ' : ''}<a class="topic-title" href="${esc(base)}">${esc(t.title)}</a>${f.statusBadge(t)}${f.categoryBadge(t, space)}${f.vipBadge(t)}
+        ${labelsUi.chips(labels)}
         <span class="small muted topic-by">Started by ${who(t.author)} · ${timeTag(t.created_at)}${topicPages(base, t.pages || 1)}</span></td>
       <td class="num" data-label="Replies">${num(t.reply_count)}</td>
       <td class="num" data-label="Views">${num(t.views)}</td>
@@ -224,6 +227,8 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         : thread.locked ? '<p class="alert">This topic is locked.</p>'
             : !user ? `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(base)}">Sign in with your OpenVibe account</a> to reply.</p>` : '';
     const pagerHtml = f.pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Previous', 'Next']);
+    const labels = labelsUi.inForce(thread);
+    const labelBox = f.labelsBox(base, thread, viewer);
     const body = `
 <article class="thread forum-topic">
   ${crumbs([...trail(space), [space.name, `/s/${space.slug}`], [ld.clean(thread.title, 60), base]])}
@@ -232,13 +237,15 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
     <div>
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${f.statusBadge(thread)}${f.categoryBadge(thread, space)}</p>` : ''}
+      ${labelsUi.chips(labels)}
       <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
     </div>
   </header>
   ${f.crosspostBlock(crosspost, base)}
   ${f.modActions({ base, space, thread, viewer, categories })}
+  ${labelBox}
   ${pagerHtml}
-  <div class="postbits">${posts.map((p, i) => postbit(p, first + i + 1, { base, page, catalogue: reactions, canReply: viewer.can_reply, canModerate: viewer.can_moderate })).join('\n')}</div>
+  <div class="postbits"${labelsUi.attrs(labels, { owner: thread.author && thread.author.subject, opened: true })}>${posts.map((p, i) => postbit(p, first + i + 1, { base, page, catalogue: reactions, canReply: viewer.can_reply, canModerate: viewer.can_moderate })).join('\n')}</div>
   ${pagerHtml}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
@@ -255,6 +262,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
+        ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : []),
             { title: `OpenVibe.Community — ${thread.title}`, href: `${base}/feed.xml` },

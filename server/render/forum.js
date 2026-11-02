@@ -10,6 +10,7 @@ const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { markdownToText } = require('./markdown');
+const labelsUi = require('./labels');
 const { timeTag, fmtDate, num, authorHtml } = require('./pages');
 const { RULES: MODERATION_RULES } = require('../forum/moderation');
 
@@ -96,10 +97,12 @@ ${list}`;
 // ── /s/:space ────────────────────────────────────────────────
 function threadRow(t, space) {
     const flags = `${t.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${t.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}`;
-    return `<li class="thread-row${space.votes === false ? ' no-votes' : ''}">
+    const labels = labelsUi.inForce(t);
+    return `<li class="thread-row${space.votes === false ? ' no-votes' : ''}"${labelsUi.attrs(labels, { owner: t.author && t.author.subject })}>
     ${space.votes === false ? '' : `<span class="thread-score" title="Score">${num(t.score)}</span>`}
     <div class="thread-main">
       <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>${statusBadge(t)}${categoryBadge(t, space)}${vipBadge(t)}
+      ${labelsUi.chips(labels)}
       <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
     </div>
   </li>`;
@@ -251,6 +254,22 @@ function voteForm(base, thread, viewer) {
     return `<form class="vote" method="post" action="${esc(base)}/vote">${btn(1, 'fa-arrow-up', 'Upvote')}<span class="vote-score" title="Score">${num(thread.score)}</span>${btn(-1, 'fa-arrow-down', 'Downvote')}</form>`;
 }
 
+/**
+ * The author's (or a moderator's) Labels box on a thread: a fold whose line says what is set, the picker, and Save.
+ * Empty for anyone else.
+ */
+function labelsBox(base, thread, viewer) {
+    if (!viewer || !viewer.can_label) return '';
+    const now = labelsUi.inForce(thread);
+    const line = now.length ? now.map((l) => labelsUi.NAMES[l]).join(', ') : 'None set';
+    return `<details class="labels-box" id="labels"><summary><span class="labels-box-title"><i class="fa-solid fa-tag" aria-hidden="true"></i> Labels</span> <span class="labels-box-line">${esc(line)}</span></summary>
+  <form method="post" action="${esc(base)}/labels" class="labels-form">
+  ${labelsUi.picker({ current: now, suggested: labelsUi.suggestedOf(thread), id: 'thread-labels' })}
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Save labels</button></div>
+  </form>
+</details>`;
+}
+
 function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [], attachmentsEnabled = false, reactions = [], crosspost = null }) {
     const base = `/s/${space.slug}/t/${thread.slug}`;
     const opening = posts.find((p) => p.is_opening) || null;
@@ -268,6 +287,8 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         : thread.locked ? '<p class="alert">This thread is locked.</p>'
             : !user ? `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(base)}">Sign in with your OpenVibe account</a> to reply.</p>` : '';
     const modBlock = modActions({ base, space, thread, viewer, categories });
+    const labels = labelsUi.inForce(thread);
+    const labelBox = labelsBox(base, thread, viewer);
 
     const body = `
 <article class="thread">
@@ -277,13 +298,15 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     <div>
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
+      ${labelsUi.chips(labels)}
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
       <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
     </div>
   </header>
   ${crosspostBlock(crosspost, base)}
   ${modBlock}
-  <div class="posts">${posts.map((p, i) => postHtml(p, first + i + 1, { base, page, catalogue: reactions, canModerate: viewer.can_moderate })).join('\n')}</div>
+  ${labelBox}
+  <div class="posts"${labelsUi.attrs(labels, { owner: thread.author && thread.author.subject, opened: true })}>${posts.map((p, i) => postHtml(p, first + i + 1, { base, page, catalogue: reactions, canModerate: viewer.can_moderate })).join('\n')}</div>
   ${pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Earlier', 'Later'])}
   ${page === pages ? replyBlock : `<p class="muted"><a href="${esc(base)}?page=${pages}#reply">Go to the last page to reply</a></p>`}
 </article>`;
@@ -300,6 +323,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
+        ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : []),
             { title: `OpenVibe.Community — ${thread.title}`, href: `${base}/feed.xml` },
@@ -323,6 +347,7 @@ function newThreadPage({ space, user, values = {}, error = null, categories = []
   <label class="field"><span>Post (Markdown)</span><textarea name="body" rows="14" maxlength="40000" required placeholder="Say it, own it.">${esc(values.body || '')}</textarea></label>
   ${imageField(attachments)}
   ${pasteField(values.pastes)}
+  ${labelsUi.picker({ current: values.labels || [], id: 'new-labels' })}
   <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">
     <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
@@ -342,6 +367,7 @@ ${form}`;
         robots: 'noindex,follow',
         active: 'spaces',
         footerVariant: 'compact',
+        ...(user ? { pageCss: ['labels.css'] } : {}),
         body,
     });
 }
@@ -427,7 +453,7 @@ ${entries.length ? `<table class="board-table mod-log"><caption class="sr-only">
     });
 }
 
-module.exports = {
+module.exports = { labelsBox,
     spacesPage, spacePage, threadPage, newThreadPage, membersOnlyPage, moderationLogPage, spaceHref, who, chatRoomBox,
     pager, visBadge, vipBadge, statusBadge, categoryBadge, voteForm, modActions, reactionBar, postImages, imageField, pasteField, pasteCards, crosspostBlock, STATUS_LABELS,
     postModerationForm,

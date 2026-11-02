@@ -483,6 +483,13 @@ route('put', '/api/v1/spaces/{space}/threads/{slug}/members-only', {
     requestBody: body({ type: 'object', properties: { members_only: { type: 'boolean' }, owner: { type: 'boolean', description: 'The old name of members_only' } } }),
     responses: { 200: json('The thread'), ...errors([404, 429]) },
 });
+route('put', '/api/v1/spaces/{space}/threads/{slug}/labels', {
+    operationId: 'setThreadLabels', summary: 'Set what a thread carries: its content labels (its author or a moderator)', tags: ['spaces'], security: PERSON,
+    description: 'Content labels (common.content-labels@1): each reader\'s own choice on openvibe.network shows, blurs or hides a labelled thread in their page. A label never hides a thread for anyone else. A suggestion the author confirms leaves `suggested`.',
+    parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' })), path('slug', str())],
+    requestBody: body({ type: 'object', required: ['labels'], properties: { labels: { type: 'array', items: { type: 'string', enum: ['nudity', 'language', 'graphic', '18+', 'flashing', 'spoilers'] } } } }),
+    responses: { 200: json('The thread, with content_labels'), ...errors([400, 403, 404, 429]) },
+});
 route('put', '/api/v1/spaces/{space}/members-only', {
     operationId: 'setSpaceMembersOnly', summary: 'Make a whole space members-only (moderators)', tags: ['spaces'], security: PERSON,
     parameters: [path('space', str({ pattern: '^[a-z0-9][a-z0-9-]{1,39}$' }))],
