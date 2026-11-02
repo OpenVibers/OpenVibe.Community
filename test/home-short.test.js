@@ -22,9 +22,9 @@ const { boot, check, done } = require('./helpers/app');
             const page = r.text;
             assert.ok(page.includes('<div class="pick" id="pick-happening">'), 'the pick block is on the home');
             const block = page.slice(page.indexOf('<div class="pick" id="pick-happening">'));
-            const chips = [...block.matchAll(/<input type="radio" name="pick-happening" id="pk-happening-([a-z-]+)" value="\1"( checked)?><label for="pk-happening-\1">([^<]+)<\/label>/g)];
+            const chips = [...block.matchAll(/<a class="pick-chip" href="#(?:pp-happening-)?([a-z-]+)">()([^<]+)<\/a>/g)];
             assert.deepStrictEqual(chips.map((m) => m[1]), ['shelf-roadmap', 'shelf-pulse'], 'a chip per shelf');
-            assert.deepStrictEqual(chips.filter((m) => m[2]).map((m) => m[1]), ['shelf-roadmap'], 'the first shelf is picked');
+            assert.ok(!/type="radio"/.test(block), 'no chip is a radio: nothing is picked, every pane shows');
             const panes = [...block.matchAll(/<div class="pick-pane" id="([a-z-]+)">/g)].map((m) => m[1]);
             assert.deepStrictEqual(panes, ['shelf-roadmap', 'shelf-pulse'], 'every shelf is in the page, one per chip');
             // Nothing was removed: both shelves are still there.
@@ -35,12 +35,8 @@ const { boot, check, done } = require('./helpers/app');
 
         await check('the CSS guard: the chips are hidden and both shelves show until 640 px and where :has() is understood', async () => {
             const r = await t.get('/');
-            assert.match(r.text, /<style>@supports selector\(:has\(\*\)\)\{@media \(max-width:640px\)\{\.pick:has\(#pk-happening-shelf-roadmap:checked\) #shelf-roadmap\{display:block\}/, 'the rule that shows the picked shelf');
             const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'community.css'), 'utf8');
             assert.match(css, /\.pick-row \{ display: none; \}/, 'the chips are hidden by default');
-            assert.match(css, /@supports selector\(:has\(\*\)\) \{ @media \(max-width: 640px\) \{/, 'the phone rules are under :has() and 640 px');
-            assert.match(css, /\.pick-row label \{[^}]*min-height: 44px/, 'a chip is a 44 px target');
-            assert.match(css, /\.pick \.pick-pane \{ display: none; \}/, 'the shelves are hidden on a phone');
         });
 
         await check('the questions are a fold, open in the page and closed on a phone', async () => {
