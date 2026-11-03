@@ -61,8 +61,21 @@ const SECRET_CHARS = 16;     // 62^16 ≈ 2^95, on top of the words
  * characters (adj-noun-XXXXXXXXXXXXXXXX): the ~1.5M word/number slugs could be walked, these
  * cannot. Existing slugs never change.
  */
+// A slug is never given to a second paste, while its paste exists (soft-deleted ones included) or after an account
+// erasure deleted it (retired_paste_slugs keeps only a SHA-256 of it, migration 0014): a link someone kept never opens
+// another person's paste, and a re-import never brings an erased one back (AGT-4).
+const slugHash = (slug) => crypto.createHash('sha256').update(String(slug)).digest('hex');
+async function slugTaken(db, slug) {
+    return !!(await db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(String(slug)))
+        || !!(await db.prepare('SELECT 1 FROM retired_paste_slugs WHERE slug_hash = ?').get(slugHash(slug)));
+}
+/** Retire an erased paste's slug before its row is deleted. */
+async function retireSlug(db, slug) {
+    await db.prepare('INSERT INTO retired_paste_slugs (slug_hash) VALUES (?) ON CONFLICT (slug_hash) DO NOTHING').run(slugHash(slug));
+}
+
 async function generateSlug(db, { secret = false } = {}) {
-    const taken = db.prepare('SELECT 1 FROM pastes WHERE slug = ?');
+    const taken = { get: (slug) => slugTaken(db, slug) };
     const words = () => `${SLUG_ADJECTIVES[crypto.randomInt(SLUG_ADJECTIVES.length)]}-${SLUG_NOUNS[crypto.randomInt(SLUG_NOUNS.length)]}`;
     if (secret) {
         for (let i = 0; i < 10; i++) {
@@ -424,7 +437,7 @@ async function mapSet(db, system, type, id, targetType, targetId) {
 }
 
 module.exports = {
-    generateSlug, sanitizeTitle, detectLanguage,
+    generateSlug, slugTaken, retireSlug, sanitizeTitle, detectLanguage,
     getBySlug, getById, insertPaste, updatePaste, listVersions, softDelete, listPastes,
     countOwnerSince, lastPasteTime, hasLiked, toggleLike, incrementCopies, bumpViews, recordVisit, pruneVisits,
     setAi, setScreenshot, setVisibility, stats, statSeries, listForks, deleteAllForks,

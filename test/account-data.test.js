@@ -81,6 +81,12 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
         const all = async (sql) => await db.prepare(sql).all();
         assert.deepStrictEqual(await all('SELECT slug, owner_subject AS o, title, content FROM pastes ORDER BY id'), [
             { slug: 'p1', o: null, title: '[deleted]', content: '' }, { slug: 'p3', o: OTTO, title: "otto's", content: 'x' }], "answered paste a tombstone, the alone one gone, the alias's gone");
+        const store = require('../server/pastes/store');
+        const sha = (s) => require('crypto').createHash('sha256').update(s).digest('hex');
+        assert.deepStrictEqual((await all('SELECT slug_hash FROM retired_paste_slugs ORDER BY slug_hash')).map((r) => r.slug_hash), [sha('p2'), sha('p4')].sort(),
+            'the erased pastes\' slugs are retired, as hashes only');
+        assert.deepStrictEqual([await store.slugTaken(db, 'p2'), await store.slugTaken(db, 'p4'), await store.slugTaken(db, 'p1'), await store.slugTaken(db, 'p9')], [true, true, true, false],
+            'an erased slug is never given out again (AGT-4)');
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, message FROM paste_comments ORDER BY id'), [
             { id: 1, a: OTTO, message: 'nice' }, { id: 2, a: null, message: '[deleted]' }, { id: 3, a: OTTO, message: 'hi dana' }], 'her answered comment a tombstone; the other gone');
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, message, score, reply_count FROM comments ORDER BY id'), [

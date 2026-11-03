@@ -315,7 +315,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         if (!isService(v) || body.slug == null || body.slug === '' || secret) return await store.generateSlug(db, { secret });
         const slug = String(body.slug);
         if (!SERVICE_SLUG_RE.test(slug) || RESERVED_SLUGS.has(slug.toLowerCase())) fail(400, 'Invalid slug');
-        if (await db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(slug)) fail(409, 'Slug already taken');
+        if (await store.slugTaken(db, slug)) fail(409, 'Slug already taken');   // an erased paste's slug too: it never comes back
         return slug;
     }
 
