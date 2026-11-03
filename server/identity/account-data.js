@@ -97,6 +97,8 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
                                 ai_summary = NULL, ai_tags = NULL, deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE id = ?`).run(TOMBSTONE, now, now, p.id);
                     add(retained, 'tombstones', 1);
                 } else {
+                    // Its slug is retired first, so no later paste is given it and no re-import brings it back.
+                    await require('../pastes/store').retireSlug(db, p.slug);
                     await db.prepare('DELETE FROM pastes WHERE id = ?').run(p.id);
                     add(erased, 'pastes', 1);
                 }

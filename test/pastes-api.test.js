@@ -111,6 +111,10 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(p.ai_summary, 'chat exploded');
         const dup = await call('/api/pastes', { method: 'POST', token: svc([CREATE]), json: { content: 'y', slug: 'wild-moment-4242' } });
         assert.strictEqual(dup.status, 409);
+        // An erased paste's slug (retired_paste_slugs) is never brought back by a service naming it (AGT-4).
+        await require('../server/pastes/store').retireSlug(t.db, 'erased-moment-77');
+        const back = await call('/api/pastes', { method: 'POST', token: svc([CREATE]), json: { content: 'y', slug: 'erased-moment-77' } });
+        assert.strictEqual(back.status, 409, 'an erased slug is not given out again');
         const bad = await call('/api/pastes', { method: 'POST', token: svc([CREATE]), json: { content: 'y', slug: 'config' } });
         assert.strictEqual(bad.status, 400);
         const onlyAi = (await call('/api/pastes?origin=ai')).json();
