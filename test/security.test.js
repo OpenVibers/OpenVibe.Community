@@ -174,8 +174,11 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual((await call('/p/calm-otter-42/raw')).status, 200);
         // The secret part is really random.
         const { generateSlug } = require('../server/pastes/store');
-        const many = new Set(Array.from({ length: 2000 }, async () => (await generateSlug(t.db, { secret: true })).split('-')[2]));
-        assert.strictEqual(many.size, 2000);
+        // 2,000 secret tails, all different. Awaited in batches: a Set of 2,000 pending promises (as this was) proved nothing
+        // and left queries running after the pool closed.
+        const tails = [];
+        for (let b = 0; b < 20; b++) tails.push(...await Promise.all(Array.from({ length: 100 }, async () => (await generateSlug(t.db, { secret: true })).split('-')[2])));
+        assert.strictEqual(new Set(tails).size, 2000);
     });
 
     await t.close();

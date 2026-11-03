@@ -66,8 +66,8 @@ const SECRET_CHARS = 16;     // 62^16 ≈ 2^95, on top of the words
 // another person's paste, and a re-import never brings an erased one back (AGT-4).
 const slugHash = (slug) => crypto.createHash('sha256').update(String(slug)).digest('hex');
 async function slugTaken(db, slug) {
-    return !!(await db.prepare('SELECT 1 FROM pastes WHERE slug = ?').get(String(slug)))
-        || !!(await db.prepare('SELECT 1 FROM retired_paste_slugs WHERE slug_hash = ?').get(slugHash(slug)));
+    return !!(await db.prepare('SELECT 1 FROM pastes WHERE slug = ? UNION ALL SELECT 1 FROM retired_paste_slugs WHERE slug_hash = ? LIMIT 1')
+        .get(String(slug), slugHash(slug)));
 }
 /** Retire an erased paste's slug before its row is deleted. */
 async function retireSlug(db, slug) {
