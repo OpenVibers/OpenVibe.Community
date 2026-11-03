@@ -32,13 +32,14 @@ function llmsSections() {
                 { title: 'Forum', url: `${u}/s`, note: 'open discussion forums and their threads', html: true },
                 { title: 'Pulse', url: `${u}/pulse`, note: 'network activity', html: true },
             ] },
+            // The API is a primary entry for an agent, not something to skip.
+            { title: 'API', links: [{ title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' }] },
         ],
         optional: [
             { title: 'Sitemap', url: `${u}/sitemap.xml` },
             { title: 'Latest pastes (RSS)', url: `${u}/feed.xml` },
             { title: 'Latest threads (RSS)', url: `${u}/s/feed.xml` },
             { title: 'Full text for language models', url: `${u}/llms-full.txt` },
-            { title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' },
         ],
     };
 }
