@@ -50,6 +50,8 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(r.status, 200);
         assert.ok(r.headers.get('content-type').startsWith('text/plain'));
         assert.ok(r.text.startsWith('# OpenVibe.Community\n'));
+        assert.ok(r.text.includes('[OpenVibe.Community](https://openvibe.community/index.md)'));
+        assert.ok(r.text.includes('## Optional\n'));
         assert.ok(r.text.includes('- [Latest pastes (RSS)](https://openvibe.community/feed.xml)'));
         assert.ok(r.text.includes('- [Full text for language models](https://openvibe.community/llms-full.txt)'));
         const full = await t.get('/llms-full.txt');

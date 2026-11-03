@@ -24,20 +24,23 @@ function useForum(forum) { _forum = forum || null; resetCaches(); }
 // ── llms.txt / llms-full.txt (llmstxt.org) ───────────────────
 function llmsSections() {
     const u = config.baseUrl;
-    return [
-        { title: 'Browse', links: [
-            { title: 'Pastes', url: `${u}/pastes`, note: 'public pastes, newest first (?type=pastes|images|all, ?sort=views, ?lang=<language>)' },
-            { title: 'Forum', url: `${u}/s`, note: 'open discussion forums and their threads' },
-            { title: 'Pulse', url: `${u}/pulse`, note: 'network activity' },
-        ] },
-        { title: 'Machine-readable', links: [
+    return {
+        sections: [
+            { title: 'Browse', links: [
+                { title: 'OpenVibe.Community', url: `${u}/`, note: 'pastes, forum and network activity' },
+                { title: 'Pastes', url: `${u}/pastes`, note: 'public pastes, newest first (?type=pastes|images|all, ?sort=views, ?lang=<language>)' },
+                { title: 'Forum', url: `${u}/s`, note: 'open discussion forums and their threads', html: true },
+                { title: 'Pulse', url: `${u}/pulse`, note: 'network activity', html: true },
+            ] },
+        ],
+        optional: [
             { title: 'Sitemap', url: `${u}/sitemap.xml` },
             { title: 'Latest pastes (RSS)', url: `${u}/feed.xml` },
             { title: 'Latest threads (RSS)', url: `${u}/s/feed.xml` },
             { title: 'Full text for language models', url: `${u}/llms-full.txt` },
-        ] },
-        { title: 'API', links: [{ title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' }] },
-    ];
+            { title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' },
+        ],
+    };
 }
 
 /** The latest public threads and text pastes in full (no NSFW, no burn-after-read, nothing gated). */

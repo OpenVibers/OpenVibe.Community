@@ -25,8 +25,13 @@ const { check, done } = require('./helpers/app');
     });
 
     await check('llms.txt sections link the site, the feeds and llms-full.txt', () => {
-        const txt = seo.llmsTxt({ name: 'OpenVibe.Community', summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, sections: discovery.llmsSections() });
-        assert.ok(txt.includes('## Browse\n\n- [Pastes](https://openvibe.community/pastes): public pastes, newest first'));
+        const { sections, optional } = discovery.llmsSections();
+        const txt = seo.llmsTxt({ name: 'OpenVibe.Community', summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, markdown: true, base: 'https://openvibe.community', sections, optional });
+        assert.ok(txt.includes('## Browse\n\n- [OpenVibe.Community](https://openvibe.community/index.md): pastes, forum and network activity'));
+        assert.ok(txt.includes('- [Pastes](https://openvibe.community/pastes.md): public pastes, newest first'));
+        assert.ok(txt.includes('- [Forum](https://openvibe.community/s) (HTML): open discussion forums and their threads'));
+        assert.ok(txt.includes('- [Pulse](https://openvibe.community/pulse) (HTML): network activity'));
+        assert.ok(txt.includes('## Optional\n\n- [Sitemap](https://openvibe.community/sitemap.xml)'));
         assert.ok(txt.includes('- [Latest threads (RSS)](https://openvibe.community/s/feed.xml)'));
         assert.ok(txt.includes('- [Full text for language models](https://openvibe.community/llms-full.txt)'));
         assert.ok(txt.includes('labelled as AI-generated'));
