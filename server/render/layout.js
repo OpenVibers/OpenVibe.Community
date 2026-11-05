@@ -14,12 +14,14 @@ const appIcon = require('openvibe-shared/app-icon');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const social = require('openvibe-shared/social');
 const { escapeHtml } = require('./highlight');
 
 const SITE_NAME = 'OpenVibe.Community';
 const NETWORK_URL = 'https://openvibe.network';
 const DEFAULT_DESCRIPTION = 'The people of OpenVibe — a community-run, open source home for pastes, forums and threads, and submissions. Free speech within the rules.';
-const DEFAULT_OG_IMAGE = `${config.baseUrl}/og-default.png`;
+// The site's content-hashed share card (openvibe-shared/social), served from this site's own /shared copy.
+const DEFAULT_OG_IMAGE = `${config.baseUrl}${social.url('community')}`;
 
 // Content-hashed asset URLs so browsers and nginx can cache them for a year and still pick up
 // every deploy (the same scheme Live uses in server/web/assets.js).
@@ -120,6 +122,7 @@ function renderPage(o) {
     const nav = navbarInit(o);
     const foot = footerInit(o);
     const feeds = o.feeds || [{ title: `${SITE_NAME} — latest pastes`, href: '/feed.xml' }];
+    const image = o.ogImage || DEFAULT_OG_IMAGE;
 
     // shell.page writes the document, the SEO head and ai-summary, the theme-loader, navbar.js/footer.js
     // with the navbar init, the noscript nav and the SSR footer; the rest of the head is this site's own.
@@ -128,7 +131,7 @@ function renderPage(o) {
         title: o.title || `${SITE_NAME} — the people of OpenVibe`,
         titleSuffix: o.title ? ` · ${SITE_NAME}` : undefined,
         siteName: SITE_NAME, description, canonical, robots: o.robots || 'index,follow',
-        type: o.ogType || 'website', image: o.ogImage || DEFAULT_OG_IMAGE, imageAlt: o.imageAlt,
+        type: o.ogType || 'website', image, imageAlt: o.imageAlt,
         jsonLd: o.jsonLd, alternates: o.alternates,
         // The page names its Markdown twin (openvibe-shared/agent-layer) in the head; only pages whose
         // twin is mounted set o.agentLayer (the home, /pastes and a paste).
@@ -140,6 +143,8 @@ function renderPage(o) {
             o.published ? `<meta property="article:published_time" content="${escapeHtml(o.published)}">` : '',
             o.modified ? `<meta property="article:modified_time" content="${escapeHtml(o.modified)}">` : '',
             appIcon.headTags({ site: 'community', iconBase: '/assets' }),
+            // The shared card is 1200×630; a page's own image carries its own dimensions.
+            image === DEFAULT_OG_IMAGE ? '<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">' : '',
             ...feeds.map((f) => `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(f.title)}" href="${escapeHtml(f.href)}">`),
             ...(o.styles || []).map((name) => `<link rel="stylesheet" href="${ovServe.url(name)}">`),
             ...(o.inlineStyles || []).map((css) => `<style>${css}</style>`),
@@ -167,8 +172,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>`,
     });
-    // The default share image is a small card: only a page's own image gets the large Twitter card.
-    return o.ogImage ? html : html.replace('<meta name="twitter:card" content="summary_large_image">', '<meta name="twitter:card" content="summary">');
+    return html;
 }
 
 /**

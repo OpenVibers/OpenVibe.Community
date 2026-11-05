@@ -26,7 +26,7 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, '<title>OpenVibe.Community: pastes, forums and the OpenVibe roadmap</title>');
         has(r.text, '<link rel="canonical" href="https://openvibe.community/">');
         has(r.text, '<meta property="og:type" content="website">');
-        has(r.text, '<meta name="twitter:card" content="summary">');
+        has(r.text, '<meta name="twitter:card" content="summary_large_image">');
         has(r.text, '"@type":"WebSite"');
         has(r.text, '/shared/theme-loader.js?v=');
         has(r.text, '/shared/navbar.js?v=');

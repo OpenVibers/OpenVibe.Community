@@ -139,6 +139,22 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual((head.match(/<link rel="canonical"/g) || []).length, 1, 'one canonical');
     });
 
+    await check('the home page shares the site card, content-hashed, with its 1200×630 size and the Twitter mirror', async () => {
+        const r = await t.get('/');
+        assert.strictEqual(r.status, 200);
+        const head = r.text.split('</head>')[0];
+        const image = /<meta property="og:image" content="([^"]+)">/.exec(head)?.[1] || '';
+        assert.match(image, /^https:\/\/openvibe\.community\/shared\/social\/community\.jpg\?v=[0-9a-f]{12}$/);
+        assert.ok(head.includes('<meta property="og:image:width" content="1200">'));
+        assert.ok(head.includes('<meta property="og:image:height" content="630">'));
+        assert.ok(head.includes('<meta name="twitter:card" content="summary_large_image">'));
+        assert.ok(head.includes(`<meta name="twitter:image" content="${image}">`));
+        const path = new URL(image).pathname + new URL(image).search;
+        const card = await t.get(path);
+        assert.strictEqual(card.status, 200, path);
+        assert.ok(card.headers.get('content-type').startsWith('image/jpeg'));
+    });
+
     await check('HTML pages carry the private page policy; raw and download never reach a shared cache', async () => {
         for (const path of ['/', '/pastes', '/p/amber-fox-42', '/updates', '/nope-not-a-page']) {
             const r = await t.get(path);
