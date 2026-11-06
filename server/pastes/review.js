@@ -48,9 +48,22 @@ function createPasteReview({ config, fetchImpl = globalThis.fetch, log = console
         return body;
     }
 
+    /**
+     * A hidden paste is the owner's alone, so the share row must close too: after the sharing pilot the
+     * share audience is the authority (server/sharing.js), and the old visibility column alone would let
+     * canView reopen it. Members, pending transfers and access requests are removed for the same reason.
+     */
+    async function closeShares(db, paste) {
+        await db.prepare("UPDATE shares SET audience = 'private', revision = revision + 1 WHERE service = 'community' AND kind = 'paste' AND resource_id = ?").run(paste.slug);
+        await db.prepare("DELETE FROM share_members WHERE service = 'community' AND kind = 'paste' AND resource_id = ?").run(paste.slug);
+        await db.prepare("UPDATE share_transfers SET state = 'cancelled' WHERE service = 'community' AND kind = 'paste' AND resource_id = ? AND state = 'pending'").run(paste.slug);
+        await db.prepare("UPDATE share_access_requests SET state = 'dismissed' WHERE service = 'community' AND kind = 'paste' AND resource_id = ? AND state = 'pending'").run(paste.slug);
+    }
+
     /** Write one category. Exported so a test or an operator route can apply the same three labels. */
     async function applyCategory(db, paste, category, reportId = null) {
         if (!['fine', 'sex_acts', 'minor_sexual'].includes(category)) throw new Error(`unknown review category: ${category}`);
+        if (category !== 'fine') await closeShares(db, paste);
         if (category === 'fine') {
             await db.prepare("UPDATE pastes SET review_category = 'fine', review_status = 'clear', review_report_id = NULL, reviewed_at = ov_now() WHERE id = ?").run(paste.id);
         } else if (category === 'sex_acts') {
@@ -73,12 +86,13 @@ function createPasteReview({ config, fetchImpl = globalThis.fetch, log = console
             return row;
         } catch (err) {
             await db.prepare("UPDATE pastes SET visibility = 'private', is_nsfw = 1, review_status = 'pending' WHERE id = ?").run(paste.id);
+            await closeShares(db, paste).catch(() => {});
             log.warn(`[Pastes] ${paste.slug}: review failed, the paste stays private and pending (${String((err && err.message) || err).slice(0, 200)})`);
             return await db.prepare('SELECT * FROM pastes WHERE id = ?').get(paste.id);
         }
     }
 
-    return { enabled, classify, reviewPaste, applyCategory };
+    return { enabled, classify, reviewPaste, applyCategory, closeShares };
 }
 
 module.exports = { createPasteReview };

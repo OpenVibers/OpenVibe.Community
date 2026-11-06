@@ -93,6 +93,8 @@ const PNG = (() => {
             assert.ok(!(await as(null, '/api/pastes')).json().pastes.some((x) => x.slug === sexSlug), 'never in the public list');
             const publish = await t.get(`/api/pastes/${sexSlug}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ visibility: 'public' }), cookies: [`ov_token=${alexJwt}`] });
             assert.deepStrictEqual([publish.status, publish.json().code], [409, 'paste.review_hidden'], 'the owner cannot re-publish it');
+            const shareRow = await t.db.prepare("SELECT audience FROM shares WHERE service = 'community' AND kind = 'paste' AND resource_id = ?").get(sexSlug);
+            assert.strictEqual(shareRow.audience, 'private', 'the sharing gate is closed too');
         });
 
         let minorSlug;

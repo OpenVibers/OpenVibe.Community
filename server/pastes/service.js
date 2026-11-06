@@ -83,7 +83,7 @@ function sinceParam(value) {
     return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 19) : null;
 }
 
-function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null, indexnow = null, review = null } = {}) {
+function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null, indexnow = null, shares = null, review = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
     // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
     const tell = async (fn) => { if (!pulse) return; try { await fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
@@ -106,6 +106,37 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     const isOwner = (v, p) => !!(v && v.subject && p.owner_subject && v.subject === p.owner_subject);
     const isStaff = (v) => !!(v && v.staff);
     const canSeeHidden = (v, p) => isOwner(v, p) || isStaff(v);
+    const shareRef = (p) => ({ service: 'community', kind: 'paste', id: String(p.slug) });
+    /** The audience a request asks for: the new name wins, else the three old visibility words map 1:1. */
+    function audienceOf(v, value) {
+        const map = { public: 'public', unlisted: 'link', link: 'link', people: 'people', private: 'private' };
+        if (value !== undefined && value !== null && value !== '') {
+            const a = map[String(value)];
+            if (!a) fail(400, 'visibility must be public, unlisted, link, people or private');
+            return a;
+        }
+        return 'public';
+    }
+    const visibilityFor = (audience) => ({ public: 'public', link: 'unlisted', people: 'private', private: 'private' }[audience] || 'private');
+    const subjectOf = (v) => (v && v.subject ? { type: String(v.subject).startsWith('gst_') ? 'guest' : 'user', id: v.subject } : null);
+    /**
+     * Specific people names people: an anonymous (or AI) paste has nobody to share it with, refused.
+     * Only me on an ownerless paste is the old rule: nobody could ever open it, so it becomes the link
+     * audience (unlisted) rather than a private paste with no owner.
+     */
+    function audienceFor(v, audience) {
+        if (audience === 'people' && !v.subject) fail(401, 'Sign in to share with specific people');
+        return audience === 'private' && !v.subject ? 'link' : audience;
+    }
+    const noBurnForPeople = (audience, burnAfterRead) => { if (audience === 'people' && burnAfterRead) fail(400, 'Burn-after-reading pastes cannot be shared with specific people'); };
+    /** An SDK share error becomes this API's error shape (status, text, stable code) instead of a 500. */
+    async function shareCall(fn) {
+        try { return await fn(); }
+        catch (err) {
+            if (err && err.name === 'ShareError') fail(err.status, err.message, { code: err.code });
+            throw err;
+        }
+    }
     // Media applied cooldowns/daily caps to callers acting as a person; not to anonymous app calls.
     const limited = (v) => !!(v && v.subject);
     const hasCap = (v, cap) => !!(v && v.kind === 'service' && capabilities.check(v.claims, cap).allowed);
@@ -114,13 +145,61 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     const needIdentity = (v) => { if (!v || (!v.subject && !v.staff)) fail(401, 'Authentication required'); };
 
     /**
-     * A paste the viewer may see, or 404: private ones look exactly like missing ones to everyone
-     * but their owner and staff — for reads, and for edits/deletes too (no 403 that confirms a slug).
+     * The one access check: openvibe-sdk/share's canView over the paste's share row (owner, audience,
+     * members, staff, and a pending transfer's recipient previewing). Missing pastes deny.
+     */
+    async function mayView(v, p) {
+        if (!p) return false;
+        if (shares) return await shares.canViewPaste(v, p);
+        return !(p.visibility === 'private' && !canSeeHidden(v, p));
+    }
+
+    /**
+     * A paste the viewer may see, or 404: a people/private paste looks exactly like a missing one to
+     * everyone but its owner, members and staff — for reads, and for edits/deletes too (no 403 that
+     * confirms a slug).
      */
     async function visible(v, slug) {
         const p = await store.getBySlug(db, String(slug));
-        if (!p || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Paste not found');
+        if (!p || !await mayView(v, p)) fail(404, 'Paste not found');
         return p;
+    }
+
+    /**
+     * Register a new paste's share row in the same transaction as the paste (the SDK joins the ambient
+     * transaction): a paste exists only with its audience. An ownerless paste (anonymous or AI) is
+     * registered to Community itself, which nobody can sign in as.
+     */
+    async function registerShare(v, row, audience) {
+        if (!shares) return;
+        await shares.shares.register(shareRef(row), { owner_subject: subjectOf(v) || { type: 'service', id: 'community' }, audience });
+    }
+
+    /** The optional members/transfer in a create (and the uniform API's job, done here for one call). */
+    async function applyShareRequest(v, slug, audience, body = {}) {
+        if (!shares) return null;
+        // JSON sends an array; a multipart form field arrives as one string ("@a, @b").
+        let members = body.members;
+        if (typeof members === 'string') members = members.split(/[\s,]+/).filter(Boolean);
+        if (members !== undefined && !Array.isArray(members)) fail(400, 'members must be an array');
+        if (members && members.length && audience !== 'people') fail(400, 'members are only for audience people');
+        const out = {};
+        if (members && members.length) out.share = await shareCall(() => shares.addMembers(v, slug, members));
+        if (body.transfer_to) {
+            if (!v.subject) fail(401, 'Sign in to transfer a paste');
+            out.transfer = await shareCall(() => shares.transfer(v, slug, { to: body.transfer_to, keep_access: truthy(body.keep_access) }));
+        }
+        return Object.keys(out).length ? out : null;
+    }
+
+    async function shareInfo(v, p) {
+        if (!shares) return { audience: p.visibility === 'public' ? 'public' : p.visibility === 'unlisted' ? 'link' : 'private', transfer: null, can_manage: isOwner(v, p) || isStaff(v) };
+        const s = await shares.shareOf(p.slug);
+        return {
+            audience: s ? s.audience : null,
+            transfer: s ? await shares.pendingTransfer(v, p.slug) : null,
+            can_manage: !!(s && (isOwner(v, p) || isStaff(v))),
+        };
     }
 
     // ── response shapes ──────────────────────────────────────
@@ -279,12 +358,6 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     }
 
     // ── validation helpers ───────────────────────────────────
-    function visibilityOf(value, owned) {
-        const vis = ['unlisted', 'private'].includes(value) ? value : 'public';
-        // Nobody could ever open an ownerless private paste; it becomes unlisted instead.
-        return vis === 'private' && !owned ? 'unlisted' : vis;
-    }
-
     function streamRefFor(v, body) {
         if (v.kind === 'service' && v.sourceRef) return JSON.stringify(v.sourceRef);
         const sid = body.stream_id;
@@ -376,6 +449,9 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { slug: p.slug, title: p.title, content: p.content };
         },
 
+        /** The share state of a paste for the page: its audience and, for the recipient, their pending offer. */
+        async shareState(v, p) { return await shareInfo(v, p); },
+
         /** GET /api/pastes/:slug — counts a page view unless noView; burns a spent burn-after-read paste. */
         async get(v, slug, ctx = {}) {
             const p = await visible(v, slug);
@@ -389,14 +465,16 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 }
             }
             const liked = v.subject ? await store.hasLiked(db, p.id, v.subject) : false;
-            return { paste: { ...(await shapeOne(p, v)), liked } };
+            const share = await shareInfo(v, p);
+            return { paste: { ...(await shapeOne(p, v)), liked, audience: share.audience, can_manage: share.can_manage, transfer: share.transfer } };
         },
 
         /** GET /p/:slug/raw — plain text, Media's raw rules (a burn paste survives exactly one read). */
         async raw(v, slug, ctx = {}) {
             const p = await store.getBySlug(db, String(slug));
-            if (p && p.type === 'screenshot' && (p.visibility !== 'private' || canSeeHidden(v, p))) return { redirect: `/p/${encodeURIComponent(p.slug)}/screenshot` };
-            if (!p || p.type !== 'paste' || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Not found');
+            if (!p || !await mayView(v, p)) fail(404, 'Not found');
+            if (p.type === 'screenshot') return { redirect: `/p/${encodeURIComponent(p.slug)}/screenshot` };
+            if (p.type !== 'paste') fail(404, 'Not found');
             if (!isOwner(v, p)) {
                 if (p.burn_after_read) {
                     if (p.views > 0) await burn(p);
@@ -411,7 +489,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         /** GET /p/:slug/screenshot target (the stored Media URL). For a burn-after-read screenshot it is a read (raw's rule). */
         async screenshotUrl(v, slug) {
             const p = await store.getBySlug(db, String(slug));
-            if (!p || !p.screenshot_url || (p.visibility === 'private' && !canSeeHidden(v, p))) fail(404, 'Not found');
+            if (!p || !p.screenshot_url || !await mayView(v, p)) fail(404, 'Not found');
             if (p.burn_after_read && !isOwner(v, p)) {
                 if (p.views > 0) await burn(p);
                 await store.bumpViews(db, p.id);
@@ -426,28 +504,42 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!content || typeof content !== 'string' || content.trim().length === 0) fail(400, 'Content is required');
             if (content.length > L.maxSizeKb * 1024) fail(400, `Paste too large (max ${L.maxSizeKb} KB)`);
             const metadata = serviceMetadata(v, body);
-            let visibility = visibilityOf(body.visibility, !!v.subject);
+            let audience = audienceOf(v, body.audience !== undefined ? body.audience : body.visibility);
+            audience = audienceFor(v, audience);
+            noBurnForPeople(audience, truthy(body.burn_after_read));
             // Link spam from someone signed out is kept but unlisted (./spam.js); people with an account and AI pastes are
             // never checked.
-            const spammy = !v.subject && v.origin !== 'ai' && visibility === 'public' ? spam.linkSpam({ title: body.title, content }) : null;
-            if (spammy && spammy.unlist) visibility = 'unlisted';
-            const row = await store.insertPaste(db, {
-                slug: await slugFor(v, body, visibility, truthy(body.burn_after_read)),
-                owner_subject: v.subject || null,
-                origin: v.origin === 'ai' ? 'ai' : 'user',
-                type: 'paste',
-                // An AI paste's title and body are AI text too; a person's are theirs, as written.
-                title: store.sanitizeTitle(body.title),
-                content: content.trim(),
-                language: store.detectLanguage(content, body.language),
-                visibility,
-                stream_ref: streamRefFor(v, body),
-                metadata: metadata ? JSON.stringify(metadata) : null,
-                burn_after_read: truthy(body.burn_after_read) ? 1 : 0,
-                is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
-                ...aiFields(v, body),
+            const spammy = !v.subject && v.origin !== 'ai' && audience === 'public' ? spam.linkSpam({ title: body.title, content }) : null;
+            if (spammy && spammy.unlist) audience = 'link';
+            const visibility = visibilityFor(audience);
+            const row = await db.tx(async () => {
+                const r = await store.insertPaste(db, {
+                    slug: await slugFor(v, body, visibility, truthy(body.burn_after_read)),
+                    owner_subject: v.subject || null,
+                    origin: v.origin === 'ai' ? 'ai' : 'user',
+                    type: 'paste',
+                    // An AI paste's title and body are AI text too; a person's are theirs, as written.
+                    title: store.sanitizeTitle(body.title),
+                    content: content.trim(),
+                    language: store.detectLanguage(content, body.language),
+                    visibility,
+                    stream_ref: streamRefFor(v, body),
+                    metadata: metadata ? JSON.stringify(metadata) : null,
+                    burn_after_read: truthy(body.burn_after_read) ? 1 : 0,
+                    is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
+                    ...aiFields(v, body),
+                });
+                await registerShare(v, r, audience);
+                return r;
             });
-            return await created(row, { paste: await shapeOne(row, v), ...(spammy && spammy.unlist ? { unlisted_reason: spammy.reason, notice: spam.NOTICE } : {}) });
+            // One call can make a paste people-only and offer it away (the agent path): members and a
+            // transfer are applied after the paste and its share row exist. Name lookups need their own
+            // transaction (the SDK refuses them inside one), which is why this is after the commit.
+            const sharing = await applyShareRequest(v, row.slug, audience, body);
+            return await created(row, {
+                paste: { ...(await shapeOne(row, v)), audience }, ...(sharing || {}),
+                ...(spammy && spammy.unlist ? { unlisted_reason: spammy.reason, notice: spam.NOTICE } : {}),
+            });
         },
 
         /** POST /api/pastes/screenshot (and multipart POST /api/pastes) */
@@ -460,13 +552,18 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!mime) fail(400, 'Only PNG, JPEG, WebP, or GIF images allowed');
             if (file.buffer.length > L.screenshotMaxSizeMb * 1024 * 1024) fail(400, `File too large (max ${L.screenshotMaxSizeMb} MB)`);
             if (!media) fail(503, 'Media service unavailable');
-            const visibility = visibilityOf(body.visibility, !!v.subject);
+            let audience = audienceOf(v, body.audience !== undefined ? body.audience : body.visibility);
+            audience = audienceFor(v, audience);
+            noBurnForPeople(audience, truthy(body.burn_after_read));
+            const visibility = visibilityFor(audience);
             const slug = await slugFor(v, body, visibility, truthy(body.burn_after_read));
             const extra = serviceMetadata(v, body);
             const bytes = stripImageMetadata(file.buffer, mime);
             let stored;
             try {
-                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime, owner: v.subject || null });
+                // Screenshot bytes are private Media objects owned by the person: only Community's proxy
+                // (which calls canView) serves them, never a bare Media URL.
+                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime, owner: v.subject || null, visibility: 'private' });
             } catch (err) {
                 console.warn('[Pastes] screenshot upload failed:', err.message);
                 fail(502, 'Media service unavailable');
@@ -478,26 +575,37 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 original_name: file.originalname || null,
                 size_bytes: bytes.length,
                 mime_type: mime,
+                media_visibility: 'private',
             };
-            let row = await store.insertPaste(db, {
-                slug,
-                owner_subject: v.subject || null,
-                origin: v.origin === 'ai' ? 'ai' : 'user',
-                type: 'screenshot',
-                title: store.sanitizeTitle(body.title || 'Screenshot'),
-                content: String(body.description || body.content || ''),
-                language: 'text',
-                visibility,
-                screenshot_url: stored.url,
-                media_ref: stored.media_ref,
-                stream_ref: streamRefFor(v, body),
-                metadata: JSON.stringify(metadata),
-                burn_after_read: truthy(body.burn_after_read) ? 1 : 0,
-                is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
-                ...aiFields(v, body),
+            let row = await db.tx(async () => {
+                const r = await store.insertPaste(db, {
+                    slug,
+                    owner_subject: v.subject || null,
+                    origin: v.origin === 'ai' ? 'ai' : 'user',
+                    type: 'screenshot',
+                    title: store.sanitizeTitle(body.title || 'Screenshot'),
+                    content: String(body.description || body.content || ''),
+                    language: 'text',
+                    visibility,
+                    screenshot_url: stored.url,
+                    media_ref: stored.media_ref,
+                    stream_ref: streamRefFor(v, body),
+                    metadata: JSON.stringify(metadata),
+                    burn_after_read: truthy(body.burn_after_read) ? 1 : 0,
+                    is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
+                    ...aiFields(v, body),
+                });
+                await registerShare(v, r, audience);
+                return r;
             });
+            const sharing = await applyShareRequest(v, row.slug, audience, body);
+            // The review comes after the share row exists, so it can close the share and remove every
+            // member in the same pass. A hidden or pending review is the owner's alone.
             if (review && review.enabled) row = (await review.reviewPaste(db, row, stored.url)) || row;
-            return await created(row, { paste: await shapeOne(row, v) });
+            const reviewedAudience = (row.review_status === 'hidden' || row.review_status === 'quarantined' || row.review_status === 'pending') ? 'private' : audience;
+            return await created(row, {
+                paste: { ...(await shapeOne(row, v)), audience: reviewedAudience }, ...(sharing || {}),
+            });
         },
 
         /** PUT /api/pastes/:slug — owner (or staff) only. */
@@ -513,18 +621,27 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 patch.content = content;
                 patch.language = store.detectLanguage(content, body.language);
             }
-            if (body.visibility !== undefined) {
-                const next = visibilityOf(body.visibility, !!p.owner_subject);
-                if (reviewHidden(p) && next !== 'private') fail(409, 'This paste is hidden by an unsafe-image review and cannot be made public', { code: 'paste.review_hidden' });
-                patch.visibility = next;
+            if (reviewHidden(p)) {
+                const requested = body.audience !== undefined ? String(body.audience)
+                    : body.visibility !== undefined ? audienceOf(v, body.visibility) : null;
+                if (requested && requested !== 'private') fail(409, 'This paste is hidden by an unsafe-image review and cannot be made public', { code: 'paste.review_hidden' });
+            }
+            let audience = null;
+            if (body.audience !== undefined || body.visibility !== undefined) {
+                audience = audienceOf(v, body.audience !== undefined ? body.audience : body.visibility);
+                noBurnForPeople(audience, truthy(body.burn_after_read !== undefined ? body.burn_after_read : p.burn_after_read));
+                patch.visibility = visibilityFor(audience);
             }
             if (body.is_nsfw !== undefined) patch.is_nsfw = truthy(body.is_nsfw) ? 1 : 0;
             if (body.pinned !== undefined && isStaff(v)) patch.pinned = truthy(body.pinned) ? 1 : 0;
             if (!Object.keys(patch).length) fail(400, 'Nothing to update');
             const row = await db.tx(async () => {
                 const r = await store.updatePaste(db, p.id, patch, v.subject || null);
+                // The share row is the authority; its onAudienceChange keeps pastes.visibility in step
+                // (people maps to private) and drops the paste from Search.
+                if (audience && shares) await shareCall(() => shares.setAudience(v, p.slug, audience));
                 // Staff editing someone else's paste goes to the moderation audit log (ADR-022).
-                if (!isOwner(v, p) && isStaff(v)) await events.moderationAction(v, patch.visibility !== undefined && Object.keys(patch).length === 1 ? 'paste.visibility_changed' : 'paste.edited', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null }, { details: { fields: Object.keys(patch) } });
+                if (!isOwner(v, p) && isStaff(v)) await events.moderationAction(v, audience && Object.keys(patch).length === 1 ? 'paste.visibility_changed' : 'paste.edited', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null }, { details: { fields: Object.keys(patch) } });
                 return r;
             });
             await tell((pl) => pl.pasteChanged(row));
@@ -562,20 +679,26 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             // A lasting copy would outlive the burn; only the owner (or staff) may fork one.
             if (original.burn_after_read && !canSeeHidden(v, original)) fail(403, 'Burn-after-read pastes cannot be forked');
             await pasteRateCheck(v);
-            // A fork never widens who can find the content: unlisted stays unlisted (and gets a secret slug).
-            const visibility = visibilityOf(original.visibility, !!v.subject);
-            const row = await store.insertPaste(db, {
-                slug: await store.generateSlug(db, { secret: visibility !== 'public' }),
-                owner_subject: v.subject || null,
-                origin: v.origin === 'ai' ? 'ai' : 'user',
-                type: 'paste',
-                title: store.sanitizeTitle(`Fork of ${original.title}`),
-                content: original.content,
-                language: original.language,
-                visibility,
-                forked_from: original.id,
+            // A fork never widens who can find the content: link stays link, people and private become
+            // the forker's own private paste (a new share list would name the wrong people).
+            const audience = original.visibility === 'public' ? 'public' : original.visibility === 'unlisted' ? 'link' : 'private';
+            const visibility = visibilityFor(audience);
+            const row = await db.tx(async () => {
+                const r = await store.insertPaste(db, {
+                    slug: await store.generateSlug(db, { secret: visibility !== 'public' }),
+                    owner_subject: v.subject || null,
+                    origin: v.origin === 'ai' ? 'ai' : 'user',
+                    type: 'paste',
+                    title: store.sanitizeTitle(`Fork of ${original.title}`),
+                    content: original.content,
+                    language: original.language,
+                    visibility,
+                    forked_from: original.id,
+                });
+                await registerShare(v, r, audience);
+                return r;
             });
-            return await created(row, { paste: await shapeOne(row, v) });
+            return await created(row, { paste: { ...(await shapeOne(row, v)), audience } });
         },
 
         /** POST /api/pastes/:slug/like — toggles; needs a person. */
@@ -706,7 +829,12 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     if (!p) { skipped++; continue; }
                     if (reviewHidden(p) && (action === 'public' || action === 'unlisted')) { skipped++; continue; }
                     if (action === 'delete') await store.softDelete(db, p.id);
-                    else await store.setVisibility(db, p.id, action);
+                    else {
+                        await store.setVisibility(db, p.id, action);
+                        // Staff moderation sets the same audience the old column names, so canView agrees.
+                        if (shares) await db.prepare(`UPDATE shares SET audience = ? WHERE service = 'community' AND kind = 'paste' AND resource_id = ?`)
+                            .run(audienceOf(v, action), String(slug));
+                    }
                     if (action !== 'public') await tell((pl) => pl.pasteGone(p.slug));
                     pingIndexNow(action === 'public' ? { ...p, visibility: 'public' } : p);
                     done++;
@@ -727,7 +855,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!media) fail(503, 'Media service unavailable');
             let stored;
             try {
-                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, mime), filename: file.originalname || 'censored.png', mime, owner: p.owner_subject || null });
+                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, mime), filename: file.originalname || 'censored.png', mime, owner: p.owner_subject || null, visibility: 'private' });
             } catch (err) {
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');

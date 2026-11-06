@@ -2,11 +2,24 @@
 
 ## Unreleased
 
+- Sharing reaches pastes (design 2026-11-06, the pilot): `openvibe-sdk` v0.85.0 and `openvibe-shared` v4.114.0, with
+  `openvibe-contracts` v0.291.0. `migrations/0015_sharing.sql` adds openvibe-sdk/share's tables (expand), and
+  `migrations/0016_sharing_backfill.sql` registers every existing paste once (public→public, unlisted→link,
+  private→private, owner = its owner subject; an ownerless paste belongs to Community itself). Every read path asks the
+  one check, `canView`: the page, raw, download, the screenshot proxy (a Media URL is never put in HTML), the JSON API,
+  comments, the lists, the feed, llms, the sitemap and link previews (people/private pages give a generic card and no
+  paste JSON-LD). A person not on the list gets a 404 with `OVShare.gate` ("Ask for access" signed in, "Sign in"
+  otherwise); a pending transfer's recipient previews the paste with `OVShare.offer`. The page's Share button is
+  `data-ov-share-sheet` against the uniform `/api/v1/paste/:slug/share` routes. `POST /api/pastes` takes `audience`,
+  `members` and `transfer_to` (one call makes a paste only two people can open and offers it). Screenshots upload to
+  Media as private objects; `npm run screenshots:private` re-hosts the existing unlisted ones. Burn-after-reading
+  pastes cannot use `people`. `docs/sharing.md` has the curls; `/docs/sharing`, `/llms.txt` and `/llms-full.txt` link it.
 - Unsafe-image review (VIS-6): image pastes are reviewed by OpenVibe.Vision (`OV_VISION_URL`) before they are
   returned. `fine` keeps its visibility, `sex_acts` becomes private and NSFW, `minor_sexual` becomes private,
   NSFW and quarantined with the operator report id. A Vision outage makes the paste private and pending; the
-  owner cannot re-publish a reviewed paste. Migration `0015_paste_reviews.sql`, `server/pastes/review.js`, tests
-  `test/paste-review.test.js`.
+  owner cannot re-publish a reviewed paste. A hidden review also closes the paste's share row and removes its
+  members, so the sharing gate cannot reopen it. Migration `0017_paste_reviews.sql`, `server/pastes/review.js`,
+  tests `test/paste-review.test.js`.
 
 - Threads carry content labels (L1, labels and choices, 2026-11-02): `migrations/0013_thread_content_labels.sql` adds
   `threads.content_labels` (`{ labels, suggested }`, common.content-labels@1). The author or a moderator sets them on the

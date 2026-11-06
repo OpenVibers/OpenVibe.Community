@@ -68,7 +68,7 @@ const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 const PAGE = 30;
 const REPLY_PAGE = 20;
 
-function createCommentService({ db, network = null, limits = {} } = {}) {
+function createCommentService({ db, network = null, limits = {}, canViewPaste = null } = {}) {
     const authors = createAuthors({ db, network });
     const commentLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 5, noun: 'comments', ...(limits.comments || {}) });
     const voteLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'votes', ...(limits.votes || {}) });
@@ -142,10 +142,16 @@ function createCommentService({ db, network = null, limits = {} } = {}) {
         return { comment: c, thread: await visible(v, await store.getThread(db, c.thread_id)) };
     }
 
-    /** The paste service's rule: a paste that is gone (deleted, burned) is nobody's; a private one its owner's and staff's. */
+    /**
+     * The paste service's one check (shares.canView): a paste that is gone (deleted, burned) is
+     * nobody's, a people/private one its owner's, members' and staff's. The app installs the check;
+     * without one (a unit test of another product's refs) the old column decides, failing closed.
+     */
     async function pasteVisibleTo(v, slug) {
         const p = await pasteStore.getBySlug(db, String(slug));
-        return !!p && (p.visibility !== 'private' || !!(v && (v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject))));
+        if (!p) return false;
+        if (canViewPaste) return await canViewPaste(v, p);
+        return !(p.visibility === 'private' && !(v && (v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject))));
     }
     /** Whether the viewer may see the entity a thread belongs to (only Community's pastes can be checked here). */
     const entityVisible = async (v, t) => !(t.ref_service === 'community' && t.ref_type === 'paste') || await pasteVisibleTo(v, t.ref_id);

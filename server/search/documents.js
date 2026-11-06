@@ -139,6 +139,11 @@ function createSearchDocuments({ db }) {
         if (!row || !SLUG_RE.test(String(row.slug || ''))) return 'skipped';
         return await send('paste', pasteDocId(row), pasteDocument(row));
     }
+    /** Drop a paste from Search now (its audience changed, or it was deleted): a tombstone, not the next scan. */
+    async function removePaste(slug) {
+        if (!enabled()) return 'off';
+        return await send('paste', pasteDocId({ slug: String(slug) }), { deleted: true });
+    }
     const guard = async (fn) => { try { await fn(); } catch (err) { stats.lastError = err.message; } };
 
     async function scan({ now = Date.now() } = {}) {
@@ -181,7 +186,7 @@ function createSearchDocuments({ db }) {
     }
     function stop() { for (const t of timers) { clearTimeout(t); clearInterval(t); } timers = []; }
 
-    return { threadDocument, pasteDocument, publishThread, publishPaste, scan, refresh, start, stop, stats: () => ({ ...stats }) };
+    return { threadDocument, pasteDocument, publishThread, publishPaste, removePaste, scan, refresh, start, stop, stats: () => ({ ...stats }) };
 }
 
 module.exports = { createSearchDocuments };
