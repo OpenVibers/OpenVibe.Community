@@ -53,6 +53,21 @@ async function exportPart(db, subject) {
         if (rows.length > ROW_LIMIT) truncated.push(name);
         files.push({ name, content: rows.slice(0, ROW_LIMIT) });
     }
+    // Sharing: a person's own share rows, their memberships, their access requests and the transfers
+    // they started or were offered. Subjects are jsonb ({ type, id }), so these are read by id.
+    for (const [name, table, where] of [
+        ['shares.json', 'shares', "owner_subject->>'id' = ?"],
+        ['share_members.json', 'share_members', "subject->>'id' = ?"],
+        ['share_access_requests.json', 'share_access_requests', "subject->>'id' = ?"],
+        ['share_transfers.json', 'share_transfers', "(from_subject->>'id' = ? OR to_subject->>'id' = ?)"],
+    ]) {
+        if (!await hasTable(db, table)) continue;
+        const rows = await db.prepare(`SELECT * FROM ${table} WHERE ${where} ORDER BY 1 DESC LIMIT ${ROW_LIMIT + 1}`)
+            .all(...(where.includes(' OR ') ? [subject, subject] : [subject]));
+        if (!rows.length) continue;
+        if (rows.length > ROW_LIMIT) truncated.push(name);
+        files.push({ name, content: rows.slice(0, ROW_LIMIT) });
+    }
     return { files, truncated, note: 'Paste screenshots and attachments are downloaded from their URLs.' };
 }
 
@@ -85,9 +100,26 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             add(erased, table, (await db.prepare(`DELETE FROM ${table} WHERE subject_id IN ${S}`).run(...subjects)).changes);
             recount.push([table, items]);
         }
+        // Sharing: every membership, access request and pending offer naming the person goes; their
+        // own pastes' share rows go with the paste (the foreign keys would refuse the delete).
+        const sharing = await hasTable(db, 'shares');
+        if (sharing) {
+            add(erased, 'share_members', (await db.prepare(`DELETE FROM share_members WHERE subject->>'id' IN ${S}`).run(...subjects)).changes);
+            add(erased, 'share_access_requests', (await db.prepare(`UPDATE share_access_requests SET state = 'dismissed' WHERE subject->>'id' IN ${S} AND state = 'pending'`).run(...subjects)).changes);
+            add(erased, 'share_transfers', (await db.prepare(`UPDATE share_transfers SET state = 'cancelled' WHERE (to_subject->>'id' IN ${S} OR from_subject->>'id' IN ${S}) AND state = 'pending'`).run(...subjects, ...subjects)).changes);
+        }
+        const dropShare = async (slug) => {
+            const ref = ['community', 'paste', String(slug)];
+            for (const t of ['share_members', 'share_transfers', 'share_access_requests']) {
+                await db.prepare(`DELETE FROM ${t} WHERE service = ? AND kind = ? AND resource_id = ?`).run(...ref);
+            }
+            add(erased, 'shares', (await db.prepare('DELETE FROM shares WHERE service = ? AND kind = ? AND resource_id = ?').run(...ref)).changes);
+        };
+
         // Pastes: gone, unless someone else commented.
         if (await hasTable(db, 'pastes')) {
             for (const p of await db.prepare(`SELECT id, slug FROM pastes WHERE owner_subject IN ${S}`).all(...subjects)) {
+                if (sharing) await dropShare(p.slug);
                 // Comments are on the paste's typed thread; paste_comments still holds the rows from before migration 0004.
                 const others = await db.prepare(`SELECT 1 FROM paste_comments WHERE paste_id = ? AND (author_subject IS NULL OR author_subject NOT IN ${S}) LIMIT 1`).get(p.id, ...subjects)
                     || (await hasTable(db, 'comments') && await db.prepare(`SELECT 1 FROM comments c JOIN comment_threads t ON t.id = c.thread_id

@@ -22,7 +22,7 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         clientId: config.oauth.clientId,
         clientSecret: config.oauth.clientSecret,
         audience: 'openvibe.media',
-        scope: 'media.object.upload',
+        scope: 'media.object.upload media.object.read',
         fetchImpl,
     }) : null;
     const base = `${config.mediaInternalUrl}/api/v2/community/objects`;
@@ -61,7 +61,21 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return { id, url: `${config.mediaUrl}/o/${id}`, size_bytes: buffer.length, mime };
     }
 
-    return { configured, uploadImage };
+    /**
+     * A usable URL for one object's bytes: its public address, or a short-lived signed URL for a private
+     * object. Used by Community's screenshot proxy, which checks canView before asking.
+     */
+    async function downloadUrl(id, retried = false) {
+        try {
+            const out = await call('GET', `/${encodeURIComponent(String(id))}/download?format=json`);
+            return out && out.url ? out.url : null;
+        } catch (err) {
+            if (err.status === 401 && !retried) { tokens.invalidate(); return await downloadUrl(id, true); }
+            throw err;
+        }
+    }
+
+    return { configured, uploadImage, downloadUrl };
 }
 
 module.exports = { createMediaObjects };
