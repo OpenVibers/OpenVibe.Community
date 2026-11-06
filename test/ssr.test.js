@@ -18,6 +18,8 @@ const { boot, check, done } = require('./helpers/app');
     await ins.run('dark-owl-55', alex.subject_id, 'paste', 'secret notes', 'unlisted <script>alert(1)</script>', 'text', 'unlisted', null, 2, 0, '2026-09-12 08:00:00', '2026-09-12 08:00:00');
     await ins.run('fair-moon-23', sam.subject_id, 'screenshot', 'Desktop shot', 'my desktop', 'text', 'public', 'https://openvibe.media/o/med_FAIRMOON', 40, 0, '2026-09-11 08:00:00', '2026-09-11 08:00:00');
     await ins.run('grim-vale-61', alex.subject_id, 'paste', 'private thing', 'private', 'text', 'private', null, 0, 0, '2026-09-10 08:00:00', '2026-09-10 08:00:00');
+    await t.db.prepare('INSERT INTO pastes (slug, owner_subject, type, title, content, language, visibility, burn_after_read, views, likes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run('burn-ash-09', alex.subject_id, 'paste', 'read me once', 'gone after this', 'text', 'public', 1, 0, 0, '2026-09-09 08:00:00', '2026-09-09 08:00:00');
 
     await check('home renders hero, the latest pastes as a rail, the forum, roadmap and questions with full SEO head', async () => {
         const r = await t.get('/');
@@ -134,7 +136,11 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, 'href="/p/amber-fox-42/raw"');
         has(r.text, 'href="/p/amber-fox-42/download"');
         has(r.text, 'data-copy-content="amber-fox-42"');
-        has(r.text, 'twitter.com/intent/tweet');
+        // The one Share sheet (openvibe-shared 4.114.0): one button, with the paste's own public address.
+        const share = r.text.match(/<button[^>]*data-ov-share-sheet[^>]*>/g) || [];
+        assert.strictEqual(share.length, 1, 'one Share button: ' + share.join(' | '));
+        has(share[0], 'data-url="https://openvibe.community/p/amber-fox-42"', "the paste's own address");
+        has(share[0], 'data-title="Hello world in JavaScript"', 'the paste\'s own title');
         has(r.text, '<h2>More like this</h2>');
         has(r.text, 'https://openvibe.live/data/avatars/alex.png', 'relative avatar made absolute against Live');
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
@@ -142,6 +148,12 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(cfg.navbar.history.title, 'Hello world in JavaScript');
         assert.strictEqual(cfg.footer.variant, 'compact');
         assert.ok((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views >= before, 'views are counted (deduped per visitor)');
+    });
+
+    await check('a paste that burns after reading has no Share button', async () => {
+        const r = await t.get('/p/burn-ash-09');
+        assert.strictEqual(r.status, 200);
+        assert.ok(!r.text.includes('data-ov-share-sheet'), 'nothing to share: it is gone after this read');
     });
 
     await check('unlisted paste is noindex and its content is escaped', async () => {

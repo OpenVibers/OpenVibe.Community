@@ -380,17 +380,16 @@ function pasteDescription(p) {
     return ld.clean(`${p.title || 'Paste'} — ${languageLabel(p.language)} paste by ${authorName(p)}: ${String(p.content || '').slice(0, 200)}`, 200);
 }
 
-function shareLinks(p) {
+/**
+ * The paste's Share button: the one share sheet every OpenVibe site opens (openvibe-shared 4.114.0). The navbar
+ * fetches the sheet the first time the button is pressed; the button says what is being shared — the paste's own
+ * public address, its title, a line about it, and (for a screenshot) the picture itself.
+ *
+ * A paste that burns after reading is not shared at all: it gets no Share button.
+ */
+function shareButton(p, { title, text, image }) {
     const url = `${config.baseUrl}/p/${p.slug}`;
-    const text = `${p.title || 'A paste'} — ${SITE_NAME}`;
-    const u = encodeURIComponent(url), t = encodeURIComponent(text);
-    return `<div class="share" aria-label="Share">
-    <button type="button" class="btn btn-sm" data-copy-link="${esc(url)}"><i class="fa-solid fa-link" aria-hidden="true"></i> Copy link</button>
-    <a class="btn btn-sm" href="https://twitter.com/intent/tweet?url=${u}&text=${t}" target="_blank" rel="noopener"><i class="fa-brands fa-x-twitter" aria-hidden="true"></i> X</a>
-    <a class="btn btn-sm" href="https://bsky.app/intent/compose?text=${t}%20${u}" target="_blank" rel="noopener"><i class="fa-brands fa-bluesky" aria-hidden="true"></i> Bluesky</a>
-    <a class="btn btn-sm" href="https://www.reddit.com/submit?url=${u}&title=${t}" target="_blank" rel="noopener"><i class="fa-brands fa-reddit-alien" aria-hidden="true"></i> Reddit</a>
-    <a class="btn btn-sm" href="mailto:?subject=${t}&body=${u}"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email</a>
-  </div>`;
+    return `<button type="button" class="btn btn-sm" data-ov-share-sheet data-url="${esc(url)}" data-title="${esc(title)}"${text ? ` data-text="${esc(text)}"` : ''}${image ? ` data-image="${esc(image)}"` : ''}><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>`;
 }
 
 /**
@@ -448,6 +447,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(p.slug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(p.slug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
     <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
+    ${!p.burn_after_read ? shareButton(p, { title, text: description, image: shot }) : ''}
     ${p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
@@ -471,7 +471,6 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
   </header>
   ${bodyBlock}
   <footer class="paste-foot">
-    ${shareLinks(p)}
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
 </article>

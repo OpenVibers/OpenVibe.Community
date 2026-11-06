@@ -44,13 +44,11 @@
 
   // ── Paste page ──────────────────────────────────────────────
   document.addEventListener('click', function (e) {
-    var t = e.target.closest ? e.target.closest('[data-copy-content],[data-copy-link],[data-delete]') : null;
+    var t = e.target.closest ? e.target.closest('[data-copy-content],[data-delete]') : null;
     if (!t) return;
     if (t.hasAttribute('data-copy-content')) {
       var code = $('#paste-content');
       copyText(code ? code.textContent : '').then(function () { flash(t, 'Copied'); api('/api/pastes/' + encodeURIComponent(t.getAttribute('data-copy-content')) + '/copy', { method: 'POST', json: {} }).catch(function () {}); }).catch(function () { flash(t, 'Select and copy'); });
-    } else if (t.hasAttribute('data-copy-link')) {
-      copyText(t.getAttribute('data-copy-link')).then(function () { flash(t, 'Link copied'); }).catch(function () {});
     } else if (t.hasAttribute('data-delete')) {
       if (!confirm('Delete this paste? There is no undo.')) return;
       t.disabled = true;
