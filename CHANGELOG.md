@@ -6,7 +6,7 @@
   locked: the browser seals it, Community stores the envelope and never sees the content key.
   - `POST /api/pastes` takes `locked: true` and `envelope: <base64 locker.envelope.v1>` **instead of** `content`; a
     request with both, a bad envelope, a public audience, a burn-after-reading lock or a screenshot is refused.
-    `migrations/0019_locked_pastes.sql` adds `locked`, `lock_kind`, `envelope` and `title_shown` to `pastes`
+    `migrations/0020_locked_pastes.sql` adds `locked`, `lock_kind`, `envelope` and `title_shown` to `pastes`
     (expand-only), and openvibe-sdk/share's own columns since 0.85.0 (`shares.lock`, the members' `key_slot`, the
     transfers' `key_slot`, `reseal_nonce_base`).
   - The title lives inside the envelope unless the owner ticks "Show the title to people who can open it". A people

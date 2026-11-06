@@ -11,12 +11,5 @@ DO $$ BEGIN
     ALTER TABLE pastes ADD CONSTRAINT pastes_lock_kind_allowed CHECK (lock_kind IS NULL OR lock_kind IN ('people', 'password', 'link'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- openvibe-sdk/share's own additions since v0.85.0 (src/share/schema.js, verbatim and expand-only): how an item is
--- sealed, each member's key slot, the slot a transfer was offered with, and the nonce base a re-seal must beat.
-ALTER TABLE shares ADD COLUMN IF NOT EXISTS lock text NOT NULL DEFAULT 'none';
-DO $$ BEGIN
-    ALTER TABLE shares ADD CONSTRAINT shares_lock_allowed CHECK (lock IN ('none', 'people', 'password', 'link'));
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-ALTER TABLE share_members ADD COLUMN IF NOT EXISTS key_slot jsonb;
-ALTER TABLE share_transfers ADD COLUMN IF NOT EXISTS key_slot jsonb;
-ALTER TABLE shares ADD COLUMN IF NOT EXISTS reseal_nonce_base text;
+-- The SDK's share lock columns (shares.lock, key slots, reseal_nonce_base) are 0019_shares_lock_expand.sql, added by the
+-- openvibe-sdk v0.91.0 pin round; this migration adds only the paste's own lock columns.
