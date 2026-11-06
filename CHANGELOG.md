@@ -6,6 +6,12 @@
   `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste
   route. `--apply` pages with an id cursor and reaches every paste in one run, `--retire-ids <file>` retires named objects
   whose paste record was lost (one Media id per line), and the dry run prints the moves, retires and refusals it would make.
+- The screenshot move script also retires an old Community v1 file object (`legacy:community:file:<key>`, app
+  `community`, kind `file`) through Media's internal legacy route when DELETE answers 409
+  `media.object.legacy_managed`. Before retiring it, the script reads Community's own tables (pastes, posts,
+  attachments, submissions) and leaves the object in place when any other row still references the Media id, keeping
+  `previous_media_ref` for a later retry; the summary counts those as `referenced` and names the tables. Test:
+  `test/move-screenshots.test.js`.
 - Review follow-up: a failed review keeps the owner's requested visibility/audience/NSFW choice in
   `review_requested_*`; `server/pastes/review-retry.js` retries pending reviews with backoff and restores the
   visibility and share audience when Vision later says fine. Migration `0018_paste_review_retry.sql`, Contracts

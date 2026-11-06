@@ -204,9 +204,10 @@ async function createApp(opts = {}) {
         },
         /**
          * The screenshot follows a transfer: re-host the same bytes privately, owned by the new owner,
-         * then delete the old object (retire it when it is a legacy Live paste screenshot).
-         * previous_media_ref is recorded before the delete, so a failure is retried by
-         * scripts/move-screenshots-private.js instead of leaving the old URL readable.
+         * then delete the old object (a legacy object is left to the move script, which checks other
+         * references before retiring it). previous_media_ref is recorded before the delete, so a
+         * failure is retried by scripts/move-screenshots-private.js instead of leaving the old URL
+         * readable.
          */
         async moveOwner(row, owner) {
             if (!owner || !mediaObjects.configured) return false;
@@ -224,7 +225,9 @@ async function createApp(opts = {}) {
                     try {
                         await mediaObjects.deleteObject(old);
                     } catch (err) {
-                        // A 404 is a legacy Live paste screenshot, not "already gone": retire it.
+                        // A 404 is a legacy Live paste screenshot, not "already gone": retire it. A 409
+                        // legacy_managed (an old Community v1 file) waits for the move script, which checks
+                        // that no other paste, post or attachment still references the id.
                         if (err.status !== 404) throw err;
                         await mediaObjects.retireLegacyPaste(old);
                     }
