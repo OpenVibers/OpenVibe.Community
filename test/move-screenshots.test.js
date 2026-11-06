@@ -82,7 +82,8 @@ const { testDb } = require('./helpers/db');
             async deleteObject(id) {
                 const mode = this.mode.get(id) || 'ok';
                 if (mode === '404') { const e = new Error(`Media DELETE 404: not in tenant`); e.status = 404; throw e; }
-                if (mode === '409') { const e = new Error(`Media DELETE 409: legacy managed`); e.status = 409; e.code = 'media.object.legacy_managed'; throw e; }
+                if (mode === '409') { const e = new Error(`Media DELETE 409: held`); e.status = 409; e.code = 'media.object.held'; throw e; }
+                if (mode === 'legacy') { const e = new Error(`Media DELETE 409: legacy managed`); e.status = 409; e.code = 'media.object.legacy_managed'; throw e; }
                 this.deleted.push(id);
             },
             async retireLegacyPaste(id) {
@@ -93,7 +94,8 @@ const { testDb } = require('./helpers/db');
                 return { retired: true, changed };
             },
         };
-        // A legacy Live object answers 404 to Community's delete; the held one is refused.
+        // A legacy Live object answers 404 to Community's delete; the held one is refused; an old
+        // Community v1 file answers 409 legacy_managed and waits for the reference check.
         fake.mode.set(old.legacy, '404');
         fake.mode.set(old.held, '409');
         const fetchImpl = async () => new Response(Buffer.from('OLD'), { status: 200, headers: { 'content-type': 'image/png' } });
@@ -133,6 +135,48 @@ const { testDb } = require('./helpers/db');
         assert.deepStrictEqual([out.deleted, out.skipped, out.deleteFailed], [1, 5, 0], JSON.stringify(out));
         assert.strictEqual(JSON.parse((await row('row-held')).metadata).previous_media_ref, undefined, 'the retry cleared it');
         console.log('✅ a later run retries the kept reference and clears it');
+
+        // ── A legacy Community v1 file is retired only when nothing else references it ──
+        const commFile = ids.newId('media');
+        const refPaste = ids.newId('media');
+        const refPost = ids.newId('media');
+        const refAttachment = ids.newId('media');
+        const refSubmission = ids.newId('media');
+        for (const [slug, object] of [
+            ['row-community-file', commFile], ['row-ref-paste', refPaste], ['row-ref-post', refPost],
+            ['row-ref-attachment', refAttachment], ['row-ref-submission', refSubmission],
+        ]) {
+            await add(slug, object, JSON.stringify({ media_visibility: 'private', previous_media_ref: object }));
+            fake.mode.set(object, 'legacy');
+        }
+        await db.prepare(`INSERT INTO pastes (slug, type, title, content, visibility, media_ref)
+            VALUES ('ref-holder', 'paste', 'holder', '', 'public', ?)`).run(refPaste);
+        const space = (await db.prepare("INSERT INTO spaces (slug, name) VALUES ('ref-space', 'Reference space') RETURNING id").run()).lastInsertRowid;
+        const thread = (await db.prepare("INSERT INTO threads (space_id, slug, title) VALUES (?, 'ref-thread', 'Reference thread') RETURNING id").run(space)).lastInsertRowid;
+        await db.prepare('INSERT INTO posts (thread_id, body_markdown) VALUES (?, ?)').run(thread, `![old](${mediaUrl}/o/${refPost})`);
+        const owner = ids.newId('user');
+        await db.prepare(`INSERT INTO attachments (media_id, owner_subject, filename, mime, size_bytes, url)
+            VALUES (?, ?, 'old.png', 'image/png', 3, ?)`).run(refAttachment, owner, `${mediaUrl}/o/${refAttachment}`);
+        await db.prepare(`INSERT INTO submissions (slug, kind, title, body, media_ref, author_subject)
+            VALUES ('ref-submission', 'art', 'Reference art', '', ?, ?)`).run(refSubmission, owner);
+
+        out = await moveScreenshotsPrivate({ db, mediaObjects: fake, fetchImpl, log, limit: 100, apply: true });
+        assert.deepStrictEqual([out.retired, out.referenced, out.deleteFailed, out.refused], [1, 4, 4, 0], JSON.stringify(out));
+        assert.ok(fake.retired.includes(commFile), 'the unreferenced legacy community file was retired');
+        for (const id of [refPaste, refPost, refAttachment, refSubmission]) assert.strictEqual(fake.retired.includes(id), false, `${id} stays`);
+        assert.strictEqual(JSON.parse((await row('row-community-file')).metadata).previous_media_ref, undefined, 'the retired file clears its record');
+        const expected = { 'row-ref-paste': refPaste, 'row-ref-post': refPost, 'row-ref-attachment': refAttachment, 'row-ref-submission': refSubmission };
+        for (const [slug, id] of Object.entries(expected)) {
+            assert.strictEqual(JSON.parse((await row(slug)).metadata).previous_media_ref, id, `${slug} keeps its reference`);
+        }
+        for (const where of ['pastes (1)', 'posts (1)', 'attachments (1)', 'submissions (1)']) {
+            assert.ok(logs.some((l) => l.includes(`still referenced by ${where}`)), `the summary says ${where}`);
+        }
+        console.log('✅ a legacy Community file is retired only when no paste, post, attachment or submission references it');
+
+        out = await moveScreenshotsPrivate({ db, mediaObjects: fake, fetchImpl, log, apply: true, retireIds: [refPaste] });
+        assert.deepStrictEqual([out.referenced, out.refused, out.retired, out.retireFailed], [1, 1, 0, 0], JSON.stringify(out));
+        console.log('✅ --retire-ids also leaves a referenced object alone');
 
         // --retire-ids: only those ids, no paste scan, dry run first; a repeat is Media's no-op.
         const lost1 = ids.newId('media');
