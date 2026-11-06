@@ -600,8 +600,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             });
             const sharing = await applyShareRequest(v, row.slug, audience, body);
             // The review comes after the share row exists, so it can close the share and remove every
-            // member in the same pass. A hidden or pending review is the owner's alone.
-            if (review && review.enabled) row = (await review.reviewPaste(db, row, stored.url)) || row;
+            // member in the same pass. The owner's requested visibility is kept for a retry that says fine.
+            if (review && review.enabled) {
+                await db.prepare('UPDATE pastes SET review_requested_visibility = ?, review_requested_audience = ?, review_requested_nsfw = ? WHERE id = ?')
+                    .run(visibility, audience, truthy(body.is_nsfw) ? 1 : 0, row.id);
+                row = await store.getById(db, row.id) || row;
+                row = (await review.reviewPaste(db, row, stored.url)) || row;
+            }
             const reviewedAudience = (row.review_status === 'hidden' || row.review_status === 'quarantined' || row.review_status === 'pending') ? 'private' : audience;
             return await created(row, {
                 paste: { ...(await shapeOne(row, v)), audience: reviewedAudience }, ...(sharing || {}),

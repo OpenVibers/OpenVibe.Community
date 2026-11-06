@@ -245,6 +245,7 @@ async function createApp(opts = {}) {
         source.use(service);
         app.locals.pastes = service;
         app.locals.pasteMedia = pasteMedia;
+        app.locals.pasteReview = review;
     }
     // One anonymous-write budget per address, shared by the API and the no-JS form (20 / 10 min).
     const anonWriteLimiter = rateLimit({

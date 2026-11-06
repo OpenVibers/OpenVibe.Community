@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Review follow-up: a failed review keeps the owner's requested visibility/audience/NSFW choice in
+  `review_requested_*`; `server/pastes/review-retry.js` retries pending reviews with backoff and restores the
+  visibility and share audience when Vision later says fine. Migration `0018_paste_review_retry.sql`, Contracts
+  v0.294.0.
 - Sharing reaches pastes (design 2026-11-06, the pilot): `openvibe-sdk` v0.85.0 and `openvibe-shared` v4.114.0, with
   `openvibe-contracts` v0.291.0. `migrations/0015_sharing.sql` adds openvibe-sdk/share's tables (expand), and
   `migrations/0016_sharing_backfill.sql` registers every existing paste once (public→public, unlisted→link,

@@ -9,6 +9,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { boot, check, done } = require('./helpers/app');
 const { createPasteReview } = require('../server/pastes/review');
+const { createReviewRetry } = require('../server/pastes/review-retry');
 
 const PNG = (() => {
     const zlib = require('zlib');
@@ -113,13 +114,29 @@ const PNG = (() => {
             assert.strictEqual(row.review_report_id, 'vor_01JAB2C3D4E5F6G7H8J9K0MNPQ');
         });
 
-        await check('Vision down: the paste is private and pending, never public', async () => {
+        let pendingSlug;
+        await check('Vision down: the paste is private and pending, never public, and keeps the owner\'s visibility', async () => {
             state.fail = true;
             const r = await upload(alexJwt, { title: 'Unreviewed', visibility: 'public' });
             assert.strictEqual(r.status, 201, r.text);
             const p = r.json().paste;
+            pendingSlug = p.slug;
             assert.deepStrictEqual([p.visibility, p.review_status, p.is_nsfw], ['private', 'pending', true]);
             assert.strictEqual((await as(null, `/p/${p.slug}`)).status, 404);
+            const row = await t.db.prepare('SELECT review_requested_visibility, review_requested_audience FROM pastes WHERE slug = ?').get(pendingSlug);
+            assert.deepStrictEqual([row.review_requested_visibility, row.review_requested_audience], ['public', 'public']);
+        });
+
+        await check('a retry that comes back fine restores the owner\'s visibility', async () => {
+            state.fail = false;
+            state.category = 'fine';
+            const retry = createReviewRetry({ db: t.db, review, intervalMs: 0, log: { log() {}, warn() {}, error() {} } });
+            const out = await retry.runOnce();
+            assert.deepStrictEqual([out.checked, out.cleared], [1, 1]);
+            const row = await t.db.prepare('SELECT visibility, review_status, is_nsfw FROM pastes WHERE slug = ?').get(pendingSlug);
+            assert.deepStrictEqual([row.visibility, row.review_status, Number(row.is_nsfw)], ['public', 'clear', 0]);
+            assert.strictEqual((await as(null, `/p/${pendingSlug}`)).status, 200, 'the public page is back');
+            assert.ok((await as(null, '/api/pastes')).json().pastes.some((x) => x.slug === pendingSlug));
         });
 
         await check('the review request carries the paste object and the Media URL, never the bytes', async () => {

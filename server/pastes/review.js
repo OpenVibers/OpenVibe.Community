@@ -29,12 +29,16 @@ function createPasteReview({ config, fetchImpl = globalThis.fetch, log = console
     }) : null;
 
     async function classify({ paste, imageUrl }, retried = false) {
+        const mediaId = /^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(paste.media_ref || '')) ? paste.media_ref : null;
         const res = await fetchImpl(`${base}/api/v1/review`, {
             method: 'POST',
             headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(await tokens.authHeaders()) },
             body: JSON.stringify({
                 object_type: 'community.paste',
                 object_id: paste.slug,
+                object_app: 'community',
+                media_object_id: mediaId,
+                media_app: mediaId ? 'community' : null,
                 owner_subject: paste.owner_subject || null,
                 image_url: imageUrl,
                 preview_url: imageUrl,
