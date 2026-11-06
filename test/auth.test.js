@@ -18,7 +18,9 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(u.searchParams.get('response_type'), 'code');
         assert.strictEqual(u.searchParams.get('scope'), 'profile theme');
         assert.strictEqual(u.searchParams.get('prompt'), null);
-        assert.ok(/^[0-9a-f]{32}$/.test(u.searchParams.get('state')));
+        assert.match(u.searchParams.get('state'), /^[0-9A-Za-z_-]{32}$/, 'the SDK state: 24 random bytes, base64url');
+        assert.match(u.searchParams.get('code_challenge'), /^[0-9A-Za-z_-]{43}$/, 'PKCE S256 challenge');
+        assert.strictEqual(u.searchParams.get('code_challenge_method'), 'S256');
         const state = cookieNamed(r, 'ov_oauth_state');
         assert.ok(state && /HttpOnly/i.test(state) && /Path=\/auth/.test(state) && /Secure/.test(state) && !/Domain=/i.test(state), 'state cookie: httpOnly, /auth, secure, host-only');
         assert.ok(state.includes(u.searchParams.get('state')));
@@ -119,9 +121,22 @@ const { boot, check, done } = require('./helpers/app');
         t.jar.set('ov_token', saved);
     });
 
-    await check('callback rejects a missing or mismatched state', async () => {
+    await check('callback: a missing or mismatched state never sets a session; the SDK starts a fresh sign-in once, then explains', async () => {
         const r = await t.get('/auth/callback?code=good-code&state=deadbeef');
-        assert.strictEqual(r.status, 400);
+        assert.strictEqual(r.status, 302);
+        assert.match(r.headers.get('location'), /^\/auth\/login/);
+        assert.ok(cookieNamed(r, 'ov_oauth_retry'), 'the recovery cookie');
+        assert.ok(!cookieNamed(r, 'ov_token'), 'no session was created by this callback');
+        const again = await t.get('/auth/callback?code=good-code&state=deadbeef', { cookies: ['ov_oauth_retry=1'] });
+        assert.strictEqual(again.status, 400);
+        assert.match(again.text, /Try again/);
+    });
+
+    await check('GET /auth/health answers whether the Network accepts the community client', async () => {
+        const r = await t.get('/auth/health');
+        assert.strictEqual(r.status, 200);
+        assert.deepStrictEqual(r.json(), { ok: true, client: 'ok' });
+        assert.strictEqual(r.headers.get('cache-control'), 'no-store');
     });
 
     await check('POST /auth/refresh rotates tokens; a rejected refresh clears the session', async () => {
