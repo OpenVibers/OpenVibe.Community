@@ -54,6 +54,8 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
     // Public threads and pastes in OpenVibe.Search (WS-O task 10): community.index_document.* through the outbox (off without EVENTS_URL).
     let searchDocs = null;
     try { searchDocs = require('./search/documents').createSearchDocuments({ db: require('./db').getDb() }); searchDocs.start(); } catch (err) { console.warn('[Search] documents not started:', err.message); }
+    // A paste whose audience becomes people/private leaves Search at once (sharing's onAudienceChange).
+    if (app.locals.sharing) app.locals.sharing.useSearch(searchDocs);
 
     // ── Stop (roadmap WS-P lifecycle; openvibe-sdk/service) ──────
     // SIGTERM: the Pulse subscription retries, the community.profile scan and the search-document scans

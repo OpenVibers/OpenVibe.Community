@@ -65,6 +65,17 @@ async function record(eventType, subject, payload, { isPublic = false, actor = n
     return env;
 }
 
+/**
+ * Enqueue a prepared envelope (openvibe-sdk/share's share.* events) through the same outbox, joining
+ * the caller's transaction. Off while the outbox is off; returns null then.
+ */
+async function publish(envelope) {
+    if (!outbox) return null;
+    const env = await outbox.enqueue(outboxDb, envelope);
+    outboxDb.afterCommit(() => outbox && outbox.kick());
+    return env;
+}
+
 // ── Builders (read the row as it is after the change) ─────────────────────────────
 const pasteUrl = (p) => (p.visibility === 'public' && !p.deleted_at ? `${config.baseUrl}/p/${encodeURIComponent(p.slug)}` : null);
 const actorOf = (sub) => { const r = subjectRef(sub); return r ? { type: r.type, id: r.id } : null; };
@@ -148,4 +159,4 @@ function stop() {
 }
 function _reset() { if (outbox) outbox.stop(); outbox = null; outboxDb = null; stats.queued = 0; stats.lastError = null; }
 
-module.exports = { init, record, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, backlog, stop, _reset };
+module.exports = { init, record, publish, moderationAction, pasteCreated, pasteUpdated, pasteDeleted, threadCreated, postCreated, commentCreated, status, backlog, stop, _reset };

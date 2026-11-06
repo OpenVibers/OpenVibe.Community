@@ -34,8 +34,8 @@ function mediaAbs(u) {
 function mediaW(u, w) {
     return /^https:\/\/openvibe\.media\/o\/med_[0-9A-Za-z]+$/.test(String(u || '')) ? `${u}?w=${w}` : u;
 }
-/** A screenshot's Media address when the stored row has no screenshot_url. */
-function screenshotFallback(slug) { return `${config.mediaUrl}/p/${encodeURIComponent(slug)}/screenshot`; }
+/** A screenshot's address: Community's checked proxy, never the Media object's own URL. */
+function screenshotSrc(p) { return `/p/${encodeURIComponent(p.slug)}/screenshot`; }
 
 function timeAgo(v) {
     const iso = ld.isoDate(v);
@@ -110,7 +110,7 @@ function pagerHref(state, page) {
 function pasteCard(p) {
     const isShot = p.type === 'screenshot';
     const preview = isShot
-        ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(mediaAbs(p.screenshot_url))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
+        ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(screenshotSrc(p))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
         : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
     const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
     return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}">
@@ -173,7 +173,7 @@ function homeStats(c = {}) {
  */
 function pasteKitCard(p) {
     const isShot = p.type === 'screenshot';
-    const image = isShot && !p.is_nsfw ? mediaAbs(p.screenshot_url) : '';
+    const image = isShot && !p.is_nsfw ? screenshotSrc(p) : '';
     return kit.card({
         href: `/p/${p.slug}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
         badge: p.is_nsfw ? 'NSFW' : p.origin === 'ai' ? 'AI' : p.pinned ? 'Pinned' : '',
@@ -380,18 +380,6 @@ function pasteDescription(p) {
     return ld.clean(`${p.title || 'Paste'} — ${languageLabel(p.language)} paste by ${authorName(p)}: ${String(p.content || '').slice(0, 200)}`, 200);
 }
 
-function shareLinks(p) {
-    const url = `${config.baseUrl}/p/${p.slug}`;
-    const text = `${p.title || 'A paste'} — ${SITE_NAME}`;
-    const u = encodeURIComponent(url), t = encodeURIComponent(text);
-    return `<div class="share" aria-label="Share">
-    <button type="button" class="btn btn-sm" data-copy-link="${esc(url)}"><i class="fa-solid fa-link" aria-hidden="true"></i> Copy link</button>
-    <a class="btn btn-sm" href="https://twitter.com/intent/tweet?url=${u}&text=${t}" target="_blank" rel="noopener"><i class="fa-brands fa-x-twitter" aria-hidden="true"></i> X</a>
-    <a class="btn btn-sm" href="https://bsky.app/intent/compose?text=${t}%20${u}" target="_blank" rel="noopener"><i class="fa-brands fa-bluesky" aria-hidden="true"></i> Bluesky</a>
-    <a class="btn btn-sm" href="https://www.reddit.com/submit?url=${u}&title=${t}" target="_blank" rel="noopener"><i class="fa-brands fa-reddit-alien" aria-hidden="true"></i> Reddit</a>
-    <a class="btn btn-sm" href="mailto:?subject=${t}&body=${u}"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Email</a>
-  </div>`;
-}
 
 /**
  * comments: the paste's typed thread as the comment service shows it to this viewer (null while nobody has
@@ -407,11 +395,18 @@ function withoutTitle(content, title) {
     return m && bare(m[1]) && bare(m[1]) === bare(title) ? text.slice(m[0].length) : text;
 }
 
-function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null }) {
+function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null, share = null }) {
     const isShot = p.type === 'screenshot';
     const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
-    const shot = isShot ? mediaAbs(p.screenshot_url) || screenshotFallback(p.slug) : null;
+    // The screenshot is Community's own address: the proxy checks canView, never the Media object's URL.
+    const shot = isShot ? screenshotSrc(p) : null;
+    // Specific people and Only me get a generic link preview, even for someone allowed to read them:
+    // a crawler or a chat client must never learn the title, the description or the picture.
+    const restricted = !!(share && (share.audience === 'people' || share.audience === 'private'));
+    const metaTitle = restricted ? 'A paste on OpenVibe Community' : title;
+    const metaDescription = restricted ? 'A paste shared with specific people on OpenVibe Community.' : description;
+    const metaImage = restricted ? undefined : (shot || undefined);
     // Pastes name their owner by Network subject; the projection cache supplies the display fields.
     const isOwner = !!(user && (p.is_owner === true
         || (p.owner_subject && user.subject_id && p.owner_subject === user.subject_id)
@@ -448,11 +443,14 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(p.slug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(p.slug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
     <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
-    ${p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
+    <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
+    ${!restricted && p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
 
+    const offer = share && share.transfer ? `<div id="paste-offer" data-transfer="${esc(share.transfer.id)}" data-username="${esc(p.username || '')}" data-display-name="${esc(p.display_name || '')}" data-expires="${esc(share.transfer.expires_at || '')}" data-keep-access="${share.transfer.keep_access ? '1' : '0'}"></div>` : '';
     const body = `
+${offer}
 <article class="paste" itemscope itemtype="https://schema.org/${isShot ? 'ImageObject' : 'Article'}">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/pastes">Pastes</a> › <span aria-current="page">${esc(ld.clean(title, 60))}</span></nav>
   <header class="paste-head">
@@ -463,7 +461,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
       <span class="sep">·</span><time datetime="${esc(ld.isoDate(p.created_at) || '')}" itemprop="datePublished">${esc(fmtDate(p.created_at))}</time>
       <span class="sep">·</span><span class="stat" title="Views"><i class="fa-solid fa-eye" aria-hidden="true"></i> ${num(p.views)} views</span>
       ${!isShot && hl ? `<span class="sep">·</span><span class="stat">${num(hl.lines)} lines</span>` : ''}
-      ${p.visibility && p.visibility !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="fa-solid fa-${p.visibility === 'private' ? 'lock' : 'eye-slash'}" aria-hidden="true"></i> ${esc(p.visibility)}</span>` : ''}
+      ${share && share.audience && share.audience !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="fa-solid fa-${share.audience === 'private' ? 'lock' : share.audience === 'people' ? 'users' : 'eye-slash'}" aria-hidden="true"></i> ${esc(share.audience === 'link' ? 'anyone with the link' : share.audience === 'people' ? 'specific people' : 'only me')}</span>` : ''}
       ${p.burn_after_read ? `<span class="sep">·</span><span class="badge badge-burn"><i class="fa-solid fa-fire" aria-hidden="true"></i> burns after reading</span>` : ''}
     </p>
     ${p.ai_summary ? `<p class="summary" itemprop="description"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> ${esc(p.ai_summary)}</p>` : ''}
@@ -471,7 +469,6 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
   </header>
   ${bodyBlock}
   <footer class="paste-foot">
-    ${shareLinks(p)}
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
 </article>
@@ -482,11 +479,23 @@ ${p.burn_after_read ? '' : `<section class="section" id="comments">
 ${related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(related)}
-</section>` : ''}`;
+</section>` : ''}
+<script src="${ovServe.url('ov-share.js')}" defer></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  if (!window.OVShare) return;
+  var offer = document.getElementById('paste-offer');
+  if (offer && offer.dataset.transfer) {
+    OVShare.offer(offer, { kind: 'paste', id: ${JSON.stringify(p.slug)}, transfer_id: offer.dataset.transfer,
+      from: { username: offer.dataset.username, display_name: offer.dataset.displayName }, title: ${JSON.stringify(restricted ? '' : title)}, expires_at: offer.dataset.expires || undefined,
+      keep_access: offer.dataset.keepAccess === '1' });
+  }
+});
+</script>`;
 
     return renderPage({
-        title,
-        description,
+        title: metaTitle,
+        description: metaDescription,
         canonicalPath: `/p/${p.slug}`,
         agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
         // A paste is link-shared content: reached by the link its author shares, not found by
@@ -495,14 +504,14 @@ ${related && related.length ? `<section class="section" id="related">
         // burn-after-read pastes were already noindex and stay so.
         robots: 'noindex',
         ogType: 'article',
-        ogImage: shot || undefined,
+        ogImage: metaImage,
         published: ld.isoDate(p.created_at) || undefined,
         modified: ld.isoDate(p.updated_at) || undefined,
         active: 'pastes',
         historyType: 'paste',
         historyTitle: title,
         footerVariant: 'compact',
-        jsonLd: [
+        jsonLd: restricted ? [] : [
             ld.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
             ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${p.slug}` }]),
         ],
@@ -586,6 +595,39 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
 }
 
 // ── Errors ───────────────────────────────────────────────────
+/**
+ * The page a person who is not on the list sees (design 2026-11-06): it never shows the title, the
+ * content, the screenshot or the comments. OVShare.gate offers "Ask for access" to somebody signed
+ * in and "Sign in" to everybody else; the plain fallback below is removed by the script.
+ */
+function gatePage({ slug, signedInAs = null, signInUrl = '/auth/login' }) {
+    const body = `<header class="page-head">
+  <h1>A paste on OpenVibe Community</h1>
+  <p class="muted">This is shared with specific people.</p>
+</header>
+<div id="paste-gate">
+  <p class="muted">This paste is shared with specific people on OpenVibe Community.</p>
+  <p><a class="btn btn-sm" href="${esc(signInUrl)}">Sign in</a></p>
+</div>
+<script src="${ovServe.url('ov-share.js')}" defer></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  var el = document.getElementById('paste-gate');
+  if (el && window.OVShare) OVShare.gate(el, { kind: 'paste', id: ${JSON.stringify(slug)},
+    signedInAs: ${JSON.stringify(signedInAs || '')}, signInUrl: ${JSON.stringify(signInUrl)} });
+});
+</script>`;
+    return renderPage({
+        title: 'A paste on OpenVibe Community',
+        description: 'A paste shared with specific people on OpenVibe Community.',
+        canonicalPath: `/p/${encodeURIComponent(slug)}`,
+        robots: 'noindex,nofollow',
+        active: 'pastes',
+        footerVariant: 'compact',
+        body,
+    });
+}
+
 function errorPage({ status = 500, title = 'Something went wrong', message = '', links = true }) {
     const body = `
 <section class="error">
@@ -597,4 +639,4 @@ function errorPage({ status = 500, title = 'Something went wrong', message = '',
     return renderPage({ title, description: message || title, canonicalPath: '/', robots: 'noindex,nofollow', footerVariant: 'compact', body });
 }
 
-module.exports = { homePage, updatesPage, browsePage, pastePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, mediaW, wearName };
+module.exports = { homePage, updatesPage, browsePage, pastePage, gatePage, newPage, myPage, errorPage, pasteCard, cardGrid, timeAgo, timeTag, fmtDate, num, authorHtml, avatarUrl, mediaW, wearName };

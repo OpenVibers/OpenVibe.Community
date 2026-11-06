@@ -57,7 +57,13 @@ const json = (description, schema) => ({ description, ...(schema ? { content: { 
 const body = (schema, required = true) => ({ required, content: { 'application/json': { schema } } });
 const nothing = (description) => ({ description });
 
-const pasteVisibility = { type: 'string', enum: ['public', 'unlisted', 'private'], default: 'public' };
+const pasteVisibility = { type: 'string', enum: ['public', 'unlisted', 'private'], default: 'public', deprecated: true, description: 'The old three words; sharing names the audience' };
+const pasteAudience = { type: 'string', enum: ['public', 'link', 'people', 'private'], default: 'public',
+    description: 'Everyone, anyone with the link, specific people (members), or only the owner' };
+const shareMember = { oneOf: [
+    { type: 'string', description: 'An exact @name' },
+    { type: 'object', required: ['name'], properties: { name: str(), role: { type: 'string', enum: ['viewer', 'editor'], default: 'viewer' }, expires_at: str({ format: 'date-time' }) } },
+] };
 
 const PATHS = {};
 function route(method, p, operation) {
@@ -79,14 +85,18 @@ route('post', '/api/pastes', {
     description: 'community.paste.create. The body is JSON, or multipart with a file (then it is a screenshot paste).',
     requestBody: { required: true, content: {
         'application/json': { schema: { type: 'object', required: ['content'], properties: {
-            title: str(), content: str(), language: str(), visibility: pasteVisibility, slug: str(),
+            title: str(), content: str(), language: str(), visibility: pasteVisibility, audience: pasteAudience, slug: str(),
+            members: { type: 'array', items: shareMember, maxItems: 100, description: 'audience people only: who may open it' },
+            transfer_to: str({ description: "An exact @name: offer this paste's ownership in the same call" }),
+            keep_access: { type: 'boolean', default: false, description: 'With transfer_to: the current owner keeps viewing' },
             burn_after_read: { type: 'boolean' }, is_nsfw: { type: 'boolean' }, stream_id: str({ pattern: '^\\d{1,18}$' }),
             metadata: { type: ['object', 'string'], description: 'Services only: a JSON object kept with the paste' },
             ai_summary: str({ maxLength: 2000, description: 'A service with community.paste.moderate' }),
             ai_tags: { type: ['array', 'string'], description: 'A service with community.paste.moderate' },
         } } },
         'multipart/form-data': { schema: { type: 'object', required: ['file'], properties: {
-            file: { type: 'string', format: 'binary' }, title: str(), description: str(), page_url: str(), visibility: pasteVisibility,
+            file: { type: 'string', format: 'binary' }, title: str(), description: str(), page_url: str(), visibility: pasteVisibility, audience: pasteAudience,
+            members: str({ description: 'audience people only: @names, comma or space separated' }), transfer_to: str(), keep_access: { type: 'boolean' },
             burn_after_read: { type: 'boolean' }, is_nsfw: { type: 'boolean' },
         } } },
     } },
@@ -656,6 +666,26 @@ function openapi() {
             contact: { name: 'OpenVibers', url: 'https://github.com/OpenVibers/OpenVibe.Community', email: 'contact@openvibe.network' },
         },
         servers: [{ url: SITE }],
+        // The uniform share API is served by openvibe-sdk/share's router (not a route Express lists in
+        // its stack), so it is described here rather than under paths. docs/sharing.md has the page.
+        'x-sharing': {
+            description: 'One audience per paste and a transfer, chosen by its owner. Every read (page, raw, download, screenshot, JSON, comments, previews) asks the same canView check; people and private pastes are never listed, indexed, embedded or previewed with their title, description or picture.',
+            audiences: ['public', 'link', 'people', 'private'],
+            routes: [
+                'GET|PUT /api/v1/paste/{slug}/share',
+                'POST /api/v1/paste/{slug}/share/requests',
+                'POST /api/v1/paste/{slug}/share/requests/{id}/dismiss',
+                'POST /api/v1/paste/{slug}/share/transfer',
+                'POST /api/v1/paste/{slug}/share/transfer/{accept,decline,cancel}',
+                'GET /api/v1/share/people?name=',
+                'GET /api/v1/shared-with-me',
+            ],
+            createWithSharing: {
+                request: { content: 'the notes', audience: 'people', members: ['@maticus'], transfer_to: '@maticus', keep_access: false },
+                curl: `curl -X POST ${SITE}/api/pastes -H 'Authorization: Bearer $TOKEN' -H 'Content-Type: application/json' -d '{"content":"the notes","audience":"people","members":["@maticus"],"transfer_to":"@maticus","keep_access":false}'`,
+            },
+            docs: `${SITE}/docs/sharing`,
+        },
         tags: ['pastes', 'pastes-admin', 'submissions', 'comments', 'pulse', 'spaces', 'posts', 'relay', 'resources'].map((name) => ({ name })),
         components: {
             securitySchemes: {

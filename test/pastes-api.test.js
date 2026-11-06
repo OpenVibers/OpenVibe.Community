@@ -271,7 +271,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(out.slug, p.slug);
         assert.strictEqual(p.type, 'screenshot');
         assert.strictEqual(p.owner_subject, alex.subject_id);
-        assert.ok(up.v2 && up.kind === 'screenshot' && up.visibility === 'unlisted', 'a v2 Media object: unlisted screenshot');
+        assert.ok(up.v2 && up.kind === 'screenshot' && up.visibility === 'private', 'a v2 Media object: private screenshot');
         assert.strictEqual(up.owner, alex.subject_id, 'owned by the person');
         assert.strictEqual(p.screenshot_url, `https://openvibe.media/o/${up.key}`);
         assert.strictEqual(p.title, 'My desk');
@@ -321,7 +321,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.match(plain.json().slug, /^[a-z]+-[a-z]+-\d{2,4}$/, 'a public non-burn paste keeps its short slug');
     });
 
-    await check('/p/:slug/raw is served from the store (nosniff, private rules); /p/:slug/screenshot → stored URL', async () => {
+    await check('/p/:slug/raw is served from the store (nosniff, private rules); /p/:slug/screenshot is the checked proxy', async () => {
         const raw = await call(`/p/${alexSlug}/raw`);
         assert.strictEqual(raw.status, 200);
         assert.strictEqual(raw.headers.get('content-type'), 'text/plain; charset=utf-8');
@@ -334,8 +334,10 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(api.status, 302);
         assert.strictEqual(api.headers.get('location'), `/p/${alexSlug}/raw`);
         const shot = await call(`/p/${shotSlug}/screenshot`);
-        assert.strictEqual(shot.status, 302);
-        assert.match(shot.headers.get('location'), /^https:\/\/openvibe\.media\/o\/med_/);
+        assert.strictEqual(shot.status, 200, shot.text);
+        assert.strictEqual(shot.headers.get('content-type'), 'image/jpeg');
+        assert.ok(shot.text.includes('pixels'), 'the proxy serves the bytes');
+        assert.strictEqual(shot.headers.get('location'), null, 'never a Media URL');
         assert.strictEqual((await call(`/p/${shotSlug}/raw`)).headers.get('location'), `/p/${shotSlug}/screenshot`);
         assert.strictEqual((await call(`/p/${alexSlug}/screenshot`)).status, 404);
         const burn = (await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'once', burn_after_read: true } })).json().slug;

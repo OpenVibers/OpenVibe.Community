@@ -38,6 +38,7 @@ const INVENTORY = {
     'server/relay/discord.js': [1, 'a Discord webhook URL read from an environment variable the owner allowlisted; mappings name the variable, never a URL'],
     'server/relay/events-worker.js': [3, 'Events pull API (EVENTS_URL) with a service token'],
     'server/search/query.js': [1, 'OV_SEARCH_INTERNAL_URL /api/v1/search, the query in URLSearchParams'],
+    'server/sharing.js': [2, 'Network identity resolve/resolve-batch and /internal/notifications/push (OV_NETWORK_INTERNAL_URL, fixed paths) with a service token; a name is an exact @name, never a URL'],
     'server/vip/index.js': [2, 'OV_VIP_INTERNAL_URL policy evaluate, service token'],
 };
 const PATTERNS = [

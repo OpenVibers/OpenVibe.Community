@@ -11,20 +11,48 @@ const { serviceAuth, ids } = require('openvibe-contracts');
 
 function start({ publicPem, issuer }) {
     const uploads = [];
+    const deletes = [];             // v2 object ids a DELETE removed
     const pending = new Map();      // v2 objects between init and complete
     let failNext = false;
+    let failNextDelete = false;
     const server = http.createServer((req, res) => {
         const chunks = [];
         req.on('data', (c) => chunks.push(c));
         req.on('end', () => {
             const json = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
             if (req.method === 'GET' && req.url === '/healthz') return json(200, { ok: true, service: 'mock-media' });
-            const v2 = req.url.match(/^\/api\/v2\/community\/objects(?:\/(med_[0-9A-Z]+)\/(content|complete))?$/);
+            // A public object's bytes (a private one is reached through /download, below).
+            const open = req.url.match(/^\/o\/(med_[0-9A-Z]+)$/);
+            if (open && req.method === 'GET') {
+                const o = uploads.find((u) => u.key === open[1]);
+                if (!o) return json(404, { error: 'not found' });
+                res.writeHead(200, { 'Content-Type': o.mime }); return res.end(o.bytes);
+            }
+            const del = req.url.match(/^\/api\/v2\/community\/objects\/(med_[0-9A-Z]+)$/);
+            if (del && req.method === 'DELETE') {
+                const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
+                if (!v.ok) return json(401, { code: v.code, error: v.reason });
+                if (!(v.claims.cap || []).includes('media.object.delete')) return json(403, { code: 'capability.denied', error: 'not granted' });
+                if (failNextDelete) { failNextDelete = false; return json(500, { error: 'delete failed' }); }
+                const i = uploads.findIndex((u) => u.key === del[1]);
+                if (i < 0) return json(404, { code: 'media.object.not_found' });
+                uploads.splice(i, 1);
+                deletes.push(del[1]);
+                return json(200, { id: del[1], lifecycle_status: 'deleted' });
+            }
+            const v2 = req.url.match(/^\/api\/v2\/community\/objects(?:\/(med_[0-9A-Z]+)\/(content|complete|download))?(?:\?.*)?$/);
             if (!v2 && (req.method !== 'POST' || req.url !== '/api/v1/community/files')) return json(404, { error: 'not found' });
             const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
             if (!v.ok) return json(401, { code: v.code, error: v.reason });
-            if (!(v.claims.cap || []).includes('media.object.upload')) return json(403, { code: 'capability.denied', error: 'not granted' });
+            const verb = v2 && req.method === 'GET' && v2[2] === 'download' ? 'media.object.read' : 'media.object.upload';
+            if (!(v.claims.cap || []).includes(verb)) return json(403, { code: 'capability.denied', error: 'not granted' });
             const body = Buffer.concat(chunks);
+            if (v2 && req.method === 'GET' && v2[2] === 'download') {
+                const o = uploads.find((u) => u.key === v2[1]);
+                if (!o) return json(404, { code: 'media.object.not_found' });
+                // Private objects answer a short-lived URL of their own; the shape is what Community reads.
+                return json(200, { url: `http://127.0.0.1:${server.address().port}/o/${o.key}`, public: o.visibility !== 'private' });
+            }
             if (v2) {
                 if (req.method === 'POST' && !v2[1]) {
                     if (failNext) { failNext = false; return json(500, { error: 'disk full' }); }
@@ -63,8 +91,9 @@ function start({ publicPem, issuer }) {
     });
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({
         url: `http://127.0.0.1:${server.address().port}`,
-        uploads,
+        uploads, deletes,
         failNext: () => { failNext = true; },
+        failNextDelete: () => { failNextDelete = true; },
         close: () => new Promise((r) => server.close(r)),
     })));
 }

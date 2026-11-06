@@ -155,7 +155,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         assert.strictEqual((await send('GET', `/api/pastes/${priv.slug}`, { who: alex })).json().paste.content, `${M.PRIVBODY} zebra`);
         assert.strictEqual((await send('GET', `/p/${priv.slug}/raw`, { who: alex })).text, `${M.PRIVBODY} zebra`);
         assert.ok((await send('GET', `/p/${priv.slug}`, { who: alex })).text.includes(M.PRIVTITLE));
-        assert.strictEqual((await send('GET', `/p/${privShot.slug}/screenshot`, { who: alex })).status, 302);
+        assert.strictEqual((await send('GET', `/p/${privShot.slug}/screenshot`, { who: alex })).status, 200, 'the checked proxy serves the owner');
         assert.ok((await send('GET', `/api/pastes/${priv.slug}/comments`, { who: alex })).text.includes(M.PRIVCOMMENT));
         assert.strictEqual((await send('GET', `/api/pastes/${priv.slug}`, svcFor(alex))).status, 200, 'a service acting for the owner');
     });
@@ -177,13 +177,13 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
     await check('burn-after-read screenshots: the screenshot link is the read (a second read of any kind finds it burned)', async () => {
         const first = await send('GET', `/p/${burnShot.slug}/screenshot`, { who: sam });
-        assert.strictEqual(first.status, 302, first.text);
+        assert.strictEqual(first.status, 200, first.text);
         const again = await send('GET', `/p/${burnShot.slug}/screenshot`, { who: sam });
         assert.ok(again.status === 404 || again.status === 410, `the screenshot was served again: ${again.status}`);
         assert.ok([404, 410].includes((await send('GET', `/api/pastes/${burnShot.slug}`)).status), 'the paste burned');
         // The owner's own looks do not burn it.
         const mineToo = await shotPaste(alex, { title: 'mine', burn_after_read: 'true' });
-        for (let i = 0; i < 3; i++) assert.strictEqual((await send('GET', `/p/${mineToo.slug}/screenshot`, { who: alex })).status, 302);
+        for (let i = 0; i < 3; i++) assert.strictEqual((await send('GET', `/p/${mineToo.slug}/screenshot`, { who: alex })).status, 200);
         assert.strictEqual((await send('GET', `/api/pastes/${mineToo.slug}`, { who: sam })).status, 200, 'still unread');
     });
 

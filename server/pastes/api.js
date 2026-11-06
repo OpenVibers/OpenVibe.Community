@@ -42,6 +42,13 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
+    // Every paste read is per-person (a link or a people paste answers someone and not the next
+    // reader), and Cloudflare ignores Vary and Authorization: no GET of this API may ever sit in a
+    // shared cache, at the edge or in a browser. That includes a 404 and a refusal.
+    router.use((req, res, next) => {
+        if (req.method === 'GET' || req.method === 'HEAD') res.set('Cache-Control', 'private, no-store');
+        next();
+    });
     // Per-actor limits (server/actor-limits.js): reads take the defaults. The paste service's own limits
     // (a person's cooldown and daily cap, comment limits) keep deciding for people; these cap requests,
     // refused ones included, and the writes without a content limit. Live's AI pastes count as svc:live.
