@@ -194,7 +194,8 @@ async function createApp(opts = {}) {
                 return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id };
             },
         };
-        const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits, pulse, indexnow });
+        const review = opts.review || require('./pastes/review').createPasteReview({ config });
+        const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits, pulse, indexnow, review });
         source.use(service);
         app.locals.pastes = service;
     }

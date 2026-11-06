@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Unsafe-image review (VIS-6): image pastes are reviewed by OpenVibe.Vision (`OV_VISION_URL`) before they are
+  returned. `fine` keeps its visibility, `sex_acts` becomes private and NSFW, `minor_sexual` becomes private,
+  NSFW and quarantined with the operator report id. A Vision outage makes the paste private and pending; the
+  owner cannot re-publish a reviewed paste. Migration `0015_paste_reviews.sql`, `server/pastes/review.js`, tests
+  `test/paste-review.test.js`.
+
 - Threads carry content labels (L1, labels and choices, 2026-11-02): `migrations/0013_thread_content_labels.sql` adds
   `threads.content_labels` (`{ labels, suggested }`, common.content-labels@1). The author or a moderator sets them on the
   new-thread form, in a Labels box on the thread, or with `PUT /api/v1/spaces/:space/threads/:slug/labels`. Lists and

@@ -105,6 +105,13 @@ Moments feeds read it.
   (`POST ${OV_MEDIA_INTERNAL_URL}/api/v1/community/files`, service token with
   `media.object.upload`); the paste keeps the public URL and `media_ref`
   `legacy:community:file:<key>`. Imported pastes keep their existing Media screenshot URLs.
+- **Unsafe-image review (VIS-6)**: with `OV_VISION_URL` and Community's service principal, an image paste is
+  reviewed before it is returned. Vision sorts it into exactly three categories: `fine` keeps its visibility;
+  `sex_acts` becomes private and NSFW (gone from every public list, Pulse, search, sitemap and anonymous page,
+  kept for its owner); `minor_sexual` becomes private, NSFW and quarantined with the operator report id. If
+  Vision is unreachable the paste becomes private and `review_status='pending'`, never public. Text pastes are
+  not reviewed. `paste.review_category`, `review_status`, `review_report_id` and `reviewed_at` are in the paste
+  shape; the enforcement lives in `server/pastes/review.js`. Tests: `test/paste-review.test.js`.
 - **Slugs**: public pastes get a short `adj-noun-NN` slug; a new unlisted or private paste (and
   a fork of one) gets `adj-noun-` + 16 random base62 characters, because its slug is the only
   thing keeping it unlisted. Existing slugs never change and keep working.
@@ -667,6 +674,8 @@ pages (rendered for the person reading them), raw and download are `private, no-
 robots/llms/sitemap are public for 1 h, `/feed.xml` 15 min and the thread feeds 5 min.
 
 ## Configuration
+
+- `OV_VISION_URL` — OpenVibe.Vision's base URL for the unsafe-image review; unset means no image review runs.
 
 Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0600).
 

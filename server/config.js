@@ -46,6 +46,12 @@ module.exports = {
     // OpenVibe.Search's query API (the /search page), asked anonymously: public documents only.
     searchInternalUrl: (process.env.OV_SEARCH_INTERNAL_URL || 'http://127.0.0.1:4710').replace(/\/$/, ''),
     liveUrl: (process.env.OV_LIVE_URL || 'https://openvibe.live').replace(/\/$/, ''),
+    // OpenVibe.Vision — the unsafe-image review (VIS-6). Unset or without Community's service principal:
+    // no review runs and image pastes keep their old behaviour.
+    vision: {
+        url: (process.env.OV_VISION_URL || process.env.VISION_URL || '').replace(/\/$/, ''),
+    },
+
     // OpenVibe.Media — public host that serves raw paste text and screenshots.
     mediaUrl: (process.env.OV_MEDIA_URL || 'https://openvibe.media').replace(/\/$/, ''),
     // Media's internal address: new screenshot uploads go to its file store (community app).
