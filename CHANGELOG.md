@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The screenshot move script (2026-11-06) no longer reads a 404 from Media's community tenant as "already gone": for a
+  `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste
+  route. `--apply` pages with an id cursor and reaches every paste in one run, `--retire-ids <file>` retires named objects
+  whose paste record was lost (one Media id per line), and the dry run prints the moves, retires and refusals it would make.
+
 - Sharing reaches pastes (design 2026-11-06, the pilot): `openvibe-sdk` v0.85.0 and `openvibe-shared` v4.114.0, with
   `openvibe-contracts` v0.291.0. `migrations/0015_sharing.sql` adds openvibe-sdk/share's tables (expand), and
   `migrations/0016_sharing_backfill.sql` registers every existing paste once (public→public, unlisted→link,
