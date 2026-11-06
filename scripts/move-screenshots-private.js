@@ -13,13 +13,32 @@
  * The old id is recorded as `previous_media_ref` before the delete, so a failed delete is retried on
  * the next run instead of being forgotten.
  *
- *   npm run screenshots:private -- --limit 50          # a dry run of 50
- *   npm run screenshots:private -- --apply             # move every one (batches of 50)
- *   npm run screenshots:private -- --apply --keep-old  # move, but leave the old objects (an operator's call)
+ * The old object may be Community's own (delete it through the community tenant) or an inherited
+ * Live-era paste screenshot (`legacy:live:paste:<slug>` in Media's live tenant). Media's
+ * tenant-scoped delete answers 404 for the latter and its v2 delete refuses every legacy object, so
+ * the script retires those through Media's internal legacy-paste route. A 404 is therefore a failure
+ * that keeps `previous_media_ref`: it never means "already gone".
+ *
+ * --apply pages through every screenshot paste with an id cursor, in batches of --limit (500 by
+ * default), so one run reaches every row instead of re-reading the first batch forever. A dry run
+ * looks at one batch (50 by default) and prints what it would do: moves, retires and refusals.
+ *
+ *   npm run screenshots:private -- --limit 50              # a dry run of 50
+ *   npm run screenshots:private -- --apply                 # move every one (batches of --limit, 500 by default)
+ *   npm run screenshots:private -- --apply --keep-old       # move, but leave the old objects (an operator's call)
+ *   npm run screenshots:private -- --retire-ids ids.txt     # dry run of the ids only
+ *   npm run screenshots:private -- --apply --retire-ids ids.txt
+ *
+ * --retire-ids retires only the Media ids in the file, not the paste rows: for an object whose paste
+ * record was lost (the three from the 2026-11-06 pilot). One Media id per line; blank lines and `#`
+ * comments are ignored, and a line with anything else (the pilot note's "old … new …" lines) is
+ * ignored rather than guessed at, so a prose note cannot name an object that must stay.
  *
  * Idempotent: a paste whose metadata says media_visibility "private" is skipped, except that a
- * recorded previous_media_ref is deleted (or retried) on every run.
+ * recorded previous_media_ref is deleted (or retired) on every run. A second retire of the same
+ * object is Media's no-op.
  */
+const fs = require('fs');
 const { createMediaObjects } = require('../server/media/objects');
 const config = require('../server/config');
 
@@ -37,23 +56,65 @@ function oldObjectId(row) {
     return m ? m[1] : null;
 }
 
-async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis.fetch, log = console, limit = 50, apply = false, keepOld = false } = {}) {
-    const rows = await db.prepare(`SELECT id, slug, owner_subject, screenshot_url, media_ref, metadata FROM pastes
-        WHERE type = 'screenshot' AND deleted_at IS NULL AND screenshot_url IS NOT NULL
-        ORDER BY id LIMIT ?`).all(limit);
-    const out = { seen: 0, moved: 0, deleted: 0, deleteFailed: 0, notDeletable: 0, skipped: 0, failed: 0, failures: [] };
+/** The Media ids named in a --retire-ids file: exactly one id per line, deduplicated in order. */
+function readRetireIds(file) {
+    const ids = [];
+    for (const line of String(fs.readFileSync(file, 'utf8')).split(/\r?\n/)) {
+        const text = line.replace(/#.*$/, '').trim();
+        if (MEDIA_RE.test(text) && !ids.includes(text)) ids.push(text);
+    }
+    return ids;
+}
 
+/**
+ * Move every unprivate screenshot paste, or retire the ids in --retire-ids, or (a dry run) say what
+ * would happen. Returns the counts printed by main(); failures never clear previous_media_ref.
+ */
+async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis.fetch, log = console, limit = 50, apply = false, keepOld = false, retireIds = null } = {}) {
+    const pageSize = Math.max(1, parseInt(limit, 10) || 50);
+    const out = {
+        seen: 0, moved: 0, deleted: 0, retired: 0, alreadyRetired: 0, deleteFailed: 0, retireFailed: 0,
+        refused: 0, notDeletable: 0, skipped: 0, failed: 0, batches: 0, dryRun: !apply,
+        plan: { move: 0, retire: 0, refuse: 0 }, failures: [],
+    };
+
+    const refuse = (row, id, why) => {
+        out.notDeletable++;
+        out.failures.push({ slug: row && row.slug, object: id, error: why });
+        log.warn(`${row ? row.slug : id}: ${why}; the reference is kept and retried next run`);
+    };
+
+    /**
+     * Delete Community's own object, or retire a legacy Live paste screenshot on the 404. A 409 or
+     * any other answer is a refusal/failure, never "gone". previous_media_ref was written first.
+     */
     const removeOld = async (row, meta, id) => {
-        // previous_media_ref is written before the delete: a crash or a refusal leaves a retryable record.
         const withRef = { ...meta, previous_media_ref: id };
         await db.prepare('UPDATE pastes SET metadata = ?, updated_at = ov_now() WHERE id = ?').run(JSON.stringify(withRef), row.id);
         try {
-            await mediaObjects.deleteObject(id);
+            try {
+                await mediaObjects.deleteObject(id);
+                out.deleted++;
+                log.log(`deleted old object ${id} of ${row.slug}`);
+            } catch (err) {
+                if (err.status !== 404) {
+                    if (err.status === 409 || err.status === 403) out.refused++;
+                    throw err;
+                }
+                try {
+                    const r = await mediaObjects.retireLegacyPaste(id);
+                    out.retired++;
+                    if (r && r.changed === false) out.alreadyRetired++;
+                    log.log(`retired legacy old object ${id} of ${row.slug}`);
+                } catch (retireErr) {
+                    out.retireFailed++;
+                    if (retireErr.status === 409 || retireErr.status === 403 || retireErr.status === 404) out.refused++;
+                    throw retireErr;
+                }
+            }
             const cleared = { ...withRef };
             delete cleared.previous_media_ref;
             await db.prepare('UPDATE pastes SET metadata = ?, updated_at = ov_now() WHERE id = ?').run(JSON.stringify(cleared), row.id);
-            out.deleted++;
-            log.log(`deleted old object ${id} of ${row.slug}`);
             return true;
         } catch (err) {
             out.deleteFailed++;
@@ -63,20 +124,40 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
         }
     };
 
-    for (const row of rows) {
+    const planRef = (row, id) => {
+        if (!MEDIA_RE.test(String(id))) {
+            out.plan.refuse++;
+            refuse(row, id, 'the old screenshot is not a Media v2 object id');
+            return;
+        }
+        out.plan.retire++;
+        log.log(`would delete/retire old object ${id} of ${row.slug}`);
+    };
+
+    const processRow = async (row) => {
         out.seen++;
         const meta = parseMeta(row.metadata);
         const old = oldObjectId(row);
         // Already private: only a pending old-object delete remains.
         if (meta.media_visibility === 'private') {
             if (meta.previous_media_ref && !keepOld) {
-                if (!apply) { out.skipped++; continue; }
-                if (!MEDIA_RE.test(String(meta.previous_media_ref))) { out.notDeletable++; continue; }
+                if (!apply) { planRef(row, String(meta.previous_media_ref)); return; }
+                if (!MEDIA_RE.test(String(meta.previous_media_ref))) {
+                    refuse(row, String(meta.previous_media_ref), 'the recorded old screenshot is not a Media v2 object id');
+                    return;
+                }
                 await removeOld(row, meta, String(meta.previous_media_ref));
             } else out.skipped++;
-            continue;
+            return;
         }
-        if (!apply) { out.skipped++; continue; }
+        if (!apply) {
+            out.plan.move++;
+            log.log(`would move ${row.slug} → private (old object ${old || 'not a Media v2 object'})`);
+            if (keepOld) out.skipped++;
+            else if (old) planRef(row, old);
+            else { out.plan.refuse++; refuse(row, null, 'the old screenshot is not a Media v2 object'); }
+            return;
+        }
         try {
             const res = await fetchImpl(row.screenshot_url, { signal: AbortSignal.timeout(30_000) });
             if (!res.ok) throw new Error(`read ${res.status}`);
@@ -95,13 +176,52 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
             if (!keepOld) {
                 if (old) await removeOld(row, next, old);
                 // A legacy:community:file object has no v2 id to delete; it is left in place and said so.
-                else { out.notDeletable++; log.warn(`${row.slug}: the old screenshot is not a Media v2 object; left in place`); }
+                else refuse(row, null, 'the old screenshot is not a Media v2 object');
             }
         } catch (err) {
             out.failed++;
             out.failures.push({ slug: row.slug, error: err.message });
             log.warn(`could not move ${row.slug}: ${err.message}`);
         }
+    };
+
+    // A lost paste record: retire exactly the named objects, no paste scan.
+    if (retireIds) {
+        for (const id of retireIds) {
+            out.seen++;
+            if (!MEDIA_RE.test(String(id))) {
+                out.refused++;
+                refuse(null, id, 'not a Media object id');
+                continue;
+            }
+            if (!apply) { out.plan.retire++; log.log(`would retire ${id}`); continue; }
+            try {
+                const r = await mediaObjects.retireLegacyPaste(id);
+                out.retired++;
+                if (r && r.changed === false) out.alreadyRetired++;
+                log.log(`${r && r.changed === false ? 'already retired' : 'retired'} ${id}`);
+            } catch (err) {
+                out.retireFailed++;
+                if (err.status === 409 || err.status === 403 || err.status === 404) out.refused++;
+                out.failures.push({ object: id, error: `retire: ${err.message}` });
+                log.warn(`could not retire ${id}: ${err.message}`);
+            }
+        }
+        return out;
+    }
+
+    // Page with an id cursor: the old `ORDER BY id LIMIT` re-read the same first batch on every run.
+    let cursor = 0;
+    for (;;) {
+        const rows = await db.prepare(`SELECT id, slug, owner_subject, screenshot_url, media_ref, metadata FROM pastes
+            WHERE type = 'screenshot' AND deleted_at IS NULL AND screenshot_url IS NOT NULL AND id > ?
+            ORDER BY id LIMIT ?`).all(cursor, pageSize);
+        out.batches++;
+        if (!rows.length) break;
+        cursor = rows[rows.length - 1].id;
+        for (const row of rows) await processRow(row);
+        if (!apply) break;                       // a dry run reports one batch
+        if (rows.length < pageSize) break;
     }
     return out;
 }
@@ -109,16 +229,24 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
 async function main(argv = process.argv.slice(2)) {
     const apply = argv.includes('--apply');
     const keepOld = argv.includes('--keep-old');
-    const i = argv.indexOf('--limit');
-    const limit = i >= 0 ? Math.max(1, parseInt(argv[i + 1], 10) || 50) : (apply ? 500 : 50);
+    const li = argv.indexOf('--limit');
+    const limit = li >= 0 ? Math.max(1, parseInt(argv[li + 1], 10) || 50) : (apply ? 500 : 50);
+    const ri = argv.indexOf('--retire-ids');
+    let retireIds = null;
+    if (ri >= 0) {
+        const file = argv[ri + 1];
+        if (!file || file.startsWith('--')) throw new Error('--retire-ids needs a file of Media object ids');
+        retireIds = readRetireIds(file);
+        if (!retireIds.length) throw new Error(`no Media object ids in ${file}`);
+    }
     const { openDb } = require('../server/db');
     const db = await openDb(config);
     try {
         const mediaObjects = createMediaObjects({ config });
         if (!mediaObjects.configured) throw new Error('Media needs Community\'s service principal (OV_OAUTH_CLIENT_SECRET)');
-        const out = await moveScreenshotsPrivate({ db, mediaObjects, limit, apply, keepOld });
+        const out = await moveScreenshotsPrivate({ db, mediaObjects, limit, apply, keepOld, retireIds });
         console.log(JSON.stringify(out, null, 2));
-        if (!apply) console.log('dry run: pass --apply to move them');
+        if (!apply) console.log(retireIds ? 'dry run: pass --apply to retire these ids' : 'dry run: pass --apply to move them');
     } finally {
         await db.close();
     }
@@ -126,4 +254,4 @@ async function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main().catch((err) => { console.error(err.message || err); process.exitCode = 1; });
 
-module.exports = { moveScreenshotsPrivate, oldObjectId };
+module.exports = { moveScreenshotsPrivate, oldObjectId, readRetireIds };
