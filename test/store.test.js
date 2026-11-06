@@ -215,7 +215,7 @@ async function rejects(p, status, message) {
         // Anonymous callers aren't limited here (the per-address limiter in api.js is).
         await strict.createText(anon, { content: 'x' });
         await strict.createText(anon, { content: 'y' });
-        assert.deepStrictEqual(Object.keys(await capped.config(dave)), ['maxSizeKb', 'screenshotMaxSizeMb', 'cooldownSeconds', 'maxPerUserPerDay', 'todayCount']);
+        assert.deepStrictEqual(Object.keys(await capped.config(dave)), ['maxSizeKb', 'screenshotMaxSizeMb', 'cooldownSeconds', 'maxPerUserPerDay', 'lockedMaxSizeKb', 'todayCount']);
         assert.strictEqual((await capped.config(dave)).todayCount, 1);
     });
 

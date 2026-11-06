@@ -109,6 +109,13 @@
       var status = $('[data-status]', form);
       var tabs = $$('.tab', form); var mode = 'text';
       tabs.forEach(function (t) { t.hidden = false; });
+      var lockSection = $('[data-lock-it]', form);
+      var visField = $('[data-vis-field]', form);
+      var audienceLine = $('[data-lock-audience]', form);
+      var audienceText = $('[data-lock-audience-text]', form);
+      var LOCK_AUDIENCE = { people: 'For the people on the list', password: 'Anyone with the password', link: 'Anyone with the link' };
+      var syncLock = null;
+      var lockOn = function () { return !!(form.elements.lock_it && form.elements.lock_it.checked); };
       function setMode(m) {
         mode = m;
         tabs.forEach(function (t) { var on = t.getAttribute('data-tab') === m; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
@@ -117,6 +124,31 @@
         if (content) content.required = m === 'text';
         if (file) { file.disabled = m !== 'image'; file.required = m === 'image'; }
         if (lang) lang.closest('.field').style.display = m === 'image' ? 'none' : '';
+        // A screenshot stays on the proxy: locking is offered for text only.
+        if (lockSection) lockSection.hidden = m !== 'text';
+        if (syncLock) syncLock();
+      }
+      // Lock it (Locker): revealed here, never without JavaScript, because the sealing happens in this browser.
+      if (lockSection) {
+        lockSection.hidden = false;
+        var lockBody = $('[data-lock-body]', form);
+        syncLock = function () {
+          var on = lockOn() && mode === 'text';
+          if (lockBody) lockBody.hidden = !on;
+          // The audience is the lock's (Specific people, or the link), so the column is replaced by one read-only line
+          // naming it, and comes back when Lock it is off.
+          var vis = form.elements.visibility;
+          var kind = (form.querySelector('input[name="lock_kind"]:checked') || {}).value || 'people';
+          if (vis) vis.disabled = on;
+          if (visField) visField.hidden = on;
+          if (audienceLine) audienceLine.hidden = !on;
+          if (audienceText) audienceText.textContent = LOCK_AUDIENCE[kind] || kind;
+          if (!on) return;
+          $$('[data-lock-for]', form).forEach(function (d) { d.hidden = d.getAttribute('data-lock-for') !== kind; });
+        };
+        form.elements.lock_it.addEventListener('change', syncLock);
+        $$('input[name="lock_kind"]', form).forEach(function (r) { r.addEventListener('change', syncLock); });
+        syncLock();
       }
       tabs.forEach(function (t) { t.addEventListener('click', function () { setMode(t.getAttribute('data-tab')); }, { signal }); });
       setMode('text');
@@ -126,10 +158,95 @@
       form.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files[0]) { e.preventDefault(); takeFile(e.dataTransfer.files[0]); } }, { signal });
       document.addEventListener('paste', function (e) { var items = e.clipboardData && e.clipboardData.items; if (!items) return; for (var i = 0; i < items.length; i++) { if (items[i].kind === 'file') { takeFile(items[i].getAsFile()); e.preventDefault(); return; } } }, { signal });
 
+      // The Locker, loaded only when a locked paste is actually being made.
+      function loadLocker() {
+        return new Promise(function (resolve, reject) {
+          if (window.OVLocker) return resolve(window.OVLocker);
+          window.OpenVibeLockerConfig = { network: form.getAttribute('data-lock-network') || 'https://openvibe.network' };
+          var s = document.createElement('script');
+          s.src = '/shared/ov-locker.js';
+          s.onload = function () { window.OVLocker ? resolve(window.OVLocker) : reject(new Error('The Locker could not start.')); };
+          s.onerror = function () { reject(new Error('The Locker could not load. Check your connection and try again.')); };
+          document.head.appendChild(s);
+        });
+      }
+      function b64(u8) { var s = ''; for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); }
+
+      /**
+       * A locked paste: the plaintext never leaves this page. The document is sealed here, the envelope is what goes
+       * up, and a people lock names who it is wrapped for (their public keys, each checked before anything is sent).
+       */
+      async function submitLocked(el) {
+        var content = String(el.content.value || '');
+        if (!content.trim()) throw new Error('Paste something first — the content is empty.');
+        var kind = (form.querySelector('input[name="lock_kind"]:checked') || {}).value || 'people';
+        var L = await loadLocker();
+        await L.ensure();
+        var pub = await L.publicKeys();
+        var doc = JSON.stringify({ v: 1, type: 'paste', title: String(el.title.value || ''), content: content, language: String(el.language.value || 'auto') });
+        var body = {
+          locked: true, title: String(el.title.value || ''), show_title: !!(el.show_title && el.show_title.checked),
+          is_nsfw: !!el.is_nsfw.checked,
+        };
+        var sealed;
+        if (kind === 'people') {
+          var names = String(el.lock_people.value || '').split(/[\s,;]+/).map(function (n) { return n.trim().replace(/^@+/, ''); }).filter(Boolean);
+          if (!names.length) throw new Error('Name at least one person to lock it for.');
+          var me = { type: 'user', id: form.getAttribute('data-subject') };
+          if (!me.id) throw new Error('Sign in again to lock a paste.');
+          var keys = [{ subject: me, publicKey: pub.ecdh }];
+          var people = [];
+          for (var i = 0; i < names.length; i++) {
+            status.textContent = 'Checking @' + names[i] + '…';
+            var found = await api('/api/v1/share/people?name=' + encodeURIComponent(names[i]));
+            if (!found.person) throw new Error('No OpenVibe account is called @' + names[i] + '.');
+            var k = await L.keys(found.person.subject);
+            if (!k) throw new Error('@' + names[i] + ' has no locker yet: they make one the first time they open a locked item.');
+            keys.push({ subject: found.person.subject, publicKey: k.ecdh_public || k.ecdh });
+            people.push({ name: names[i], role: 'viewer', subject: found.person.subject });
+          }
+          status.textContent = 'Sealing on your device…';
+          sealed = await L.seal(doc, { lock: 'people', keys: keys });
+          var slots = (sealed.header.slots && sealed.header.slots.people) || [];
+          body.members = people.map(function (p) {
+            var slot = null;
+            for (var j = 0; j < slots.length; j++) if (slots[j].subject.id === p.subject.id && slots[j].subject.type === p.subject.type) slot = slots[j];
+            return slot ? { name: p.name, role: p.role, key_slot: slot } : null;
+          });
+          if (body.members.some(function (m) { return !m; })) throw new Error('A key is missing; try again.');
+          body.audience = 'people';
+        } else if (kind === 'password') {
+          var password = String(el.lock_password.value || '');
+          if (password.length < 12) throw new Error('Make the password longer: 12 characters or more, or a few words.');
+          status.textContent = 'Sealing on your device…';
+          sealed = await L.seal(doc, { lock: 'password', password: password });
+          body.audience = 'link';
+        } else {
+          status.textContent = 'Sealing on your device…';
+          sealed = await L.seal(doc, { lock: 'link' });
+          body.audience = 'link';
+        }
+        body.envelope = b64(sealed.bytes);
+        var out = await api('/api/pastes', { method: 'POST', json: body });
+        var slug = out && (out.slug || (out.paste && out.paste.slug));
+        if (!slug) throw new Error('No paste came back');
+        status.textContent = 'Done — opening your paste…';
+        location.href = '/p/' + encodeURIComponent(slug) + (sealed.linkKey ? '#k=' + sealed.linkKey : '');
+      }
+
       form.addEventListener('submit', function (e) {
         e.preventDefault();
-        var btn = $('button[type="submit"]', form); btn.disabled = true; status.className = 'form-status'; status.textContent = 'Creating…';
+        var btn = $('button[type="submit"]', form); btn.disabled = true; status.className = 'form-status';
         var el = form.elements; var p;
+        if (lockOn() && mode === 'text') {
+          status.textContent = 'Preparing your locker…';
+          submitLocked(el).catch(function (err) {
+            btn.disabled = false; status.className = 'form-status error';
+            status.textContent = err.status === 429 && err.data && err.data.cooldown ? 'Slow down — try again in ' + err.data.cooldown + 's.' : err.message;
+          });
+          return;
+        }
+        status.textContent = 'Creating…';
         var common = { title: el.title.value, visibility: el.visibility.value, burn_after_read: el.burn_after_read.checked, is_nsfw: el.is_nsfw.checked };
         if (mode === 'image') {
           var fd = new FormData();

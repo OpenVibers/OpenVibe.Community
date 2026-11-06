@@ -134,7 +134,7 @@ async function getById(db, id) {
 
 const INSERT_COLUMNS = ['slug', 'owner_subject', 'origin', 'type', 'title', 'content', 'language', 'visibility',
     'screenshot_url', 'media_ref', 'stream_ref', 'metadata', 'burn_after_read', 'forked_from', 'pinned', 'is_nsfw',
-    'ai_summary', 'ai_tags', 'ai_analyzed_at'];
+    'ai_summary', 'ai_tags', 'ai_analyzed_at', 'locked', 'lock_kind', 'envelope', 'title_shown'];
 
 /** Insert a new paste (fields already validated); returns the stored row. */
 async function insertPaste(db, fields) {

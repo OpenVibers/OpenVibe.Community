@@ -24,6 +24,7 @@ const { discussionModerator } = require('../identity/capabilities');
 const { stripImageMetadata } = require('../media/strip-metadata');
 const { sniffImage } = require('../media/sniff-image');
 const { capabilities } = require('openvibe-contracts');
+const { inspectEnvelope } = require('openvibe-sdk/locker/server');
 const blocks = require('../identity/blocks');
 
 const DEFAULT_LIMITS = {
@@ -43,6 +44,9 @@ const SERVICE_SLUG_RE = /^[A-Za-z0-9_-]{3,80}$/;
 const RESERVED_SLUGS = new Set(['config', 'screenshot', 'bulk', 'admin', 'by-user']);
 const BOT_UA = /bot|crawl|spider|slurp|facebookexternalhit|preview|discordbot|twitterbot|whatsapp|telegram|curl\/|wget\/|python-requests|go-http-client|headless/i;
 const AI_DISPLAY_NAME = 'OpenVibe AI';
+/** What a locked paste is called when its owner kept the title inside the envelope. */
+const LOCKED_TITLE = 'A locked paste';
+const LOCK_KINDS = ['people', 'password', 'link'];
 
 class PasteError extends Error {
     constructor(status, body) {
@@ -170,9 +174,9 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
      * transaction): a paste exists only with its audience. An ownerless paste (anonymous or AI) is
      * registered to Community itself, which nobody can sign in as.
      */
-    async function registerShare(v, row, audience) {
+    async function registerShare(v, row, audience, lock = 'none') {
         if (!shares) return;
-        await shares.shares.register(shareRef(row), { owner_subject: subjectOf(v) || { type: 'service', id: 'community' }, audience });
+        await shares.shares.register(shareRef(row), { owner_subject: subjectOf(v) || { type: 'service', id: 'community' }, audience, lock });
     }
 
     /** The optional members/transfer in a create (and the uniform API's job, done here for one call). */
@@ -225,6 +229,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
      */
     function shape(p, v, projections) {
         const ref = parseJson(p.stream_ref);
+        // A locked paste's plaintext is not ours: the content is never in a response, and the title is there only if
+        // its owner chose to keep it outside the envelope. The envelope's address is how a browser opens it.
+        const locked = !!p.locked;
+        const titleShown = !locked || !!p.title_shown;
         return {
             unique_views: p.unique_views || 0,
             id: p.id,
@@ -234,10 +242,14 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             owner_subject: p.owner_subject || null,
             origin: p.origin,
             type: p.type,
-            title: p.title,
-            content: p.content,
-            language: p.language,
+            title: titleShown ? p.title : null,
+            content: locked ? null : p.content,
+            language: locked ? 'text' : p.language,
             visibility: p.visibility,
+            locked,
+            lock: locked ? (p.lock_kind || null) : null,
+            title_shown: locked ? !!p.title_shown : true,
+            envelope_url: locked ? `/p/${encodeURIComponent(p.slug)}/raw` : null,
             stream_id: streamIdOf(ref),
             stream_ref: ref,
             screenshot_url: p.screenshot_url || null,
@@ -253,9 +265,9 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             review_status: p.review_status || null,
             review_report_id: p.review_report_id || null,
             reviewed_at: p.reviewed_at || null,
-            ai_summary: p.ai_summary || null,
-            ai_tags: p.ai_tags || null,
-            ai_analyzed_at: p.ai_analyzed_at || null,
+            ai_summary: locked ? null : (p.ai_summary || null),
+            ai_tags: locked ? null : (p.ai_tags || null),
+            ai_analyzed_at: locked ? null : (p.ai_analyzed_at || null),
             revision: p.revision,
             url: `/p/${p.slug}`,
             raw_url: `/p/${p.slug}/raw`,
@@ -275,7 +287,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         const projections = await projectionsFor(rows.map((r) => r.owner_subject));
         return rows.map((r) => {
             const out = shape(r, v, projections);
-            if (preview) out.content = r.type === 'paste' ? String(r.content || '').slice(0, 300) : null; // preview only in lists
+            if (preview && !r.locked) out.content = r.type === 'paste' ? String(r.content || '').slice(0, 300) : null; // preview only in lists
             return out;
         });
     }
@@ -398,6 +410,60 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         return slug;
     }
 
+    /**
+     * A locked text paste (Locker design 2026-11-06, the pilot): the browser sealed the content before it was sent.
+     * The request carries `locked: true` and `envelope: <base64 locker.envelope.v1>` **instead of** `content`;
+     * a request with both is refused, and so is an envelope that is not one. Community stores the bytes, checks
+     * the header's shape with openvibe-sdk/locker/server, and never receives or sees the content key.
+     */
+    async function lockedCreate(v, body = {}) {
+        await pasteRateCheck(v);
+        if (!v.subject) fail(401, 'Sign in to lock a paste');
+        if (body.content !== undefined && String(body.content).length) fail(400, 'A locked paste carries the envelope, not the content');
+        const raw = body.envelope;
+        if (typeof raw !== 'string' || !raw.length) fail(400, 'A locked paste needs its envelope');
+        const bytes = Buffer.from(raw, 'base64');
+        if (!bytes.length || bytes.toString('base64') !== raw.replace(/\s+/g, '')) fail(400, 'The envelope is not base64');
+        if (bytes.length > L.maxSizeKb * 1024) fail(400, `Locked paste too large (max ${L.maxSizeKb} KB)`);
+        const read = inspectEnvelope(new Uint8Array(bytes));
+        if (!read.valid) fail(400, `The envelope is not a Locker envelope: ${read.errors[0]}`);
+        if (!LOCK_KINDS.includes(read.lock)) fail(400, 'The envelope’s lock is not one we know');
+        const lock = read.lock;
+        // The audience follows the lock: a people lock lives on a list of people; a password or link lock is
+        // opened by whoever holds the link. Either way it can never be public.
+        const audience = lock === 'people' ? 'people' : 'link';
+        if (body.audience !== undefined && body.audience !== '' && audienceOf(v, body.audience) !== audience) {
+            fail(400, lock === 'people'
+                ? 'A people-locked paste is shared with specific people'
+                : 'A password- or link-locked paste is opened with its link');
+        }
+        if (truthy(body.burn_after_read)) fail(400, 'A locked paste cannot burn after reading');
+        // The title stays inside the envelope unless its owner ticks "Show the title to people who can open it".
+        const showTitle = truthy(body.show_title);
+        if (showTitle && !String(body.title || '').trim()) fail(400, 'A title to show needs a title');
+        const row = await db.tx(async () => {
+            const r = await store.insertPaste(db, {
+                slug: await store.generateSlug(db, { secret: true }),
+                owner_subject: v.subject,
+                origin: v.origin === 'ai' ? 'ai' : 'user',
+                type: 'paste',
+                title: showTitle ? store.sanitizeTitle(body.title) : LOCKED_TITLE,
+                content: null,
+                language: 'text',
+                visibility: visibilityFor(audience),
+                locked: true,
+                lock_kind: lock,
+                envelope: bytes.toString('base64'),
+                title_shown: showTitle ? 1 : 0,
+                is_nsfw: truthy(body.is_nsfw) ? 1 : 0,
+            });
+            await registerShare(v, r, audience, lock);
+            return r;
+        });
+        const sharing = await applyShareRequest(v, row.slug, audience, body);
+        return await created(row, { paste: { ...(await shapeOne(row, v)), audience }, ...(sharing || {}) });
+    }
+
     async function created(row, extra = {}) {
         await tell((p) => p.pasteCreated(row));
         pingIndexNow(row);
@@ -469,12 +535,27 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { paste: { ...(await shapeOne(p, v)), liked, audience: share.audience, can_manage: share.can_manage, transfer: share.transfer } };
         },
 
+        /**
+         * A locked paste's envelope, or 404. The bytes are served exactly as they were uploaded; nothing here opens
+         * them, and they go only to somebody canView already allows.
+         */
+        async envelope(v, slug) {
+            const p = await store.getBySlug(db, String(slug));
+            if (!p || !p.locked || !p.envelope || !await mayView(v, p)) fail(404, 'Not found');
+            return { bytes: Buffer.from(p.envelope, 'base64'), filename: `${p.slug}.ovlk` };
+        },
+
         /** GET /p/:slug/raw — plain text, Media's raw rules (a burn paste survives exactly one read). */
         async raw(v, slug, ctx = {}) {
             const p = await store.getBySlug(db, String(slug));
             if (!p || !await mayView(v, p)) fail(404, 'Not found');
             if (p.type === 'screenshot') return { redirect: `/p/${encodeURIComponent(p.slug)}/screenshot` };
             if (p.type !== 'paste') fail(404, 'Not found');
+            // A locked paste's raw is its envelope, as bytes: application/octet-stream, `.ovlk`.
+            if (p.locked) {
+                if (!isOwner(v, p)) await countView(v, p, ctx);
+                return { bytes: Buffer.from(String(p.envelope || ''), 'base64'), filename: `${p.slug}.ovlk` };
+            }
             if (!isOwner(v, p)) {
                 if (p.burn_after_read) {
                     if (p.views > 0) await burn(p);
@@ -497,8 +578,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return p.screenshot_url;
         },
 
+        /** POST /api/pastes with locked: true */
+        async createLocked(v, body = {}) { return await lockedCreate(v, body); },
+
         /** POST /api/pastes (text) */
         async createText(v, body = {}) {
+            if (truthy(body.locked)) return await lockedCreate(v, body);
+            if (body.envelope !== undefined && body.envelope !== '') fail(400, 'Send locked: true with an envelope');
             await pasteRateCheck(v);
             const content = body.content;
             if (!content || typeof content !== 'string' || content.trim().length === 0) fail(400, 'Content is required');
@@ -544,6 +630,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
 
         /** POST /api/pastes/screenshot (and multipart POST /api/pastes) */
         async createScreenshot(v, body = {}, file, ctx = {}) {
+            // Screenshots stay on the proxy: only a text paste is sealed in the browser (design 2026-11-06, the pilot).
+            if (truthy(body.locked)) fail(400, 'Only text pastes can be locked: a screenshot stays on the proxy');
             await pasteRateCheck(v);
             if (!file || !file.buffer) fail(400, 'No screenshot uploaded');
             // The type comes from the bytes, never the client's declared Content-Type: a JPEG declaring
@@ -618,6 +706,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             needIdentity(v);
             const p = await visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
+            // A locked paste's title and content live inside the envelope; only who can open it can change.
+            if (p.locked && (body.title !== undefined || body.content !== undefined || body.language !== undefined)) {
+                fail(400, 'A locked paste cannot be edited: its content is not ours to read');
+            }
             const patch = {};
             if (body.title !== undefined) patch.title = store.sanitizeTitle(body.title);
             if (body.content !== undefined && p.type === 'paste') {
@@ -680,6 +772,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         /** POST /api/pastes/:slug/fork */
         async fork(v, slug) {
             const original = await visible(v, slug);
+            if (original.locked) fail(400, 'A locked paste cannot be forked: its content is not ours to read');
             if (original.type !== 'paste') fail(400, 'Only text pastes can be forked');
             // A lasting copy would outlive the burn; only the owner (or staff) may fork one.
             if (original.burn_after_read && !canSeeHidden(v, original)) fail(403, 'Burn-after-read pastes cannot be forked');
@@ -798,6 +891,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 screenshotMaxSizeMb: L.screenshotMaxSizeMb,
                 cooldownSeconds: L.cooldownSeconds,
                 maxPerUserPerDay: L.maxPerUserPerDay,
+                lockedMaxSizeKb: L.maxSizeKb,
                 todayCount: v.subject ? await store.countOwnerSince(db, v.subject, '-1 day') : 0,
             };
         },

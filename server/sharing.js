@@ -23,6 +23,7 @@
  * The gate: a person not on a `people` list gets `gate()` — the audience, and their own pending
  * transfer if they are the recipient — never a title, content, screenshot or comment count.
  */
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { createShares } = require('openvibe-sdk/share');
 const { serviceAuth } = require('openvibe-contracts');
 const config = require('./config');
@@ -32,6 +33,13 @@ const SERVICE = 'community';
 const KIND = 'paste';
 const AUDIENCES = ['public', 'link', 'people', 'private'];
 const VISIBILITY = { public: 'public', link: 'unlisted', people: 'private', private: 'private' };
+/**
+ * Who is acting, while a share call runs. Network's locker key directory (GET /api/v1/people/:id/keys) is a *person*
+ * route: a service token is refused there, while openvibe-sdk/share asks for a person's key with its own service
+ * client. So the acting person's Network token travels with the call: the lookup is one they may make themselves, and
+ * only public keys come back. The token is never stored or logged.
+ */
+const actor = new AsyncLocalStorage();
 
 /** A paste's share ref: { service: 'community', kind: 'paste', id: <slug> }. */
 const refOf = (slug) => ({ service: SERVICE, kind: KIND, id: String(slug) });
@@ -58,7 +66,12 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
     async function networkJson({ path, method = 'GET', json, query } = {}) {
         const url = new URL(`${base}${path}`);
         for (const [k, v] of Object.entries(query || {})) if (v != null) url.searchParams.set(k, String(v));
-        const headers = { Accept: 'application/json', ...(await tokens.authHeaders()) };
+        // A person's public keys, as the person asking: Network answers this route for a signed-in account, not a service.
+        const keysPath = /^\/api\/v1\/people\/[^/]+\/keys$/.test(path);
+        const acting = actor.getStore();
+        const headers = { Accept: 'application/json', ...(keysPath && acting && acting.token
+            ? { Authorization: `Bearer ${acting.token}` }
+            : await tokens.authHeaders()) };
         if (json !== undefined) headers['Content-Type'] = 'application/json';
         const res = await fetchImpl(url, { method, headers, body: json === undefined ? undefined : JSON.stringify(json), signal: AbortSignal.timeout(8000) });
         const body = await res.json().catch(() => null);
@@ -66,6 +79,11 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
             const err = new Error(`Network ${method} ${path} ${res.status}: ${(body && (body.detail || body.error)) || 'failed'}`);
             err.status = res.status;
             throw err;
+        }
+        // Network names a person's public keys ecdh_public/signing_public (server/locker/keys.js); openvibe-sdk/share's
+        // key slots read ecdh/signing. One spelling here, so the Locker's own names stay what Network publishes.
+        if (keysPath && body && body.ecdh_public && !body.ecdh) {
+            return { ...body, ecdh: body.ecdh_public, signing: body.signing_public };
         }
         return body;
     }
@@ -137,6 +155,17 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
         }
     }
 
+    /**
+     * A re-sealed envelope (openvibe-sdk/share): removing somebody from a people-locked paste seals the content again
+     * under a fresh key, and the service stores those bytes before the member row goes. Community keeps them in the
+     * paste's own row; it never opens them.
+     */
+    async function onReseal(ref, bytes, tx) {
+        if (ref.service !== SERVICE || ref.kind !== KIND) return;
+        await tx.exec('UPDATE pastes SET envelope = $1, updated_at = ov_now() WHERE slug = $2 AND deleted_at IS NULL',
+            [Buffer.from(bytes).toString('base64'), ref.id]);
+    }
+
     const shares = createShares({
         db,
         network: { json: networkJson },
@@ -144,6 +173,7 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
         notify,
         onOwnerChange,
         onAudienceChange,
+        onReseal,
     });
 
     /** The share row's audience, for the page's gate and its generic link preview. Null when unregistered. */
@@ -186,27 +216,31 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
         return !(p.visibility === 'private' && !(v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject)));
     }
 
-    // The SDK calls, from a Community viewer (the router does its own conversion).
+    // The SDK calls, from a Community viewer (the router does its own conversion). Each runs with the acting person in
+    // the async context, so a locker key lookup asks as them (see `actor` above).
     const sv = (viewer) => shareViewer(viewer);
     const at = (slug) => refOf(slug);
+    const as = (viewer, fn) => actor.run({ token: viewer && viewer.kind === 'user' ? viewer.token : null }, fn);
 
     return {
+        /** Run a whole request (the share router) as the person it is for. */
+        withActor: (viewer, fn) => as(viewer, fn),
         shares, canView, canViewPaste, gate, shareOf, pendingTransfer, shareViewer, refOf,
         canEdit: async (viewer, slug) => await shares.canEdit(sv(viewer), at(slug)),
-        get: async (viewer, slug) => await shares.get(sv(viewer), at(slug)),
-        getWithRevision: async (viewer, slug) => await shares.getWithRevision(sv(viewer), at(slug)),
-        setAudience: async (viewer, slug, audience) => await shares.setAudience(sv(viewer), at(slug), audience),
-        addMembers: async (viewer, slug, list) => await shares.addMembers(sv(viewer), at(slug), list),
-        removeMember: async (viewer, slug, subject) => await shares.removeMember(sv(viewer), at(slug), subject),
-        update: async (viewer, slug, body, opts) => await shares.update(sv(viewer), at(slug), body, opts),
-        requestAccess: async (viewer, slug) => await shares.requestAccess(sv(viewer), at(slug)),
-        dismiss: async (viewer, slug, id) => await shares.dismiss(sv(viewer), at(slug), id),
-        transfer: async (viewer, slug, input) => await shares.transfer(sv(viewer), at(slug), input),
-        accept: async (viewer, slug, id) => await shares.accept(sv(viewer), at(slug), id),
-        decline: async (viewer, slug, id) => await shares.decline(sv(viewer), at(slug), id),
-        cancel: async (viewer, slug, id) => await shares.cancel(sv(viewer), at(slug), id),
-        lookup: async (viewer, name) => await shares.lookup(sv(viewer), name),
-        sharedWithMe: async (viewer, opts) => await shares.sharedWithMe(sv(viewer), { service: SERVICE, ...(opts || {}) }),
+        get: async (viewer, slug) => as(viewer, async () => await shares.get(sv(viewer), at(slug))),
+        getWithRevision: async (viewer, slug) => as(viewer, async () => await shares.getWithRevision(sv(viewer), at(slug))),
+        setAudience: async (viewer, slug, audience) => as(viewer, async () => await shares.setAudience(sv(viewer), at(slug), audience)),
+        addMembers: async (viewer, slug, list) => as(viewer, async () => await shares.addMembers(sv(viewer), at(slug), list)),
+        removeMember: async (viewer, slug, subject) => as(viewer, async () => await shares.removeMember(sv(viewer), at(slug), subject)),
+        update: async (viewer, slug, body, opts) => as(viewer, async () => await shares.update(sv(viewer), at(slug), body, opts)),
+        requestAccess: async (viewer, slug) => as(viewer, async () => await shares.requestAccess(sv(viewer), at(slug))),
+        dismiss: async (viewer, slug, id) => as(viewer, async () => await shares.dismiss(sv(viewer), at(slug), id)),
+        transfer: async (viewer, slug, input) => as(viewer, async () => await shares.transfer(sv(viewer), at(slug), input)),
+        accept: async (viewer, slug, id) => as(viewer, async () => await shares.accept(sv(viewer), at(slug), id)),
+        decline: async (viewer, slug, id) => as(viewer, async () => await shares.decline(sv(viewer), at(slug), id)),
+        cancel: async (viewer, slug, id) => as(viewer, async () => await shares.cancel(sv(viewer), at(slug), id)),
+        lookup: async (viewer, name) => as(viewer, async () => await shares.lookup(sv(viewer), name)),
+        sharedWithMe: async (viewer, opts) => as(viewer, async () => await shares.sharedWithMe(sv(viewer), { service: SERVICE, ...(opts || {}) })),
         useSearch: (docs) => { searchDocs = docs || null; },
         /** Expire members and transfers, then send queued events and notifications. */
         async work({ flush = true } = {}) {
@@ -219,13 +253,28 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
     };
 }
 
-/** The uniform API's describe(ref): the sheet shows the paste's title and link to its owner. */
+/**
+ * The uniform API's describe(ref): the sheet shows the paste's title and link to its owner. A locked paste also says
+ * where its envelope is, and which audiences make sense: it can never be public, and a people lock is opened by its
+ * people, not by whoever holds a link.
+ */
 function describeRef(db) {
     return async (ref) => {
         if (ref.service !== SERVICE || ref.kind !== KIND) return {};
-        const p = await db.maybe('SELECT slug, title FROM pastes WHERE slug = $1 AND deleted_at IS NULL', [ref.id]);
+        const p = await db.maybe('SELECT slug, title, locked, lock_kind, title_shown FROM pastes WHERE slug = $1 AND deleted_at IS NULL', [ref.id]);
         if (!p) return {};
-        return { title: p.title || 'Untitled', link: `${config.baseUrl}/p/${encodeURIComponent(p.slug)}`, roles: ['viewer'], audiences: AUDIENCES, transferable: true };
+        const out = {
+            title: !p.locked || p.title_shown ? (p.title || 'Untitled') : 'A locked paste',
+            link: `${config.baseUrl}/p/${encodeURIComponent(p.slug)}`,
+            roles: ['viewer'],
+            audiences: AUDIENCES,
+            transferable: true,
+        };
+        if (p.locked) {
+            out.audiences = p.lock_kind === 'people' ? ['people', 'private'] : ['link', 'private'];
+            out.envelope_url = `${config.baseUrl}/p/${encodeURIComponent(p.slug)}/raw`;
+        }
+        return out;
     };
 }
 

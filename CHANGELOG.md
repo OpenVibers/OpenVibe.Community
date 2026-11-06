@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- **Locked pastes** (Locker design 2026-11-06, "The pilot, spelled out: locked pastes"). A new text paste can be
+  locked: the browser seals it, Community stores the envelope and never sees the content key.
+  - `POST /api/pastes` takes `locked: true` and `envelope: <base64 locker.envelope.v1>` **instead of** `content`; a
+    request with both, a bad envelope, a public audience, a burn-after-reading lock or a screenshot is refused.
+    `migrations/0020_locked_pastes.sql` adds `locked`, `lock_kind`, `envelope` and `title_shown` to `pastes`
+    (expand-only), and openvibe-sdk/share's own columns since 0.85.0 (`shares.lock`, the members' `key_slot`, the
+    transfers' `key_slot`, `reseal_nonce_base`).
+  - The title lives inside the envelope unless the owner ticks "Show the title to people who can open it". A people
+    lock names its people with a key slot each, checked against Network's key directory; a password or link lock is
+    opened from the link. The audience follows the lock (`people` or `link`), and a locked paste is never public: no
+    list, feed, sitemap, `llms.txt`, Search document, JSON-LD or related list ever has it.
+  - The page opens the envelope with `OVLocker.open` (`/shared/ov-locker.js`) and shows the plaintext there; raw and
+    download serve the bytes as `application/octet-stream`, named `<slug>.ovlk`. No highlight, summary, preview or AI
+    pass. Comments stay open and say they are not locked. Copy, Share, Delete remain; Fork, edit and burn are refused.
+  - Removing somebody from a people lock re-seals the content under a fresh key (`onReseal` stores the bytes in the
+    same transaction, before the member goes).
+  - `docs/locked-pastes.md` at `/docs/locked-pastes`, linked from `llms.txt`, with the document format and the agent
+    path (`openvibe-sdk/locker`).
+  - `openvibe-sdk` v0.89.0 and `openvibe-shared` v4.116.1 (the share sheet’s Locked part, `OVLocker.seal`, and a transfer’s key slot).
+  - After Opus's review: while Lock it is on, /new's Visibility column becomes one read-only line naming the lock's
+    audience ("For the people on the list", "Anyone with the password", "Anyone with the link") and comes back when it
+    is off; the locked page's primary action is the card's own (unlock, password, link key), its file is one quiet
+    "Download the locked file (.ovlk)" line under the card with the hint that it opens only with the key, and its meta
+    line keeps the author, date, views, locked and audience chips but no language or line count.
+
 - The screenshot move script (2026-11-06) no longer reads a 404 from Media's community tenant as "already gone": for a
   `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste
   route. `--apply` pages with an id cursor and reaches every paste in one run, `--retire-ids <file>` retires named objects

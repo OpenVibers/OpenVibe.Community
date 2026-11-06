@@ -93,7 +93,8 @@ function createSearchDocuments({ db }) {
 
     /** The document for one paste (by row), `{ deleted: true }` when Search must not hold it. */
     function pasteDocument(p) {
-        if (!p || p.deleted_at || p.visibility !== 'public' || Number(p.burn_after_read)) return { deleted: true };
+        // A locked paste is never in Search: its text is not ours, and it can never be public (Locker design 2026-11-06).
+        if (!p || p.deleted_at || p.locked || p.visibility !== 'public' || Number(p.burn_after_read)) return { deleted: true };
         let tags = [];
         try { tags = (JSON.parse(p.ai_tags || '[]') || []).filter((x) => typeof x === 'string').map((x) => x.slice(0, 200)).slice(0, 50); } catch { /* none */ }
         const shot = p.type === 'screenshot';
