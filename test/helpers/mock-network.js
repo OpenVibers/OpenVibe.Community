@@ -20,6 +20,7 @@ function start({ clientSecret = 'shh' } = {}) {
     const privatePem = privateKey.export({ type: 'pkcs8', format: 'pem' });
     const grants = [];
     const resolveCalls = [];
+    const pushes = [];   // POST /internal/notifications/push bodies
     const issued = [];      // every client-credentials access token handed out (security-secrets.test.js looks for them)
     let issuer = 'http://network.test';
 
@@ -86,6 +87,15 @@ function start({ clientSecret = 'shh' } = {}) {
                 }
                 return json(200, { results });
             }
+            if (req.url === '/internal/notifications/push' && req.method === 'POST') {
+                const auth = String(req.headers.authorization || '');
+                const v = serviceAuth.verifyServiceToken(auth.slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.network' });
+                if (!v.ok) return json(401, { code: v.code, error: v.reason });
+                if (!(v.claims.cap || []).includes('network.notifications.push')) return json(403, { code: 'capability.denied', error: 'not granted' });
+                let body = {}; try { body = JSON.parse(raw); } catch { /* */ }
+                pushes.push(body);
+                return json(201, { sent: true });
+            }
             if (req.url.startsWith('/internal/identity/resolve?') && req.method === 'GET') {
                 // GET /internal/identity/resolve?username= (Network #56): the current holder of a name, any case, a
                 // leading @ ignored; 404 for nobody (or a banned account).
@@ -114,7 +124,7 @@ function start({ clientSecret = 'shh' } = {}) {
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => {
         const url = `http://127.0.0.1:${server.address().port}`;
         issuer = url;
-        resolve({ url, grants, issued, resolveCalls, directory, addUser, sign, signService, publicPem, close: () => new Promise((r) => server.close(r)) });
+        resolve({ url, grants, issued, resolveCalls, pushes, directory, addUser, sign, signService, publicPem, close: () => new Promise((r) => server.close(r)) });
     }));
 }
 

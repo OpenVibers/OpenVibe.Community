@@ -23,7 +23,11 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
     {
         const missing = await uncovered(db, {
             taskKeyed: ['spaces', 'comment_threads'],
-            exempt: { account_data_events: 'the ledger of requests itself: which export and deletion Community applied' },
+            exempt: {
+                account_data_events: 'the ledger of requests itself: which export and deletion Community applied',
+                share_members: 'shares are erased by ../identity/account-data.js erase() (subject is jsonb)',
+                share_access_requests: 'shares are erased by ../identity/account-data.js erase() (subject is jsonb)',
+            },
         });
         assert.deepStrictEqual(missing, [], `a table with a person column is neither covered nor exempted: ${missing.join(', ')}`);
     }
@@ -48,6 +52,13 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
     await db.prepare("INSERT INTO post_reactions (post_id, subject_id, reaction) VALUES (2, ?, 'fire')").run(DANA);
     await db.prepare("INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, 3, '2026-09-27'), (?, 4, '2026-09-27')").run(DANA, OTTO);
     await db.prepare('INSERT INTO network_blocks (blocker_subject, blocked_subject, active, revision, updated_at) VALUES (?, ?, 1, 1, 0), (?, ?, 1, 1, 0)').run(DANA, OTTO, OTTO, DANA);
+    // Sharing: DANA owns a paste shared as people, and is a member of OTTO's paste with a pending ask.
+    await db.prepare("INSERT INTO shares (service, kind, resource_id, owner_subject, audience) VALUES ('community','paste','p1',?::jsonb,'people'), ('community','paste','p3',?::jsonb,'people')")
+        .run(JSON.stringify({ type: 'user', id: DANA }), JSON.stringify({ type: 'user', id: OTTO }));
+    await db.prepare("INSERT INTO share_members (service, kind, resource_id, subject, role, added_by, added_at) VALUES ('community','paste','p3',?::jsonb,'viewer',?::jsonb, now())")
+        .run(JSON.stringify({ type: 'user', id: DANA }), JSON.stringify({ type: 'user', id: OTTO }));
+    await db.prepare("INSERT INTO share_access_requests (id, service, kind, resource_id, subject, requested_at, state) VALUES ('4a5a0b34-96a0-4a69-9c2e-3f7f0a2c5c11','community','paste','p3',?::jsonb, now(), 'pending')")
+        .run(JSON.stringify({ type: 'user', id: DANA }));
     evt = (id, type, payload) => ({ event_id: id, event_type: type, version: 1, source: 'network', visibility: 'internal', timestamp: new Date().toISOString(),
         subject: { type: 'user', id: payload.subject }, actor: { type: 'user', id: payload.subject }, payload });
     assert.ok(TOPICS.includes('network.account.export_requested') && TOPICS.includes('network.account.deleted'), 'Community subscribes to both');
@@ -98,6 +109,9 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
         assert.deepStrictEqual(await all('SELECT subject_id AS s FROM game_progress'), [{ s: OTTO }]);
         assert.strictEqual((await all('SELECT * FROM network_blocks')).length, 0, 'blocks both ways');
         assert.strictEqual((await db.prepare('SELECT created_by FROM spaces WHERE id = 901').get()).created_by, null, 'the space stays without her');
+        assert.deepStrictEqual(await all('SELECT resource_id AS r FROM shares ORDER BY resource_id'), [{ r: 'p3' }], 'her own paste\'s share row went; someone else\'s stays');
+        assert.strictEqual((await all('SELECT * FROM share_members')).length, 0, 'her membership is gone');
+        assert.strictEqual((await all("SELECT * FROM share_access_requests WHERE state = 'pending'")).length, 0, 'her pending ask is closed');
 
         r = await post(del);
         assert.deepStrictEqual([r.status, r.json.outcome], [200, 'confirmed'], 'the retry confirms without erasing again');

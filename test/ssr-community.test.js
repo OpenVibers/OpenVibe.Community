@@ -78,9 +78,9 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(dl.text.startsWith('def add'));
         assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py)).views, before);
         const shot = await t.get('/p/fair-moon-23');
-        has(shot.text, '<meta property="og:image" content="https://openvibe.media/f/abc-desk.png">');
+        assert.match(shot.text, /<meta property="og:image" content="[^"]*\/p\/fair-moon-23\/screenshot">/);
         const dls = await t.get('/p/fair-moon-23/download');
-        assert.strictEqual(dls.headers.get('location'), 'https://openvibe.media/f/abc-desk.png');
+        assert.strictEqual(dls.headers.get('location'), '/p/fair-moon-23/screenshot');
     });
 
     await check('browse: search, views sort and language filter over the store', async () => {
