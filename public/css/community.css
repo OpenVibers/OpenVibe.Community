@@ -460,6 +460,9 @@ button.rx:hover { border-color: var(--accent); }
 /* ── Locked pastes (Locker, design 2026-11-06): the create form's Lock it, the locked card, the opened text ── */
 .lock-it { margin: 14px 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input); display: grid; gap: 10px; }
 .lock-it[hidden], .lock-it [hidden] { display: none !important; }   /* the section and its choices are JS-only */
+.paste-form .field[hidden] { display: none !important; }
+.lock-audience { margin: 0; padding: 9px 12px; border: 1px dashed var(--border); border-radius: 9px; color: var(--text-primary); background: none; font-size: .95rem; }
+.lock-audience[hidden] { display: none !important; }
 .lock-it-switch { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 4px 8px; font-size: .95rem; }
 .lock-it-switch .muted { grid-column: 1 / -1; }
 .lock-it-switch strong { white-space: nowrap; }
@@ -482,3 +485,5 @@ button.rx:hover { border-color: var(--accent); }
 .paste-opened .btn { justify-self: start; }
 .paste-plain { margin: 0; padding: 14px; max-height: 70vh; overflow: auto; background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; font: 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; }
 .paste-plain:focus-visible { outline: 2px solid rgba(var(--accent-rgb), .5); outline-offset: 2px; }
+.locked-file { margin: 0 0 10px; }
+.locked-file a { white-space: nowrap; }

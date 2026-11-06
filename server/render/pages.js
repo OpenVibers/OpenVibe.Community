@@ -454,9 +454,9 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
   </details>` : code;
     }
 
+    // The primary action of a locked paste is the card's own (unlock your locker, the password, the link's key): the
+    // ordinary actions here are Share, and Delete for its owner. The envelope as a file is a quiet line under the card.
     const actions = locked ? `<div class="actions">
-    <a class="btn btn-sm" href="/p/${esc(p.slug)}/raw" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Raw envelope</a>
-    <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-download" aria-hidden="true"></i> Download .ovlk</a>
     <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>` : `<div class="actions">
@@ -478,10 +478,10 @@ ${offer}
     <h1 itemprop="headline">${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}${esc(title)}</h1>
     <p class="paste-meta">
       ${authorHtml(p)}
-      <span class="sep">·</span>${langBadge(p)}
+      ${locked ? '' : `<span class="sep">·</span>${langBadge(p)}`}
       <span class="sep">·</span><time datetime="${esc(ld.isoDate(p.created_at) || '')}" itemprop="datePublished">${esc(fmtDate(p.created_at))}</time>
       <span class="sep">·</span><span class="stat" title="Views"><i class="fa-solid fa-eye" aria-hidden="true"></i> ${num(p.views)} views</span>
-      ${!isShot && hl ? `<span class="sep">·</span><span class="stat">${num(hl.lines)} lines</span>` : ''}
+      ${!isShot && !locked && hl ? `<span class="sep">·</span><span class="stat">${num(hl.lines)} lines</span>` : ''}
       ${locked ? `<span class="sep">·</span><span class="badge badge-lock"><i class="fa-solid fa-lock" aria-hidden="true"></i> locked</span>` : ''}
       ${share && share.audience && share.audience !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="fa-solid fa-${share.audience === 'private' ? 'lock' : share.audience === 'people' ? 'users' : 'eye-slash'}" aria-hidden="true"></i> ${esc(share.audience === 'link' ? 'anyone with the link' : share.audience === 'people' ? 'specific people' : 'only me')}</span>` : ''}
       ${p.burn_after_read ? `<span class="sep">·</span><span class="badge badge-burn"><i class="fa-solid fa-fire" aria-hidden="true"></i> burns after reading</span>` : ''}
@@ -490,6 +490,7 @@ ${offer}
     ${actions}
   </header>
   ${bodyBlock}
+  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
   <footer class="paste-foot">
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
@@ -597,11 +598,12 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   <label class="field"><span>Title</span><input type="text" name="title" maxlength="200" value="${esc(v.title)}" placeholder="Untitled"></label>
   <div class="field-row">
     <label class="field"><span>Language</span><select name="language">${langOpts}</select></label>
-    <label class="field"><span>Visibility</span><select name="visibility">
+    <label class="field" data-vis-field><span>Visibility</span><select name="visibility">
       <option value="public"${v.visibility === 'public' ? ' selected' : ''}>Public — listed and searchable</option>
       <option value="unlisted"${v.visibility === 'unlisted' ? ' selected' : ''}>Unlisted — link only</option>
       ${user ? `<option value="private"${v.visibility === 'private' ? ' selected' : ''}>Private — only you</option>` : ''}
     </select></label>
+    ${user ? `<div class="field" data-lock-audience hidden><span>Who can open it</span><p class="lock-audience" data-lock-audience-text></p></div>` : ''}
   </div>
   <div data-pane="text">
     <label class="field"><span>Content</span><textarea name="content" rows="18" spellcheck="false" placeholder="Paste it here…" required>${esc(v.content)}</textarea></label>

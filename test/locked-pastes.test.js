@@ -95,6 +95,13 @@ const searchDocsModule = require('../server/search/documents');
         assert.match(page.text, /paste-locked/, 'the page has the locker card');
         assert.match(page.text, /\/shared\/ov-locker\.js/);
         assert.match(page.text, new RegExp(`/p/${peopleSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/raw`), 'the card is given the envelope address');
+        // The meta line describes the paste, not its contents: no "Plain text" and no line count, which would both
+        // describe what is inside the envelope. The actions are Share (and Delete); the file is one quiet line.
+        assert.ok(!/\b0 lines\b/.test(page.text), 'no line count on a locked paste');
+        assert.ok(!/>Plain text<\/a>/.test(page.text), 'no language badge on a locked paste');
+        assert.match(page.text, /specific people/, 'the audience chip is there');
+        assert.doesNotMatch(page.text, /Raw envelope/, 'the envelope is not a primary action');
+        assert.match(page.text, /Download the locked file \(\.ovlk\)[^<]*<\/a> — it opens only with its key/);
 
         // The key directory was asked as the owner (Network refuses a service token here), never with Community's.
         assert.ok(net.keyCalls.length > 0, 'the owner GET asked for the members’ keys');

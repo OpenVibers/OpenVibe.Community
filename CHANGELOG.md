@@ -21,6 +21,11 @@
   - `docs/locked-pastes.md` at `/docs/locked-pastes`, linked from `llms.txt`, with the document format and the agent
     path (`openvibe-sdk/locker`).
   - `openvibe-sdk` v0.89.0 and `openvibe-shared` v4.116.1 (the share sheet’s Locked part, `OVLocker.seal`, and a transfer’s key slot).
+  - After Opus's review: while Lock it is on, /new's Visibility column becomes one read-only line naming the lock's
+    audience ("For the people on the list", "Anyone with the password", "Anyone with the link") and comes back when it
+    is off; the locked page's primary action is the card's own (unlock, password, link key), its file is one quiet
+    "Download the locked file (.ovlk)" line under the card with the hint that it opens only with the key, and its meta
+    line keeps the author, date, views, locked and audience chips but no language or line count.
 
 - The screenshot move script (2026-11-06) no longer reads a 404 from Media's community tenant as "already gone": for a
   `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste

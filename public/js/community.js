@@ -110,6 +110,10 @@
       var tabs = $$('.tab', form); var mode = 'text';
       tabs.forEach(function (t) { t.hidden = false; });
       var lockSection = $('[data-lock-it]', form);
+      var visField = $('[data-vis-field]', form);
+      var audienceLine = $('[data-lock-audience]', form);
+      var audienceText = $('[data-lock-audience-text]', form);
+      var LOCK_AUDIENCE = { people: 'For the people on the list', password: 'Anyone with the password', link: 'Anyone with the link' };
       var syncLock = null;
       var lockOn = function () { return !!(form.elements.lock_it && form.elements.lock_it.checked); };
       function setMode(m) {
@@ -131,11 +135,15 @@
         syncLock = function () {
           var on = lockOn() && mode === 'text';
           if (lockBody) lockBody.hidden = !on;
-          // The audience follows the lock (Specific people, or the link), so the old column is not a choice here.
+          // The audience is the lock's (Specific people, or the link), so the column is replaced by one read-only line
+          // naming it, and comes back when Lock it is off.
           var vis = form.elements.visibility;
-          if (vis) { vis.disabled = on; vis.closest('.field').style.opacity = on ? '.5' : ''; }
-          if (!on) return;
           var kind = (form.querySelector('input[name="lock_kind"]:checked') || {}).value || 'people';
+          if (vis) vis.disabled = on;
+          if (visField) visField.hidden = on;
+          if (audienceLine) audienceLine.hidden = !on;
+          if (audienceText) audienceText.textContent = LOCK_AUDIENCE[kind] || kind;
+          if (!on) return;
           $$('[data-lock-for]', form).forEach(function (d) { d.hidden = d.getAttribute('data-lock-for') !== kind; });
         };
         form.elements.lock_it.addEventListener('change', syncLock);
