@@ -32,6 +32,7 @@ const INVENTORY = {
     'server/identity/profile-module.js': [3, 'Network modules API (community.profile) with a service token'],
     'server/media/files.js': [2, 'OV_MEDIA_INTERNAL_URL v1 file store, service token'],
     'server/media/objects.js': [2, 'OV_MEDIA_INTERNAL_URL Object API v2, service token'],
+    'server/pastes/review.js': [2, 'OpenVibe.Vision /api/v1/review (OV_VISION_URL, fixed path) with a service token; only the paste\'s Media URL is sent'],
     'server/observability.js': [1, '/api/ready probes of the configured Media health URL'],
     'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
     'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],

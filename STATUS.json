@@ -7,9 +7,9 @@
   "runtime": "node 22, express, PostgreSQL 18 (openvibe-sdk/db, async) + Valkey 9",
   "port": 4200,
   "domain": "openvibe.community",
-  "contracts": "openvibe-contracts v0.291.0",
-  "sdk": "openvibe-sdk v0.85.0",
-  "shared": "openvibe-shared v4.115.1",
+  "contracts": "openvibe-contracts v0.294.0",
+  "sdk": "openvibe-sdk v0.89.0",
+  "shared": "openvibe-shared v4.116.1",
   "capabilities": [
     "community.paste.create",
     "community.paste.write",

@@ -13,11 +13,15 @@
  * The old id is recorded as `previous_media_ref` before the delete, so a failed delete is retried on
  * the next run instead of being forgotten.
  *
- * The old object may be Community's own (delete it through the community tenant) or an inherited
- * Live-era paste screenshot (`legacy:live:paste:<slug>` in Media's live tenant). Media's
- * tenant-scoped delete answers 404 for the latter and its v2 delete refuses every legacy object, so
- * the script retires those through Media's internal legacy-paste route. A 404 is therefore a failure
- * that keeps `previous_media_ref`: it never means "already gone".
+ * The old object may be Community's own native object (delete it through the community tenant), an
+ * inherited Live-era paste screenshot (`legacy:live:paste:<slug>` in Media's live tenant), or an older
+ * Community v1 file (`legacy:community:file:<key>` in the community tenant). Media's tenant-scoped
+ * delete answers 404 for the Live one and its v2 delete refuses every legacy object with 409
+ * media.object.legacy_managed, so the script retires both through Media's internal legacy route. A
+ * legacy object in this community tenant is retired only after checking that no other paste, post,
+ * attachment or submission still references its Media id: deleting bytes another page still shows
+ * would break it. A 404, 409 or a reference is therefore a failure that keeps `previous_media_ref`:
+ * it never means "already gone".
  *
  * --apply pages through every screenshot paste with an id cursor, in batches of --limit (500 by
  * default), so one run reaches every row instead of re-reading the first batch forever. A dry run
@@ -67,6 +71,34 @@ function readRetireIds(file) {
 }
 
 /**
+ * The Community rows that still point at one Media id: another paste's media_ref, screenshot_url or
+ * metadata, a post body, an attachment, or a submission. Read-only SELECTs against Community's own
+ * tables; `exceptPasteId` leaves the paste row being moved out (its previous_media_ref names the
+ * object on purpose). Returns [{ table, count }] for the tables with a hit, empty when it is safe to
+ * retire the old bytes.
+ */
+async function referencesToMediaId(db, id, { exceptPasteId = null } = {}) {
+    const count = async (sql, ...args) => Number((await db.prepare(sql).get(...args)).n) || 0;
+    const hits = [];
+    const pastes = await count(`SELECT count(*) AS n FROM pastes
+        WHERE deleted_at IS NULL AND id <> ? AND (media_ref = ? OR strpos(coalesce(screenshot_url, ''), ?) > 0 OR strpos(coalesce(metadata, ''), ?) > 0)`,
+        exceptPasteId == null ? -1 : exceptPasteId, id, id, id);
+    if (pastes) hits.push({ table: 'pastes', count: pastes });
+    const posts = await count(`SELECT count(*) AS n FROM posts
+        WHERE deleted_at IS NULL AND strpos(coalesce(body_markdown, ''), ?) > 0`, id);
+    if (posts) hits.push({ table: 'posts', count: posts });
+    const attachments = await count(`SELECT count(*) AS n FROM attachments
+        WHERE media_id = ? OR strpos(coalesce(url, ''), ?) > 0`, id, id);
+    if (attachments) hits.push({ table: 'attachments', count: attachments });
+    const submissions = await count(`SELECT count(*) AS n FROM submissions
+        WHERE media_ref = ? OR strpos(coalesce(url, ''), ?) > 0`, id, id);
+    if (submissions) hits.push({ table: 'submissions', count: submissions });
+    return hits;
+}
+
+const describeReferences = (hits) => hits.map((h) => `${h.table} (${h.count})`).join(', ');
+
+/**
  * Move every unprivate screenshot paste, or retire the ids in --retire-ids, or (a dry run) say what
  * would happen. Returns the counts printed by main(); failures never clear previous_media_ref.
  */
@@ -74,7 +106,7 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
     const pageSize = Math.max(1, parseInt(limit, 10) || 50);
     const out = {
         seen: 0, moved: 0, deleted: 0, retired: 0, alreadyRetired: 0, deleteFailed: 0, retireFailed: 0,
-        refused: 0, notDeletable: 0, skipped: 0, failed: 0, batches: 0, dryRun: !apply,
+        referenced: 0, refused: 0, notDeletable: 0, skipped: 0, failed: 0, batches: 0, dryRun: !apply,
         plan: { move: 0, retire: 0, refuse: 0 }, failures: [],
     };
 
@@ -85,31 +117,46 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
     };
 
     /**
-     * Delete Community's own object, or retire a legacy Live paste screenshot on the 404. A 409 or
-     * any other answer is a refusal/failure, never "gone". previous_media_ref was written first.
+     * Delete Community's own object, or retire a legacy one. A 404 is a legacy Live paste
+     * screenshot (another tenant); a 409 media.object.legacy_managed is a legacy object in this
+     * tenant (an old Community v1 file). The latter is retired only when no other paste, post or
+     * attachment still references it. Any other answer, or a referenced object, is a refusal that
+     * keeps previous_media_ref for the next run; none of them means "gone". The reference was
+     * written before the delete.
      */
     const removeOld = async (row, meta, id) => {
         const withRef = { ...meta, previous_media_ref: id };
         await db.prepare('UPDATE pastes SET metadata = ?, updated_at = ov_now() WHERE id = ?').run(JSON.stringify(withRef), row.id);
+        const retire = async () => {
+            try {
+                const r = await mediaObjects.retireLegacyPaste(id);
+                out.retired++;
+                if (r && r.changed === false) out.alreadyRetired++;
+                log.log(`${r && r.changed === false ? 'already retired' : 'retired'} legacy old object ${id} of ${row.slug}`);
+            } catch (retireErr) {
+                out.retireFailed++;
+                if (retireErr.status === 409 || retireErr.status === 403 || retireErr.status === 404) out.refused++;
+                throw retireErr;
+            }
+        };
         try {
             try {
                 await mediaObjects.deleteObject(id);
                 out.deleted++;
                 log.log(`deleted old object ${id} of ${row.slug}`);
             } catch (err) {
-                if (err.status !== 404) {
+                if (err.status === 404) {
+                    await retire();
+                } else if (err.status === 409 && err.code === 'media.object.legacy_managed') {
+                    const refs = await referencesToMediaId(db, id, { exceptPasteId: row.id });
+                    if (refs.length) {
+                        out.referenced++;
+                        throw new Error(`still referenced by ${describeReferences(refs)}`);
+                    }
+                    await retire();
+                } else {
                     if (err.status === 409 || err.status === 403) out.refused++;
                     throw err;
-                }
-                try {
-                    const r = await mediaObjects.retireLegacyPaste(id);
-                    out.retired++;
-                    if (r && r.changed === false) out.alreadyRetired++;
-                    log.log(`retired legacy old object ${id} of ${row.slug}`);
-                } catch (retireErr) {
-                    out.retireFailed++;
-                    if (retireErr.status === 409 || retireErr.status === 403 || retireErr.status === 404) out.refused++;
-                    throw retireErr;
                 }
             }
             const cleared = { ...withRef };
@@ -175,7 +222,7 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
             log.log(`moved ${row.slug} → ${stored.id}`);
             if (!keepOld) {
                 if (old) await removeOld(row, next, old);
-                // A legacy:community:file object has no v2 id to delete; it is left in place and said so.
+                // No Media v2 id (an old /f/ URL or similar): there is nothing to delete this way.
                 else refuse(row, null, 'the old screenshot is not a Media v2 object');
             }
         } catch (err) {
@@ -185,13 +232,24 @@ async function moveScreenshotsPrivate({ db, mediaObjects, fetchImpl = globalThis
         }
     };
 
-    // A lost paste record: retire exactly the named objects, no paste scan.
+    // A lost paste record: retire exactly the named objects, no paste scan. A named object is still
+    // left alone when a paste, post, attachment or submission points at it.
     if (retireIds) {
         for (const id of retireIds) {
             out.seen++;
             if (!MEDIA_RE.test(String(id))) {
                 out.refused++;
                 refuse(null, id, 'not a Media object id');
+                continue;
+            }
+            const refs = await referencesToMediaId(db, id);
+            if (refs.length) {
+                out.referenced++;
+                out.refused++;
+                out.plan.refuse++;
+                const why = `still referenced by ${describeReferences(refs)}`;
+                out.failures.push({ object: id, error: why });
+                log.warn(`${id} is ${why}; left in place`);
                 continue;
             }
             if (!apply) { out.plan.retire++; log.log(`would retire ${id}`); continue; }
@@ -254,4 +312,4 @@ async function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main().catch((err) => { console.error(err.message || err); process.exitCode = 1; });
 
-module.exports = { moveScreenshotsPrivate, oldObjectId, readRetireIds };
+module.exports = { moveScreenshotsPrivate, oldObjectId, readRetireIds, referencesToMediaId };

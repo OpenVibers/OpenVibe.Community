@@ -87,7 +87,9 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
      * Needs media.object.delete in the community tenant. A 404 is NOT "already gone": Media answers
      * it for an object outside the caller's tenant (a legacy Live paste, media.object.legacy_managed
      * on the direct route), and the move script must keep the reference and retire that object
-     * through retireLegacyPaste instead.
+     * through retireLegacyPaste instead. An older Community v1 file is in this tenant and answers
+     * 409 media.object.legacy_managed; the move script retires it the same way, after its reference
+     * check.
      */
     async function deleteObject(id) {
         await call('DELETE', `/${encodeURIComponent(String(id))}`);
@@ -95,10 +97,10 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
     }
 
     /**
-     * Retire one legacy Live paste screenshot through Media's internal route (the object is in the
-     * live tenant, so deleteObject answers 404 and the v2 delete would refuse it). Only the exact
-     * legacy:live:paste:<slug> screenshot kind is accepted by Media, only for Community's service
-     * principal; a repeat is a no-op (changed:false). Needs media.object.delete.
+     * Retire one legacy object through Media's internal route: a Live paste screenshot in the live
+     * tenant (deleteObject answers 404) or a Community v1 file in this tenant (deleteObject answers
+     * 409 media.object.legacy_managed). Media accepts those two legacy shapes only, only for
+     * Community's service principal; a repeat is a no-op (changed:false). Needs media.object.delete.
      */
     async function retireLegacyPaste(id) {
         if (!configured) { const e = new Error('Retiring a Media object needs Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }

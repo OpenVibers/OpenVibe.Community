@@ -6,7 +6,7 @@
   locked: the browser seals it, Community stores the envelope and never sees the content key.
   - `POST /api/pastes` takes `locked: true` and `envelope: <base64 locker.envelope.v1>` **instead of** `content`; a
     request with both, a bad envelope, a public audience, a burn-after-reading lock or a screenshot is refused.
-    `migrations/0017_locked_pastes.sql` adds `locked`, `lock_kind`, `envelope` and `title_shown` to `pastes`
+    `migrations/0019_locked_pastes.sql` adds `locked`, `lock_kind`, `envelope` and `title_shown` to `pastes`
     (expand-only), and openvibe-sdk/share's own columns since 0.85.0 (`shares.lock`, the members' `key_slot`, the
     transfers' `key_slot`, `reseal_nonce_base`).
   - The title lives inside the envelope unless the owner ticks "Show the title to people who can open it". A people
@@ -31,7 +31,16 @@
   `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste
   route. `--apply` pages with an id cursor and reaches every paste in one run, `--retire-ids <file>` retires named objects
   whose paste record was lost (one Media id per line), and the dry run prints the moves, retires and refusals it would make.
-
+- The screenshot move script also retires an old Community v1 file object (`legacy:community:file:<key>`, app
+  `community`, kind `file`) through Media's internal legacy route when DELETE answers 409
+  `media.object.legacy_managed`. Before retiring it, the script reads Community's own tables (pastes, posts,
+  attachments, submissions) and leaves the object in place when any other row still references the Media id, keeping
+  `previous_media_ref` for a later retry; the summary counts those as `referenced` and names the tables. Test:
+  `test/move-screenshots.test.js`.
+- Review follow-up: a failed review keeps the owner's requested visibility/audience/NSFW choice in
+  `review_requested_*`; `server/pastes/review-retry.js` retries pending reviews with backoff and restores the
+  visibility and share audience when Vision later says fine. Migration `0018_paste_review_retry.sql`, Contracts
+  v0.294.0.
 - Sharing reaches pastes (design 2026-11-06, the pilot): `openvibe-sdk` v0.85.0 and `openvibe-shared` v4.114.0, with
   `openvibe-contracts` v0.291.0. `migrations/0015_sharing.sql` adds openvibe-sdk/share's tables (expand), and
   `migrations/0016_sharing_backfill.sql` registers every existing paste once (public→public, unlisted→link,
@@ -44,6 +53,12 @@
   `members` and `transfer_to` (one call makes a paste only two people can open and offers it). Screenshots upload to
   Media as private objects; `npm run screenshots:private` re-hosts the existing unlisted ones. Burn-after-reading
   pastes cannot use `people`. `docs/sharing.md` has the curls; `/docs/sharing`, `/llms.txt` and `/llms-full.txt` link it.
+- Unsafe-image review (VIS-6): image pastes are reviewed by OpenVibe.Vision (`OV_VISION_URL`) before they are
+  returned. `fine` keeps its visibility, `sex_acts` becomes private and NSFW, `minor_sexual` becomes private,
+  NSFW and quarantined with the operator report id. A Vision outage makes the paste private and pending; the
+  owner cannot re-publish a reviewed paste. A hidden review also closes the paste's share row and removes its
+  members, so the sharing gate cannot reopen it. Migration `0017_paste_reviews.sql`, `server/pastes/review.js`,
+  tests `test/paste-review.test.js`.
 
 - Threads carry content labels (L1, labels and choices, 2026-11-02): `migrations/0013_thread_content_labels.sql` adds
   `threads.content_labels` (`{ labels, suggested }`, common.content-labels@1). The author or a moderator sets them on the
