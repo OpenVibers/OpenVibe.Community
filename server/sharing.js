@@ -126,7 +126,7 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
         // The screenshot follows its paste: the Media object's owner is the new owner. A failure here
         // is logged by the caller; the paste's access is already decided by the share row.
         if (!media || typeof media.moveOwner !== 'function') return;
-        const row = await tx.maybe('SELECT slug, media_ref, screenshot_url FROM pastes WHERE slug = $1 AND deleted_at IS NULL', [ref.id]);
+        const row = await tx.maybe('SELECT slug, media_ref, screenshot_url, metadata FROM pastes WHERE slug = $1 AND deleted_at IS NULL', [ref.id]);
         if (row && (row.media_ref || row.screenshot_url)) {
             // Re-host the bytes privately under the new owner after the ownership change commits:
             // Media has no "change the owner" route, so the object is replaced, never shared.
