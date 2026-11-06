@@ -43,6 +43,7 @@ const { createNetworkIdentity } = require('./identity/network');
 const { createViewerResolver, ANONYMOUS } = require('./identity/viewer');
 const v1 = require('./http/v1');
 const { createCommentService } = require('./comments/service');
+const { createSharing, describeRef } = require('./sharing');
 const { createCommentsApi } = require('./comments/api');
 const { createCommentPages } = require('./comments/routes');
 const { createForumService } = require('./forum/service');
@@ -63,6 +64,7 @@ const { createSubmissionPages } = require('./submissions/routes');
 const { pulsePage } = require('./render/pulse');
 const { extensionFor } = require('./render/highlight');
 const { createIndexNow } = require('openvibe-shared/indexnow');
+const { createPasteService } = require('./pastes/service');
 const seo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
 
@@ -171,32 +173,61 @@ async function createApp(opts = {}) {
     // services ping the engines when a public, indexable page appears, changes or goes away.
     const indexnow = opts.indexnow || createIndexNow({ host: config.baseUrl, key: config.indexnow.key, ...(opts.fetchImpl ? { fetch: opts.fetchImpl } : {}) });
     const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, chatRooms, limits: opts.forumLimits, config, indexnow });
-    const comments = createCommentService({ db, network, limits: opts.commentLimits });
+    // Screenshot bytes: OpenVibe.Media's Object API v2 (a private med_ object owned by the person when
+    // signed in), or the v1 community file store (legacy:community:file:<key>) without Community's
+    // service principal. A private object is reachable only with Community's token, so every read goes
+    // through the page's proxy (canView) and the Media URL is never put in HTML.
+    const { createMediaFiles } = require('./media/files');
+    const mediaFiles = createMediaFiles({ config });
+    const pasteMedia = opts.media || {
+        tokens: mediaFiles.tokens,
+        async upload({ buffer, filename, mime, owner = null, visibility = 'private' }) {
+            if (!mediaObjects.configured) return await mediaFiles.upload({ buffer, filename, mime });
+            const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste', visibility });
+            return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id, private: visibility === 'private' };
+        },
+        /** A paste's screenshot bytes, for the proxy (a private object through a signed download). */
+        async bytes(row) {
+            const ref = String(row.media_ref || '');
+            const id = /^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(ref) ? ref : (String(row.screenshot_url || '').match(/\/o\/(med_[0-9A-HJKMNP-TV-Z]{26})/) || [])[1];
+            if (id && mediaObjects.configured) {
+                try {
+                    const url = await mediaObjects.downloadUrl(id);
+                    const res = await (opts.fetchImpl || globalThis.fetch)(url, { signal: AbortSignal.timeout(30_000) });
+                    if (res.ok) return { body: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'application/octet-stream' };
+                } catch { /* an unlisted object still answers its stored URL below */ }
+            }
+            if (!row.screenshot_url) return null;
+            const res = await (opts.fetchImpl || globalThis.fetch)(row.screenshot_url, { signal: AbortSignal.timeout(30_000) });
+            if (!res.ok) return null;
+            return { body: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'application/octet-stream' };
+        },
+        /** The screenshot follows a transfer: re-host the same bytes privately, owned by the new owner. */
+        async moveOwner(row, owner) {
+            if (!owner || !mediaObjects.configured) return false;
+            const got = await this.bytes(row);
+            if (!got) return false;
+            const stored = await mediaObjects.uploadImage({ buffer: got.body, mime: got.type, filename: `${row.slug}-owned.png`, owner, kind: 'screenshot', source: 'community.paste', visibility: 'private' });
+            await db.prepare('UPDATE pastes SET screenshot_url = ?, media_ref = ?, updated_at = ov_now() WHERE slug = ?').run(stored.url, stored.id, row.slug);
+            return true;
+        },
+    };
+    // Sharing (openvibe-sdk/share): the one access check for a paste, its members, transfers and the
+    // gate. Created before comments so a thread on a paste nobody may see is never readable.
+    const sharing = opts.sharing || createSharing({ db, media: pasteMedia, fetchImpl: opts.fetchImpl });
+    const comments = createCommentService({ db, network, limits: opts.commentLimits, canViewPaste: (v, p) => sharing.canViewPaste(v, p) });
     // Submissions (clips, art, ideas, reports for review): their own table, not tied to the forum.
     const submissions = createSubmissionService({ db, network, pulse, indexnow, config, limits: opts.submissionLimits });
     discovery.useForum(forum);
-    Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments, submissions, indexnow });
+    Object.assign(app.locals, { db, network, pulse, relay, relayInbound, vip, forum, comments, submissions, indexnow, sharing });
     if (opts.startRelay !== false) relay.start();
 
     // ── Pastes: Community's own store is the only authority ──
     {
-        const { createMediaFiles } = require('./media/files');
-        const { createPasteService } = require('./pastes/service');
-        // Screenshot bytes: OpenVibe.Media's Object API v2 (med_ objects, unlisted, owned by the person when
-        // signed in), or the v1 community file store (legacy:community:file:<key>) without
-        // Community's service principal.
-        const files = createMediaFiles({ config });
-        const media = opts.media || {
-            tokens: files.tokens,
-            async upload({ buffer, filename, mime, owner = null }) {
-                if (!mediaObjects.configured) return await files.upload({ buffer, filename, mime });
-                const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste' });
-                return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id };
-            },
-        };
-        const service = createPasteService({ db, network, media, config, limits: opts.pasteLimits, pulse, indexnow });
+        const service = createPasteService({ db, network, media: pasteMedia, config, limits: opts.pasteLimits, pulse, indexnow, shares: sharing });
         source.use(service);
         app.locals.pastes = service;
+        app.locals.pasteMedia = pasteMedia;
     }
     // One anonymous-write budget per address, shared by the API and the no-JS form (20 / 10 min).
     const anonWriteLimiter = rateLimit({
@@ -252,6 +283,30 @@ async function createApp(opts = {}) {
     app.use('/api/v1/resources/control', require('./registry/resource-control').router({ db, viewers, pastes: app.locals.pastes }));
     app.use('/api/v1/resources', require('./registry/resource-index').router({ db, viewers }));
 
+    // ── /api/v1/<kind>/<id>/share — the uniform share API (openvibe-sdk/share) ────
+    // GET/PUT /api/v1/paste/:slug/share, .../share/requests, .../share/transfer[/accept|decline|cancel],
+    // GET /api/v1/share/people?name=, GET /api/v1/shared-with-me. The sheet and agents use these; access
+    // is still decided by canView on every paste read. Authentication is Community's own viewer (the
+    // cookie with the SDK's CSRF marker, or a bearer token); the router answers only its own paths.
+    {
+        const shareApi = express.Router();
+        shareApi.use(viewers.middleware());
+        shareApi.use(sharing.shares.router({
+            service: 'community',
+            authenticate: (req) => sharing.shareViewer(req.viewer),
+            describe: describeRef(db),
+        }));
+        const SHARE_PATH = /^\/api\/v1\/(?:shared-with-me$|share\/people$|[^/]+\/[^/]+\/share(?:\/|$))/;
+        app.use((req, res, next) => (SHARE_PATH.test(req.path) ? shareApi(req, res, next) : next()));
+    }
+    // Expire members and transfers and send queued share events/notifications. It first runs after
+    // boot, once Events is up (a delivery sent before its outbox exists would be marked sent).
+    if (opts.startSharingWorker !== false) {
+        const timer = setInterval(() => { sharing.work().catch(() => { /* logged inside */ }); }, 15_000);
+        if (timer.unref) timer.unref();
+        app.locals.sharingTimer = timer;
+    }
+
     app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'openvibe-community', version: VERSION }));
     // GET /release.json (ADR-016) and POST /release-metrics: open tabs' update reports (a same-origin
     // sendBeacon, no auth) into /metrics as release_client_updates_total.
@@ -283,6 +338,10 @@ async function createApp(opts = {}) {
         .send(seo.llmsTxt({ name: SITE_NAME, summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, markdown: true, base: config.baseUrl, sections: llmsSections, optional: llmsOptional })));
     app.get('/llms-full.txt', wrap(async (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
         .send(seo.llmsFull({ site: SITE_NAME, summary: discovery.SUMMARY, base: config.baseUrl, sections: await discovery.llmsFullSections(), maxBytes: 512 * 1024 }))));
+    // The sharing page people and agents are sent to (llms.txt's "Sharing a paste"): Markdown, one source.
+    app.get('/docs/sharing', (_req, res) => res.type('text/plain; charset=utf-8')
+        .set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
+        .send(require('fs').readFileSync(path.join(__dirname, '..', 'docs', 'sharing.md'), 'utf8')));
     app.get('/sitemap.xml', async (_req, res) => {
         let rows;
         try { rows = await discovery.sitemapRows(); } catch { return res.status(503).end(); }
@@ -458,10 +517,20 @@ async function createApp(opts = {}) {
         try {
             paste = await source.getPaste(slug, ctx);
         } catch (err) {
-            if (err.status === 404) return { status: 404, body: pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }) };
+            if (err.status === 404) {
+                // A paste shared with specific people answers the gate: "Ask for access" when signed
+                // in, "Sign in" otherwise, and never its title, content, screenshot or comments.
+                const sh = await sharing.shareOf(slug);
+                if (sh && sh.audience === 'people') {
+                    const signInUrl = `/auth/login?next=${encodeURIComponent(`/p/${slug}`)}`;
+                    return { status: 404, body: pages.gatePage({ slug, signedInAs: user && user.username ? user.username : null, signInUrl }) };
+                }
+                return { status: 404, body: pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }) };
+            }
             if (err.status === 410) return { status: 410, body: pages.errorPage({ status: 410, title: 'This paste has burned', message: 'It was set to burn after reading, and it has been read.' }) };
             throw err;
         }
+        const share = await app.locals.pastes.shareState(viewer, paste);
         const related = await catalog.related(paste, 6);
         // Its comments are the paste's typed thread (community/paste/<slug>), the one /c/:accessId and the
         // comments API show, sorted (?sort=old|new) and paged (?after=<last comment id>) as there; null while
@@ -472,7 +541,7 @@ async function createApp(opts = {}) {
         const thread = paste.burn_after_read ? null : await comments.forRef(viewer, pasteRef(paste.slug), { sort, after, limit: 30 });
         return {
             status: 200, slug: paste.slug,
-            body: pages.pastePage({ paste, related, user, comments: thread, commentSort: sort, commentsAfter: after }),
+            body: pages.pastePage({ paste, related, user, comments: thread, commentSort: sort, commentsAfter: after, share }),
         };
     }
 
@@ -520,10 +589,19 @@ async function createApp(opts = {}) {
             throw err;
         }
     });
+    // The screenshot proxy: the one place a screenshot's bytes leave Community. The paste's share
+    // check decides (canView, through screenshotUrl), then the bytes come from Media with Community's
+    // token. The Media object's own URL is never handed to a browser.
     app.get('/p/:slug/screenshot', withUser, async (req, res) => {
         if (!SLUG_RE.test(req.params.slug)) return notFound(res);
-        try { res.redirect(302, await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug)); }
-        catch (err) {
+        try {
+            await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug);
+            const row = await db.prepare('SELECT media_ref, screenshot_url FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(req.params.slug);
+            const got = row ? await app.locals.pasteMedia.bytes(row) : null;
+            if (!got) return notFound(res);
+            res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', cache.htmlHeaders({ private: true }));
+            res.type(got.type || 'application/octet-stream').send(got.body);
+        } catch (err) {
             if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
             if (err.status === 404) return notFound(res);
             throw err;
@@ -536,7 +614,7 @@ async function createApp(opts = {}) {
         let paste;
         try { paste = await source.getPaste(slug, { ...ctxOf(req), noView: true }); }
         catch (err) { if (err.status === 404 || err.status === 410) return res.status(err.status).type('text/plain').send('Not found'); throw err; }
-        if (paste.type === 'screenshot') return res.redirect(302, paste.screenshot_url || `/p/${encodeURIComponent(slug)}/screenshot`);
+        if (paste.type === 'screenshot') return res.redirect(302, `/p/${encodeURIComponent(slug)}/screenshot`);
         res.set('Content-Disposition', `attachment; filename="${slug}.${extensionFor(paste.language)}"`);
         res.set('Cache-Control', cache.htmlHeaders({ private: true }));
         res.type('text/plain; charset=utf-8').send(String(paste.content || ''));

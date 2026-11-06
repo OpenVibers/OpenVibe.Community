@@ -41,8 +41,8 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - OpenVibe.Media (screenshot and attachment uploads), OpenVibe.VIP (members-only gates), OpenVibe.Chat
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
 - OpenVibe.Live only for old VOD/clip comment imports (it reads and writes no pastes here any more)
-- `openvibe-contracts` v0.112.0, `openvibe-sdk` v0.82.0 (events outbox, per-actor limits, no-looks),
-  `openvibe-shared` v4.114.0, pinned by release tarball
+- `openvibe-contracts` v0.291.0, `openvibe-sdk` v0.85.0 (events outbox, per-actor limits, no-looks, share),
+  `openvibe-shared` v4.114.0 (the Share sheet), pinned by release tarball
 
 ## How it fits the network
 
@@ -804,6 +804,7 @@ server/
   pastes/store.js     pure SQL over pastes / versions / likes / projections (comments: comments/store.js)
   pastes/source.js    where pages read pastes from (the store)
   pastes/catalog.js   recent public pastes: trending, related, language filter
+  sharing.js          openvibe-sdk/share: the one canView, the audience, members, transfers, the gate
   comments/           typed comment threads: store (SQL), service (rules), api (/api/v1/comments),
                       routes (the /c/:accessId page), live-import (Live's old VOD/clip comments)
   forum/              spaces/threads/posts: store, service, api (/api/v1/spaces, /posts), routes (pages)
@@ -850,7 +851,7 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 - Games: https://openvibe.games (OpenVibers/OpenVibe.Games)
 
 <!-- versions:start -->
-- openvibe-contracts: v0.289.1
-- openvibe-sdk: v0.82.0
+- openvibe-contracts: v0.291.0
+- openvibe-sdk: v0.85.0
 - openvibe-shared: v4.114.0
 <!-- versions:end -->

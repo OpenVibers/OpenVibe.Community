@@ -34,6 +34,16 @@ function llmsSections() {
             ] },
             // The API is a primary entry for an agent, not something to skip.
             { title: 'API', links: [{ title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' }] },
+            // Sharing (design 2026-11-06): one audience and a transfer, from the page or from an agent.
+            { title: 'Sharing a paste', links: [
+                { title: 'Who can open a paste', url: `${u}/docs/sharing`, note: 'Everyone, anyone with the link, specific people (@names), only me; transfer ownership to a person' },
+                { title: 'Share one paste with a bearer token', url: `${u}/api/v1/paste/{slug}/share`,
+                    note: `PUT with {"audience":"people","members":[{"name":"@maticus","role":"viewer"}]}; curl -X PUT -H 'Authorization: Bearer $TOKEN' -H 'Content-Type: application/json' ${u}/api/v1/paste/<slug>/share -d '{"audience":"people","members":[{"name":"@maticus"}]}'` },
+                { title: 'Make a paste only two people can open, and offer it, in one call', url: `${u}/api/pastes`,
+                    note: `curl -X POST -H 'Authorization: Bearer $TOKEN' -H 'Content-Type: application/json' ${u}/api/pastes -d '{"content":"the notes","audience":"people","members":["@maticus"],"transfer_to":"@maticus","keep_access":false}'` },
+                { title: 'Accept, decline or cancel a transfer', url: `${u}/api/v1/paste/{slug}/share/transfer/{accept,decline,cancel}`,
+                    note: `POST {"transfer_id":"<uuid>"} as the recipient (accept/decline) or the owner (cancel)` },
+            ] },
         ],
         optional: [
             { title: 'Sitemap', url: `${u}/sitemap.xml` },
@@ -47,7 +57,9 @@ function llmsSections() {
 /** The latest public threads and text pastes in full (no NSFW, no burn-after-read, nothing gated). */
 async function llmsFullSections() {
     const { markdownToText } = require('./render/markdown');
-    const sections = [{ title: 'Content labels', pages: [{ title: 'Who wrote what', url: '/', text: CONTENT_LABELS }] }];
+    const sections = [
+        { title: 'Content labels', pages: [{ title: 'Who wrote what', url: '/', text: CONTENT_LABELS }] },
+    ];
     if (_forum) {
         const threads = await _forum.recentPublic({ limit: 50 });
         sections.push({ title: 'Latest threads', pages: threads.map((t) => ({
@@ -59,6 +71,9 @@ async function llmsFullSections() {
     sections.push({ title: 'Latest pastes', pages: full.filter(Boolean).map((p) => ({
         title: p.title || 'Untitled', url: abs(`/p/${p.slug}`), text: String(p.content || ''),
     })) });
+    // Sharing (design 2026-11-06): the four audiences, the transfer, and the curls an agent uses.
+    sections.push({ title: 'Sharing a paste', pages: [{ title: 'Sharing a paste', url: '/docs/sharing',
+        text: require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'sharing.md'), 'utf8') }] });
     return sections;
 }
 
