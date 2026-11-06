@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { boot, check, done } = require('./helpers/app');
 const sharingModule = require('../server/sharing');
+const pastesApiModule = require('../server/pastes/api');
 
 (async () => {
     const t = await boot({ pasteLimits: { cooldownSeconds: 0, commentCooldownSeconds: 0 }, appOpts: { startSharingWorker: false } });
@@ -43,6 +44,7 @@ const sharingModule = require('../server/sharing');
 
     await check('a new paste is registered with its audience in the same transaction; people maps to private in the old column', async () => {
         assert.deepStrictEqual(sharingModule.refOf('abc'), { service: 'community', kind: 'paste', id: 'abc' });
+        assert.strictEqual(typeof pastesApiModule.createPastesApi, 'function');
         const pub = await make(alexJwt, { title: 'Public note', content: 'public body' });
         let s = await row(pub.slug);
         assert.strictEqual(s.audience, 'public');
@@ -66,6 +68,20 @@ const sharingModule = require('../server/sharing');
         assert.strictEqual(members.length, 1);
         assert.deepStrictEqual(members[0].subject, { type: 'user', id: maticus.subject_id });
         assert.strictEqual(members[0].role, 'viewer');
+    });
+
+    await check('the paste JSON API is never cacheable: public, link, people, the list and a 404 all say private, no-store', async () => {
+        const pub = await make(alexJwt, { title: 'Cache public', content: 'c' });
+        const link = await make(alexJwt, { content: 'c', visibility: 'unlisted' });
+        const people = await make(alexJwt, { content: 'c', audience: 'people', members: ['@maticus'] });
+        for (const [slug, opts] of [[pub.slug, {}], [link.slug, {}], [people.slug, { cookie: alexJwt }], [people.slug, { cookie: maticusJwt }],
+            [people.slug, { cookie: samJwt }], ['no-such-paste-404', {}], [pub.slug, { cookie: bossJwt }]]) {
+            const r = await call(`/api/pastes/${slug}`, opts);
+            assert.strictEqual(r.headers.get('cache-control'), 'private, no-store', `${slug} ${JSON.stringify(opts)} answered ${r.status} with ${r.headers.get('cache-control')}`);
+        }
+        assert.strictEqual((await call('/api/pastes?limit=5')).headers.get('cache-control'), 'private, no-store');
+        assert.strictEqual((await call('/api/pastes?limit=5', { cookie: alexJwt })).headers.get('cache-control'), 'private, no-store');
+        assert.strictEqual((await call('/api/pastes/no-such-1/raw')).headers.get('cache-control'), 'private, no-store', 'a JSON redirect route too');
     });
 
     await check('the backfill maps all three old visibility values, and an ownerless paste to Community itself', async () => {
@@ -247,8 +263,11 @@ const sharingModule = require('../server/sharing');
         assert.notStrictEqual(after.key, before.key, 'a new object');
         assert.strictEqual(after.visibility, 'private');
         assert.strictEqual(after.owner, maticus.subject_id, 'owned by the new owner');
-        const row = await t.db.prepare('SELECT media_ref FROM pastes WHERE slug = ?').get(slug);
+        const row = await t.db.prepare('SELECT media_ref, metadata FROM pastes WHERE slug = ?').get(slug);
         assert.strictEqual(row.media_ref, after.key);
+        assert.strictEqual(t.media.uploads.find((u) => u.key === before.key), undefined, 'the old object is gone');
+        assert.ok(t.media.deletes.includes(before.key));
+        assert.strictEqual(JSON.parse(row.metadata).previous_media_ref, undefined, 'nothing left to retry');
         assert.strictEqual((await call(`/p/${slug}/screenshot`, { cookie: maticusJwt })).status, 200);
     });
 
@@ -321,27 +340,56 @@ const sharingModule = require('../server/sharing');
         assert.strictEqual((await call(`/p/${slug}/screenshot`, { cookie: alexJwt })).status, 200, 'the owner too');
     });
 
-    await check('the move script re-hosts an old unlisted screenshot as a private object, and the proxy serves it', async () => {
-        const up = t.media.uploads.find((u) => u.v2 && u.kind === 'screenshot');
-        const slug = 'old-unlisted-shot-1';
-        const oldUrl = `${t.media.url}/o/${up.key}`;
-        await t.db.prepare("INSERT INTO shares (service, kind, resource_id, owner_subject, audience) VALUES ('community','paste',?,?::jsonb,'public')")
-            .run(slug, JSON.stringify({ type: 'user', id: alex.subject_id }));
-        await t.db.prepare('INSERT INTO pastes (slug, owner_subject, type, title, content, visibility, screenshot_url, media_ref, metadata) VALUES (?,?,?,?,?,?,?,?,?)')
-            .run(slug, alex.subject_id, 'screenshot', 'Old shot', '', 'public', oldUrl, up.key, JSON.stringify({ mime_type: 'image/jpeg', original_name: 'old.jpg' }));
+    await check('the move script re-hosts, deletes the old object, and retries a failed delete; --keep-old keeps it', async () => {
         const { createMediaObjects } = require('../server/media/objects');
         const { moveScreenshotsPrivate } = require('../scripts/move-screenshots-private');
-        const mo = createMediaObjects({ config: require('../server/config') });
-        const out = await moveScreenshotsPrivate({ db: t.db, mediaObjects: mo, limit: 10, apply: true, log: { log() {}, warn() {} } });
-        assert.ok(out.moved >= 1, JSON.stringify(out));
-        const row = await t.db.prepare('SELECT screenshot_url, media_ref, metadata FROM pastes WHERE slug = ?').get(slug);
-        assert.notStrictEqual(row.media_ref, up.key, 'a new object');
+        const cfg = require('../server/config');
+        const mo = createMediaObjects({ config: cfg });
+        const quiet = { log() {}, warn() {} };
+        const mkOld = async (slug) => {
+            const o = await mo.uploadImage({ buffer: Buffer.from('OLD-SHOT-BYTES'), mime: 'image/png', filename: 'old.png', owner: alex.subject_id, kind: 'screenshot', visibility: 'unlisted' });
+            await t.db.prepare("INSERT INTO shares (service, kind, resource_id, owner_subject, audience) VALUES ('community','paste',?,?::jsonb,'public')")
+                .run(slug, JSON.stringify({ type: 'user', id: alex.subject_id }));
+            await t.db.prepare('INSERT INTO pastes (slug, owner_subject, type, title, content, visibility, screenshot_url, media_ref, metadata) VALUES (?,?,?,?,?,?,?,?,?)')
+                .run(slug, alex.subject_id, 'screenshot', 'Old shot', '', 'public', `${t.media.url}/o/${o.id}`, o.id, JSON.stringify({ mime_type: 'image/png', original_name: 'old.png' }));
+            return o.id;
+        };
+
+        // 1. A move deletes the old object and clears the record.
+        const first = await mkOld('old-unlisted-shot-1');
+        let out = await moveScreenshotsPrivate({ db: t.db, mediaObjects: mo, limit: 20, apply: true, log: quiet });
+        assert.strictEqual(out.moved, 1, JSON.stringify(out));
+        assert.strictEqual(out.deleted, 1, JSON.stringify(out));
+        assert.strictEqual(t.media.uploads.find((u) => u.key === first), undefined, 'the old object is gone');
+        let row = await t.db.prepare('SELECT screenshot_url, media_ref, metadata FROM pastes WHERE slug = ?').get('old-unlisted-shot-1');
         assert.match(row.media_ref, /^med_[0-9A-HJKMNP-TV-Z]{26}$/);
+        assert.notStrictEqual(row.media_ref, first, 'a new object');
         assert.strictEqual(JSON.parse(row.metadata).media_visibility, 'private');
-        const fresh = t.media.uploads.find((u) => u.key === row.media_ref);
-        assert.strictEqual(fresh.visibility, 'private');
-        assert.strictEqual((await call(`/p/${slug}/screenshot`, { cookie: alexJwt })).status, 200);
-        assert.strictEqual((await call(`/p/${slug}/screenshot`)).status, 200, 'the audience is still public');
+        assert.strictEqual(JSON.parse(row.metadata).previous_media_ref, undefined);
+        assert.strictEqual((await call(`/p/${'old-unlisted-shot-1'}/screenshot`, { cookie: alexJwt })).status, 200);
+        assert.strictEqual((await call(`/p/${'old-unlisted-shot-1'}/screenshot`)).status, 200, 'the audience is still public');
+
+        // 2. --keep-old leaves the old object alone (an operator's explicit choice).
+        const kept = await mkOld('old-unlisted-shot-2');
+        out = await moveScreenshotsPrivate({ db: t.db, mediaObjects: mo, limit: 20, apply: true, keepOld: true, log: quiet });
+        assert.ok(out.moved >= 1 && out.deleted === 0, JSON.stringify(out));
+        assert.ok(t.media.uploads.find((u) => u.key === kept), 'the old object stays');
+        row = await t.db.prepare('SELECT metadata FROM pastes WHERE slug = ?').get('old-unlisted-shot-2');
+        assert.strictEqual(JSON.parse(row.metadata).previous_media_ref, undefined, 'nothing queued for deletion');
+
+        // 3. A failed delete is recorded and retried on the next run.
+        const stubborn = await mkOld('old-unlisted-shot-3');
+        t.media.failNextDelete();
+        out = await moveScreenshotsPrivate({ db: t.db, mediaObjects: mo, limit: 20, apply: true, log: quiet });
+        assert.ok(out.deleteFailed >= 1, JSON.stringify(out));
+        assert.ok(t.media.uploads.find((u) => u.key === stubborn), 'still there after the failure');
+        row = await t.db.prepare('SELECT metadata FROM pastes WHERE slug = ?').get('old-unlisted-shot-3');
+        assert.strictEqual(JSON.parse(row.metadata).previous_media_ref, stubborn, 'recorded for the retry');
+        out = await moveScreenshotsPrivate({ db: t.db, mediaObjects: mo, limit: 20, apply: true, log: quiet });
+        assert.ok(out.deleted >= 1, JSON.stringify(out));
+        assert.strictEqual(t.media.uploads.find((u) => u.key === stubborn), undefined, 'the retry deleted it');
+        row = await t.db.prepare('SELECT metadata FROM pastes WHERE slug = ?').get('old-unlisted-shot-3');
+        assert.strictEqual(JSON.parse(row.metadata).previous_media_ref, undefined, 'the record is cleared');
     });
 
     done();

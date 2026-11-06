@@ -22,7 +22,7 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         clientId: config.oauth.clientId,
         clientSecret: config.oauth.clientSecret,
         audience: 'openvibe.media',
-        scope: 'media.object.upload media.object.read',
+        scope: 'media.object.upload media.object.read media.object.delete',
         fetchImpl,
     }) : null;
     const base = `${config.mediaInternalUrl}/api/v2/community/objects`;
@@ -75,7 +75,22 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         }
     }
 
-    return { configured, uploadImage, downloadUrl };
+    /**
+     * Soft-delete one object from Media (a screenshot's old unlisted copy after it moved private).
+     * 404 counts as gone: the outcome the caller wants. Needs media.object.delete in the tenant.
+     */
+    async function deleteObject(id, retried = false) {
+        try {
+            await call('DELETE', `/${encodeURIComponent(String(id))}`);
+            return { deleted: true };
+        } catch (err) {
+            if (err.status === 404) return { deleted: true, alreadyGone: true };
+            if (err.status === 401 && !retried) { tokens.invalidate(); return await deleteObject(id, true); }
+            throw err;
+        }
+    }
+
+    return { configured, uploadImage, downloadUrl, deleteObject };
 }
 
 module.exports = { createMediaObjects };

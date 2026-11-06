@@ -202,13 +202,29 @@ async function createApp(opts = {}) {
             if (!res.ok) return null;
             return { body: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'application/octet-stream' };
         },
-        /** The screenshot follows a transfer: re-host the same bytes privately, owned by the new owner. */
+        /**
+         * The screenshot follows a transfer: re-host the same bytes privately, owned by the new owner,
+         * then delete the old object. previous_media_ref is recorded before the delete, so a failure
+         * is retried by scripts/move-screenshots-private.js instead of leaving the old URL readable.
+         */
         async moveOwner(row, owner) {
             if (!owner || !mediaObjects.configured) return false;
             const got = await this.bytes(row);
             if (!got) return false;
+            const old = /^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(row.media_ref || '')) ? String(row.media_ref)
+                : (String(row.screenshot_url || '').match(/\/o\/(med_[0-9A-HJKMNP-TV-Z]{26})/) || [])[1] || null;
+            const meta = (() => { try { const o = JSON.parse(row.metadata || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; } })();
             const stored = await mediaObjects.uploadImage({ buffer: got.body, mime: got.type, filename: `${row.slug}-owned.png`, owner, kind: 'screenshot', source: 'community.paste', visibility: 'private' });
-            await db.prepare('UPDATE pastes SET screenshot_url = ?, media_ref = ?, updated_at = ov_now() WHERE slug = ?').run(stored.url, stored.id, row.slug);
+            const next = { ...meta, media_visibility: 'private', ...(old ? { previous_media_ref: old } : {}) };
+            await db.prepare('UPDATE pastes SET screenshot_url = ?, media_ref = ?, metadata = ?, updated_at = ov_now() WHERE slug = ?')
+                .run(stored.url, stored.id, JSON.stringify(next), row.slug);
+            if (old) {
+                try {
+                    await mediaObjects.deleteObject(old);
+                    delete next.previous_media_ref;
+                    await db.prepare('UPDATE pastes SET metadata = ?, updated_at = ov_now() WHERE slug = ?').run(JSON.stringify(next), row.slug);
+                } catch (err) { console.warn(`[Sharing] old screenshot ${old} not deleted (the move script retries): ${err.message}`); }
+            }
             return true;
         },
     };
