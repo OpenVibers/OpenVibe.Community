@@ -134,7 +134,8 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, 'href="/p/amber-fox-42/raw"');
         has(r.text, 'href="/p/amber-fox-42/download"');
         has(r.text, 'data-copy-content="amber-fox-42"');
-        has(r.text, 'twitter.com/intent/tweet');
+        has(r.text, 'data-ov-share-sheet', 'the one Share sheet (sharing pilot, 2026-11-06)');
+        assert.ok(!r.text.includes('twitter.com/intent/tweet'), 'no hand-made X link any more');
         has(r.text, '<h2>More like this</h2>');
         has(r.text, 'https://openvibe.live/data/avatars/alex.png', 'relative avatar made absolute against Live');
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
@@ -153,12 +154,13 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!r.text.includes('<script>alert(1)</script>'));
     });
 
-    await check('screenshot paste uses the stored Media image as og:image and ImageObject JSON-LD', async () => {
+    await check('screenshot paste: og:image and the picture go through the checked proxy, never the Media URL', async () => {
         const r = await t.get('/p/fair-moon-23');
-        has(r.text, '<meta property="og:image" content="https://openvibe.media/o/med_FAIRMOON">');
+        assert.match(r.text, /<meta property="og:image" content="[^"]*\/p\/fair-moon-23\/screenshot">/, 'og:image is the proxy');
         has(r.text, '<meta name="twitter:card" content="summary_large_image">');
         has(r.text, '"@type":"ImageObject"');
-        has(r.text, '<img src="https://openvibe.media/o/med_FAIRMOON"');
+        has(r.text, '<img src="/p/fair-moon-23/screenshot"');
+        assert.ok(!r.text.includes('openvibe.media/o/med_FAIRMOON'), 'the Media URL never reaches the HTML (sharing pilot)');
     });
 
     await check('private paste 404s for anonymous visitors and renders for its owner', async () => {
@@ -171,13 +173,13 @@ const { boot, check, done } = require('./helpers/app');
         has(owner.text, 'data-delete="grim-vale-61"', 'owner sees delete');
     });
 
-    await check('raw serves the text from the store; screenshot redirects to the stored image; download is an attachment without a view', async () => {
+    await check('raw serves the text from the store; the screenshot goes through the proxy; download is an attachment without a view', async () => {
         const raw = await t.get('/p/amber-fox-42/raw');
         assert.strictEqual(raw.status, 200);
         assert.ok(raw.text.startsWith('const greet'));
         const shot = await t.get('/p/fair-moon-23/screenshot');
-        assert.strictEqual(shot.status, 302);
-        assert.strictEqual(shot.headers.get('location'), 'https://openvibe.media/o/med_FAIRMOON');
+        assert.notStrictEqual(shot.status, 302, 'the screenshot is streamed by the checked proxy, not a redirect to Media');
+        assert.ok(!String(shot.headers.get('location') || '').includes('openvibe.media'), 'no Media URL in a redirect');
         const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views;
         const dl = await t.get('/p/amber-fox-42/download');
         assert.strictEqual(dl.status, 200);
