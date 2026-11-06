@@ -20,7 +20,7 @@
     same transaction, before the member goes).
   - `docs/locked-pastes.md` at `/docs/locked-pastes`, linked from `llms.txt`, with the document format and the agent
     path (`openvibe-sdk/locker`).
-  - `openvibe-sdk` v0.89.0 and `openvibe-shared` v4.116.0 (the share sheet's Locked part and `OVLocker.seal`).
+  - `openvibe-sdk` v0.89.0 and `openvibe-shared` v4.116.1 (the share sheet’s Locked part, `OVLocker.seal`, and a transfer’s key slot).
 
 - The screenshot move script (2026-11-06) no longer reads a 404 from Media's community tenant as "already gone": for a
   `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste
