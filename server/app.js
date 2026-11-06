@@ -204,8 +204,9 @@ async function createApp(opts = {}) {
         },
         /**
          * The screenshot follows a transfer: re-host the same bytes privately, owned by the new owner,
-         * then delete the old object. previous_media_ref is recorded before the delete, so a failure
-         * is retried by scripts/move-screenshots-private.js instead of leaving the old URL readable.
+         * then delete the old object (retire it when it is a legacy Live paste screenshot).
+         * previous_media_ref is recorded before the delete, so a failure is retried by
+         * scripts/move-screenshots-private.js instead of leaving the old URL readable.
          */
         async moveOwner(row, owner) {
             if (!owner || !mediaObjects.configured) return false;
@@ -220,7 +221,13 @@ async function createApp(opts = {}) {
                 .run(stored.url, stored.id, JSON.stringify(next), row.slug);
             if (old) {
                 try {
-                    await mediaObjects.deleteObject(old);
+                    try {
+                        await mediaObjects.deleteObject(old);
+                    } catch (err) {
+                        // A 404 is a legacy Live paste screenshot, not "already gone": retire it.
+                        if (err.status !== 404) throw err;
+                        await mediaObjects.retireLegacyPaste(old);
+                    }
                     delete next.previous_media_ref;
                     await db.prepare('UPDATE pastes SET metadata = ?, updated_at = ov_now() WHERE slug = ?').run(JSON.stringify(next), row.slug);
                 } catch (err) { console.warn(`[Sharing] old screenshot ${old} not deleted (the move script retries): ${err.message}`); }

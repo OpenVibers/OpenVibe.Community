@@ -8,8 +8,8 @@
   "port": 4200,
   "domain": "openvibe.community",
   "contracts": "openvibe-contracts v0.294.0",
-  "sdk": "openvibe-sdk v0.82.0",
-  "shared": "openvibe-shared v4.114.0",
+  "sdk": "openvibe-sdk v0.85.0",
+  "shared": "openvibe-shared v4.115.1",
   "capabilities": [
     "community.paste.create",
     "community.paste.write",

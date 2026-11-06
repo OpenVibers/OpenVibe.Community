@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The screenshot move script (2026-11-06) no longer reads a 404 from Media's community tenant as "already gone": for a
+  `legacy:live:paste:<slug>` object it keeps `previous_media_ref` and retires the object through Media's internal legacy-paste
+  route. `--apply` pages with an id cursor and reaches every paste in one run, `--retire-ids <file>` retires named objects
+  whose paste record was lost (one Media id per line), and the dry run prints the moves, retires and refusals it would make.
 - Review follow-up: a failed review keeps the owner's requested visibility/audience/NSFW choice in
   `review_requested_*`; `server/pastes/review-retry.js` retries pending reviews with backoff and restores the
   visibility and share audience when Vision later says fine. Migration `0018_paste_review_retry.sql`, Contracts

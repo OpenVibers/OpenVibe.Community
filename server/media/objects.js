@@ -9,6 +9,9 @@
  *   POST /api/v2/community/objects                 init { kind, visibility: 'unlisted', size_bytes, mime_type, filename, content_hash }
  *   PUT  /api/v2/community/objects/:id/content     the bytes
  *   POST /api/v2/community/objects/:id/complete    Media checks size, hash and type → ready
+ *   DELETE /api/v2/community/objects/:id           soft delete (this tenant only; a legacy Live paste answers 404)
+ *   POST /internal/community/legacy-paste-screenshots/:id/retire
+ *                                                  the legacy:live:paste:<slug> screenshot in Media's live tenant
  *
  * Public bytes are served at <media>/o/:id.
  */
@@ -27,18 +30,22 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
     }) : null;
     const base = `${config.mediaInternalUrl}/api/v2/community/objects`;
 
-    async function call(method, path, { json, body, headers = {} } = {}, retried = false) {
+    async function request(method, url, { json, body, headers = {} } = {}, retried = false) {
         const h = { Accept: 'application/json', ...headers, ...(await tokens.authHeaders()) };
         if (json !== undefined) h['Content-Type'] = 'application/json';
-        const res = await fetchImpl(`${base}${path}`, { method, headers: h, body: json !== undefined ? JSON.stringify(json) : body, signal: AbortSignal.timeout(60_000) });
-        if (res.status === 401 && !retried) { tokens.invalidate(); return await call(method, path, { json, body, headers }, true); }
+        const res = await fetchImpl(url, { method, headers: h, body: json !== undefined ? JSON.stringify(json) : body, signal: AbortSignal.timeout(60_000) });
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await request(method, url, { json, body, headers }, true); }
         const data = await res.json().catch(() => null);
         if (!res.ok) {
-            const err = new Error(`Media ${method} ${path || '/'} ${res.status}: ${(data && (data.detail || data.error)) || 'failed'}`);
+            const err = new Error(`Media ${method} ${url.replace(/^https?:\/\/[^/]+/, '')} ${res.status}: ${(data && (data.detail || data.error)) || 'failed'}`);
             err.status = res.status; err.code = data && data.code;
             throw err;
         }
         return data || {};
+    }
+
+    async function call(method, path, opts = {}) {
+        return await request(method, `${base}${path}`, opts);
     }
 
     /**
@@ -77,20 +84,29 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
 
     /**
      * Soft-delete one object from Media (a screenshot's old unlisted copy after it moved private).
-     * 404 counts as gone: the outcome the caller wants. Needs media.object.delete in the tenant.
+     * Needs media.object.delete in the community tenant. A 404 is NOT "already gone": Media answers
+     * it for an object outside the caller's tenant (a legacy Live paste, media.object.legacy_managed
+     * on the direct route), and the move script must keep the reference and retire that object
+     * through retireLegacyPaste instead.
      */
-    async function deleteObject(id, retried = false) {
-        try {
-            await call('DELETE', `/${encodeURIComponent(String(id))}`);
-            return { deleted: true };
-        } catch (err) {
-            if (err.status === 404) return { deleted: true, alreadyGone: true };
-            if (err.status === 401 && !retried) { tokens.invalidate(); return await deleteObject(id, true); }
-            throw err;
-        }
+    async function deleteObject(id) {
+        await call('DELETE', `/${encodeURIComponent(String(id))}`);
+        return { deleted: true };
     }
 
-    return { configured, uploadImage, downloadUrl, deleteObject };
+    /**
+     * Retire one legacy Live paste screenshot through Media's internal route (the object is in the
+     * live tenant, so deleteObject answers 404 and the v2 delete would refuse it). Only the exact
+     * legacy:live:paste:<slug> screenshot kind is accepted by Media, only for Community's service
+     * principal; a repeat is a no-op (changed:false). Needs media.object.delete.
+     */
+    async function retireLegacyPaste(id) {
+        if (!configured) { const e = new Error('Retiring a Media object needs Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
+        const out = await request('POST', `${config.mediaInternalUrl}/internal/community/legacy-paste-screenshots/${encodeURIComponent(String(id))}/retire`);
+        return { retired: true, changed: !!(out && out.changed), ...(out && out.retention_until ? { retention_until: out.retention_until } : {}) };
+    }
+
+    return { configured, uploadImage, downloadUrl, deleteObject, retireLegacyPaste };
 }
 
 module.exports = { createMediaObjects };
