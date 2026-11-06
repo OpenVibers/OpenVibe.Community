@@ -102,7 +102,9 @@ function start({ clientSecret = 'shh' } = {}) {
         });
     });
     function sign(claims, opts = {}) {
-        return jwt.sign({ sub: claims.id, ...claims }, privatePem, { algorithm: 'RS256', issuer, expiresIn: '1h', ...opts });
+        // The Network mints person tokens with openvibe.network in `aud` (oauth-routes.js issueTokenPair); the SDK's
+        // session verification checks the audience, so a session token here carries it unless a test says otherwise.
+        return jwt.sign({ sub: claims.id, aud: ['openvibe.network'], ...claims }, privatePem, { algorithm: 'RS256', issuer, expiresIn: '1h', ...opts });
     }
     /** A client-credentials service token (identity.service-token-claims@1). */
     function signService({ sub = 'svc:live', actorType = 'service', aud = ['openvibe.community'], cap = [], iss = issuer, expSec = 300, key = privatePem, extra = {} } = {}) {
