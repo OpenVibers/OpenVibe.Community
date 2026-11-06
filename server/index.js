@@ -56,6 +56,12 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
     try { searchDocs = require('./search/documents').createSearchDocuments({ db: require('./db').getDb() }); searchDocs.start(); } catch (err) { console.warn('[Search] documents not started:', err.message); }
     // A paste whose audience becomes people/private leaves Search at once (sharing's onAudienceChange).
     if (app.locals.sharing) app.locals.sharing.useSearch(searchDocs);
+    // Pending unsafe-image reviews retry with backoff; a later fine restores the owner's visibility.
+    let reviewRetry = null;
+    try {
+        reviewRetry = require('./pastes/review-retry').createReviewRetry({ db: require('./db').getDb(), review: app.locals.pasteReview });
+        if (reviewRetry.start()) console.log('[Community] paste review retry: on');
+    } catch (err) { console.warn('[Pastes] review retry not started:', err.message); }
 
     // ── Stop (roadmap WS-P lifecycle; openvibe-sdk/service) ──────
     // SIGTERM: the Pulse subscription retries, the community.profile scan and the search-document scans
@@ -73,6 +79,7 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
             () => { if (subscriptions) subscriptions.stop(); },
             () => { if (profiles) profilesDone = profiles.stop(); },
             () => { if (searchDocs) searchDocs.stop(); },
+            () => { if (reviewRetry) reviewRetry.stop(); },
         ],
         close: [
             () => within(1000, profilesDone),

@@ -41,7 +41,7 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
 - OpenVibe.Media (screenshot and attachment uploads), OpenVibe.VIP (members-only gates), OpenVibe.Chat
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
 - OpenVibe.Live only for old VOD/clip comment imports (it reads and writes no pastes here any more)
-- `openvibe-contracts` v0.291.0, `openvibe-sdk` v0.85.0 (events outbox, per-actor limits, no-looks, share),
+- `openvibe-contracts` v0.294.0, `openvibe-sdk` v0.85.0 (events outbox, per-actor limits, no-looks, share),
   `openvibe-shared` v4.115.1 (the Share sheet), pinned by release tarball
 
 ## How it fits the network
@@ -105,6 +105,16 @@ Moments feeds read it.
   (`POST ${OV_MEDIA_INTERNAL_URL}/api/v1/community/files`, service token with
   `media.object.upload`); the paste keeps the public URL and `media_ref`
   `legacy:community:file:<key>`. Imported pastes keep their existing Media screenshot URLs.
+- **Unsafe-image review (VIS-6)**: with `OV_VISION_URL` and Community's service principal, an image paste is
+  reviewed before it is returned. Vision sorts it into exactly three categories: `fine` keeps its visibility;
+  `sex_acts` becomes private and NSFW (gone from every public list, Pulse, search, sitemap and anonymous page,
+  kept for its owner); `minor_sexual` becomes private, NSFW and quarantined with the operator report id. If
+  Vision is unreachable the paste becomes private and `review_status='pending'`, never public; the visibility its
+  owner asked for is kept in `review_requested_visibility`/`_audience`/`_nsfw`, and the background retry
+  (`server/pastes/review-retry.js`, `COMMUNITY_REVIEW_RETRY_MS`, off at 0) restores it when a later review says
+  `fine`. Text pastes are not reviewed. `paste.review_category`, `review_status`, `review_report_id`,
+  `reviewed_at` and the requested fields are in the paste shape; the enforcement lives in `server/pastes/review.js`.
+  Tests: `test/paste-review.test.js`.
 - **Slugs**: public pastes get a short `adj-noun-NN` slug; a new unlisted or private paste (and
   a fork of one) gets `adj-noun-` + 16 random base62 characters, because its slug is the only
   thing keeping it unlisted. Existing slugs never change and keep working.
@@ -668,6 +678,8 @@ robots/llms/sitemap are public for 1 h, `/feed.xml` 15 min and the thread feeds 
 
 ## Configuration
 
+- `OV_VISION_URL` — OpenVibe.Vision's base URL for the unsafe-image review; unset means no image review runs.
+
 Copy `.env.example` to `.env` (production: `/etc/openvibe/community.env`, mode 0600).
 
 | Variable | Default | Meaning |
@@ -851,7 +863,7 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 - Games: https://openvibe.games (OpenVibers/OpenVibe.Games)
 
 <!-- versions:start -->
-- openvibe-contracts: v0.291.0
+- openvibe-contracts: v0.294.0
 - openvibe-sdk: v0.85.0
 - openvibe-shared: v4.115.1
 <!-- versions:end -->

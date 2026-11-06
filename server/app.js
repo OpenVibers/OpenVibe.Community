@@ -247,10 +247,12 @@ async function createApp(opts = {}) {
 
     // ── Pastes: Community's own store is the only authority ──
     {
-        const service = createPasteService({ db, network, media: pasteMedia, config, limits: opts.pasteLimits, pulse, indexnow, shares: sharing });
+        const review = opts.review || require('./pastes/review').createPasteReview({ config });
+        const service = createPasteService({ db, network, media: pasteMedia, config, limits: opts.pasteLimits, pulse, indexnow, shares: sharing, review });
         source.use(service);
         app.locals.pastes = service;
         app.locals.pasteMedia = pasteMedia;
+        app.locals.pasteReview = review;
     }
     // One anonymous-write budget per address, shared by the API and the no-JS form (20 / 10 min).
     const anonWriteLimiter = rateLimit({

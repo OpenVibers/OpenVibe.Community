@@ -55,6 +55,8 @@ class PasteError extends Error {
 const fail = (status, error, extra) => { throw new PasteError(status, { error, ...(extra || {}) }); };
 
 const truthy = (v) => v === true || v === 1 || v === '1' || v === 'true' || v === 'on';
+// A pending or hidden review keeps a paste out of public/unlisted visibility, whatever the owner asks later.
+const reviewHidden = (p) => Boolean(p) && (p.review_status === 'pending' || ['sex_acts', 'minor_sexual'].includes(p.review_category));
 const intIn = (v, def, min, max) => Math.min(Math.max(parseInt(v, 10) || def, min), max);
 
 function parseJson(text) { try { return text ? JSON.parse(text) : null; } catch { return null; } }
@@ -81,7 +83,7 @@ function sinceParam(value) {
     return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 19) : null;
 }
 
-function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null, indexnow = null, shares = null } = {}) {
+function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null, indexnow = null, shares = null, review = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
     // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
     const tell = async (fn) => { if (!pulse) return; try { await fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
@@ -247,6 +249,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             copies: p.copies || 0,
             likes: p.likes || 0,
             is_nsfw: !!p.is_nsfw,
+            review_category: p.review_category || null,
+            review_status: p.review_status || null,
+            review_report_id: p.review_report_id || null,
+            reviewed_at: p.reviewed_at || null,
             ai_summary: p.ai_summary || null,
             ai_tags: p.ai_tags || null,
             ai_analyzed_at: p.ai_analyzed_at || null,
@@ -571,7 +577,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 mime_type: mime,
                 media_visibility: 'private',
             };
-            const row = await db.tx(async () => {
+            let row = await db.tx(async () => {
                 const r = await store.insertPaste(db, {
                     slug,
                     owner_subject: v.subject || null,
@@ -593,7 +599,18 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 return r;
             });
             const sharing = await applyShareRequest(v, row.slug, audience, body);
-            return await created(row, { paste: { ...(await shapeOne(row, v)), audience }, ...(sharing || {}) });
+            // The review comes after the share row exists, so it can close the share and remove every
+            // member in the same pass. The owner's requested visibility is kept for a retry that says fine.
+            if (review && review.enabled) {
+                await db.prepare('UPDATE pastes SET review_requested_visibility = ?, review_requested_audience = ?, review_requested_nsfw = ? WHERE id = ?')
+                    .run(visibility, audience, truthy(body.is_nsfw) ? 1 : 0, row.id);
+                row = await store.getById(db, row.id) || row;
+                row = (await review.reviewPaste(db, row, stored.url)) || row;
+            }
+            const reviewedAudience = (row.review_status === 'hidden' || row.review_status === 'quarantined' || row.review_status === 'pending') ? 'private' : audience;
+            return await created(row, {
+                paste: { ...(await shapeOne(row, v)), audience: reviewedAudience }, ...(sharing || {}),
+            });
         },
 
         /** PUT /api/pastes/:slug — owner (or staff) only. */
@@ -608,6 +625,11 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 if (content.length > L.maxSizeKb * 1024) fail(400, 'Too large');
                 patch.content = content;
                 patch.language = store.detectLanguage(content, body.language);
+            }
+            if (reviewHidden(p)) {
+                const requested = body.audience !== undefined ? String(body.audience)
+                    : body.visibility !== undefined ? audienceOf(v, body.visibility) : null;
+                if (requested && requested !== 'private') fail(409, 'This paste is hidden by an unsafe-image review and cannot be made public', { code: 'paste.review_hidden' });
             }
             let audience = null;
             if (body.audience !== undefined || body.visibility !== undefined) {
@@ -810,6 +832,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 for (const slug of slugs.slice(0, 500)) {
                     const p = await store.getBySlug(db, String(slug));
                     if (!p) { skipped++; continue; }
+                    if (reviewHidden(p) && (action === 'public' || action === 'unlisted')) { skipped++; continue; }
                     if (action === 'delete') await store.softDelete(db, p.id);
                     else {
                         await store.setVisibility(db, p.id, action);
@@ -842,11 +865,12 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');
             }
-            const row = await db.tx(async () => {
+            let row = await db.tx(async () => {
                 const r = await store.setScreenshot(db, p.id, stored.url, stored.media_ref);
                 await events.moderationAction(v, 'paste.censored', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });
                 return r;
             });
+            if (review && review.enabled) row = (await review.reviewPaste(db, row, stored.url)) || row;
             pingIndexNow(row);
             return { paste: await shapeOne(row, v) };
         },
