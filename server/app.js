@@ -314,6 +314,8 @@ async function createApp(opts = {}) {
     {
         const shareApi = express.Router();
         shareApi.use(viewers.middleware());
+        // The whole share call runs as the person it is for, so a locker key lookup asks as them (server/sharing.js).
+        shareApi.use((req, res, next) => sharing.withActor(req.viewer, next));
         shareApi.use(sharing.shares.router({
             service: 'community',
             authenticate: (req) => sharing.shareViewer(req.viewer),
@@ -365,6 +367,10 @@ async function createApp(opts = {}) {
     app.get('/docs/sharing', (_req, res) => res.type('text/plain; charset=utf-8')
         .set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
         .send(require('fs').readFileSync(path.join(__dirname, '..', 'docs', 'sharing.md'), 'utf8')));
+    // Locked pastes (Locker design 2026-11-06): the format, the three locks and the agent path, one source.
+    app.get('/docs/locked-pastes', (_req, res) => res.type('text/plain; charset=utf-8')
+        .set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
+        .send(require('fs').readFileSync(path.join(__dirname, '..', 'docs', 'locked-pastes.md'), 'utf8')));
     app.get('/sitemap.xml', async (_req, res) => {
         let rows;
         try { rows = await discovery.sitemapRows(); } catch { return res.status(503).end(); }
@@ -605,6 +611,8 @@ async function createApp(opts = {}) {
             const out = await app.locals.pastes.raw(req.viewer, req.params.slug, ctxOf(req));
             if (out.redirect) return res.redirect(302, out.redirect);
             res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', cache.htmlHeaders({ private: true }));
+            // A locked paste's raw is its envelope, exactly as it was uploaded: `.ovlk`, never a text body.
+            if (out.bytes) return res.type('application/octet-stream').set('Content-Disposition', `inline; filename="${out.filename}"`).send(out.bytes);
             res.type('text/plain; charset=utf-8').send(out.content);
         } catch (err) {
             if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
@@ -637,6 +645,14 @@ async function createApp(opts = {}) {
         let paste;
         try { paste = await source.getPaste(slug, { ...ctxOf(req), noView: true }); }
         catch (err) { if (err.status === 404 || err.status === 410) return res.status(err.status).type('text/plain').send('Not found'); throw err; }
+        if (paste.locked) {
+            try {
+                const out = await app.locals.pastes.envelope(req.viewer, slug);
+                return res.set('Cache-Control', cache.htmlHeaders({ private: true }))
+                    .set('Content-Disposition', `attachment; filename="${out.filename}"`)
+                    .type('application/octet-stream').send(out.bytes);
+            } catch (err) { if (err.status === 404) return res.status(404).type('text/plain').send('Not found'); throw err; }
+        }
         if (paste.type === 'screenshot') return res.redirect(302, `/p/${encodeURIComponent(slug)}/screenshot`);
         res.set('Content-Disposition', `attachment; filename="${slug}.${extensionFor(paste.language)}"`);
         res.set('Cache-Control', cache.htmlHeaders({ private: true }));

@@ -14,6 +14,19 @@ link preview asks the same access check (`canView`). A reader who is not on a `p
 404 and a gate ("Ask for access", or "Sign in"), never the title, the content, the screenshot or
 the comments.
 
+## Locked pastes
+
+A text paste can also be **locked**: sealed in the browser before it is sent, so OpenVibe stores an
+envelope and can never read the text ([`docs/locked-pastes.md`](locked-pastes.md)). A locked paste
+is shared the same way, with two rules:
+
+- It is **never public**: its audience is `people` (a people lock) or `link` (a password or link lock).
+- Adding someone wraps the content key for their Locker; removing someone re-seals the content under
+  a fresh key for those who stay (they keep what they already opened).
+
+The share sheet shows a **Locked** part for one: what the lock means, each person's eight-word
+fingerprint, and a warning when somebody's key changed.
+
 ## From the page
 
 The paste page's **Share** button opens the shared sheet: Send it (the link, the phone's own share

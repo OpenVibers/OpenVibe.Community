@@ -109,14 +109,17 @@ function pagerHref(state, page) {
 // ── Paste card (grid item) ───────────────────────────────────
 function pasteCard(p) {
     const isShot = p.type === 'screenshot';
-    const preview = isShot
-        ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(screenshotSrc(p))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
-        : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
-    const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
-    return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}">
+    const locked = !!p.locked;
+    const preview = locked
+        ? `<div class="card-locked"><i class="fa-solid fa-lock" aria-hidden="true"></i> Locked — OpenVibe can’t read what’s inside</div>`
+        : isShot
+            ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(screenshotSrc(p))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
+            : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
+    const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${locked ? '<i class="fa-solid fa-lock" title="Locked"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
+    return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}${locked ? ' card-is-locked' : ''}">
   <a class="card-link" href="/p/${esc(p.slug)}">
     ${preview}
-    <h3 class="card-title">${flags}${esc(p.title || 'Untitled')}</h3>
+    <h3 class="card-title">${flags}${esc(p.title || (locked ? 'A locked paste' : 'Untitled'))}</h3>
   </a>
   <div class="card-meta">
     ${authorHtml(p)}
@@ -375,6 +378,7 @@ function browsePage(result, languages) {
 
 // ── Paste page ───────────────────────────────────────────────
 function pasteDescription(p) {
+    if (p.locked) return 'A locked paste on OpenVibe Community. Only the people it is locked for can read it.';
     if (p.ai_summary) return ld.clean(p.ai_summary, 200);
     if (p.type === 'screenshot') return ld.clean(p.content || `A screenshot shared by ${authorName(p)} on ${SITE_NAME}.`, 200);
     return ld.clean(`${p.title || 'Paste'} — ${languageLabel(p.language)} paste by ${authorName(p)}: ${String(p.content || '').slice(0, 200)}`, 200);
@@ -397,16 +401,22 @@ function withoutTitle(content, title) {
 
 function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null, share = null }) {
     const isShot = p.type === 'screenshot';
-    const title = p.title || (isShot ? 'Screenshot' : 'Untitled paste');
+    // A locked paste (Locker design 2026-11-06, the pilot): Community holds an envelope and never the plaintext. The
+    // title is here only if its owner chose to show it; the page opens the envelope in the browser.
+    const locked = !!p.locked;
+    const title = p.title || (locked ? 'A locked paste' : isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
     // The screenshot is Community's own address: the proxy checks canView, never the Media object's URL.
     const shot = isShot ? screenshotSrc(p) : null;
     // Specific people and Only me get a generic link preview, even for someone allowed to read them:
-    // a crawler or a chat client must never learn the title, the description or the picture.
+    // a crawler or a chat client must never learn the title, the description or the picture. A locked paste always
+    // does: its words are not ours to describe.
     const restricted = !!(share && (share.audience === 'people' || share.audience === 'private'));
-    const metaTitle = restricted ? 'A paste on OpenVibe Community' : title;
-    const metaDescription = restricted ? 'A paste shared with specific people on OpenVibe Community.' : description;
-    const metaImage = restricted ? undefined : (shot || undefined);
+    const lockedMeta = locked || restricted;
+    const metaTitle = locked ? 'A locked paste on OpenVibe Community' : restricted ? 'A paste on OpenVibe Community' : title;
+    const metaDescription = locked ? 'A locked paste on OpenVibe Community. Only the people it is locked for can read it.'
+        : restricted ? 'A paste shared with specific people on OpenVibe Community.' : description;
+    const metaImage = lockedMeta ? undefined : (shot || undefined);
     // Pastes name their owner by Network subject; the projection cache supplies the display fields.
     const isOwner = !!(user && (p.is_owner === true
         || (p.owner_subject && user.subject_id && p.owner_subject === user.subject_id)
@@ -416,7 +426,13 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     const isDoc = !!hl && hl.language === 'markdown';
 
     let bodyBlock;
-    if (isShot) {
+    if (locked) {
+        // The card ov-locker.js draws: a link lock opens with the key after #, a password with its password, a people
+        // lock with the reader's own locker. The plaintext is written here, on the device, and nowhere else.
+        bodyBlock = `<div id="paste-locked" class="paste-locked" aria-live="polite">
+    <p class="muted">Opening on your device…</p>
+  </div>`;
+    } else if (isShot) {
         bodyBlock = `<figure class="shot${p.is_nsfw ? ' nsfw' : ''}">
     <a href="${esc(shot)}" target="_blank" rel="noopener"><img src="${esc(shot)}" alt="${esc(title)}"></a>
     ${p.content ? `<figcaption>${esc(p.content)}</figcaption>` : ''}
@@ -438,7 +454,12 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
   </details>` : code;
     }
 
-    const actions = `<div class="actions">
+    const actions = locked ? `<div class="actions">
+    <a class="btn btn-sm" href="/p/${esc(p.slug)}/raw" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Raw envelope</a>
+    <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-download" aria-hidden="true"></i> Download .ovlk</a>
+    <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
+    ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
+  </div>` : `<div class="actions">
     ${!isShot ? `<button type="button" class="btn btn-sm btn-primary" data-copy-content="${esc(p.slug)}"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copy</button>` : ''}
     ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(p.slug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(p.slug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
     <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
@@ -461,6 +482,7 @@ ${offer}
       <span class="sep">·</span><time datetime="${esc(ld.isoDate(p.created_at) || '')}" itemprop="datePublished">${esc(fmtDate(p.created_at))}</time>
       <span class="sep">·</span><span class="stat" title="Views"><i class="fa-solid fa-eye" aria-hidden="true"></i> ${num(p.views)} views</span>
       ${!isShot && hl ? `<span class="sep">·</span><span class="stat">${num(hl.lines)} lines</span>` : ''}
+      ${locked ? `<span class="sep">·</span><span class="badge badge-lock"><i class="fa-solid fa-lock" aria-hidden="true"></i> locked</span>` : ''}
       ${share && share.audience && share.audience !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="fa-solid fa-${share.audience === 'private' ? 'lock' : share.audience === 'people' ? 'users' : 'eye-slash'}" aria-hidden="true"></i> ${esc(share.audience === 'link' ? 'anyone with the link' : share.audience === 'people' ? 'specific people' : 'only me')}</span>` : ''}
       ${p.burn_after_read ? `<span class="sep">·</span><span class="badge badge-burn"><i class="fa-solid fa-fire" aria-hidden="true"></i> burns after reading</span>` : ''}
     </p>
@@ -473,14 +495,51 @@ ${offer}
   </footer>
 </article>
 ${p.burn_after_read ? '' : `<section class="section" id="comments">
+  ${locked ? '<p class="muted small">Comments are not locked: anyone who can open this paste can read them, and so can OpenVibe.</p>' : ''}
   <div class="section-head"><h2>Comments${comments && comments.thread.comment_count ? ` <span class="muted small">${num(comments.thread.comment_count)}</span>` : ''}</h2></div>
   ${require('./comments').commentPanel({ page: comments, user, base: `/p/${p.slug}`, action: `/p/${p.slug}/comments`, after: commentsAfter, sort: commentSort })}
 </section>`}
-${related && related.length ? `<section class="section" id="related">
+${!locked && related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(related)}
 </section>` : ''}
-<script src="${ovServe.url('ov-share.js')}" defer></script>
+<script src="${ovServe.url('ov-share.js')}" defer></script>${locked ? `
+<script>window.OpenVibeLockerConfig = { network: ${JSON.stringify(config.networkUrl)} };</script>
+<script src="${ovServe.url('ov-locker.js')}" defer></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  var box = document.getElementById('paste-locked');
+  if (!box || !window.OVLocker) return;
+  OVLocker.open(box, { url: ${JSON.stringify(`/p/${p.slug}/raw`)}, link: location.href, title: ${JSON.stringify(p.title_shown ? title : '')}, onOpen: function (bytes) {
+    var text = new TextDecoder().decode(bytes), doc = null;
+    try { doc = JSON.parse(text); } catch (e) { doc = null; }
+    var shown = doc && typeof doc.content === 'string' ? doc.content : text;
+    var named = doc && typeof doc.title === 'string' ? doc.title : '';
+    if (named) { var h = document.querySelector('.paste-head h1'); if (h) h.textContent = named; document.title = named + ' — OpenVibe Community'; }
+    var wrap = document.createElement('div');
+    wrap.className = 'paste-opened';
+    var say = document.createElement('p');
+    say.className = 'muted small';
+    say.textContent = 'Opened on your device. OpenVibe never had the key, so it never saw this.';
+    var copy = document.createElement('button');
+    copy.type = 'button'; copy.className = 'btn btn-sm btn-primary';
+    copy.appendChild(document.createTextNode('Copy'));
+    copy.addEventListener('click', function () {
+      var done = function () { copy.textContent = 'Copied'; setTimeout(function () { copy.textContent = 'Copy'; }, 1600); };
+      if (navigator.clipboard) navigator.clipboard.writeText(shown).then(done, function () { copy.textContent = 'Select and copy'; });
+      else copy.textContent = 'Select and copy';
+    });
+    var pre = document.createElement('pre');
+    pre.className = 'code paste-plain';
+    pre.tabIndex = 0;
+    pre.setAttribute('role', 'region');
+    pre.setAttribute('aria-label', 'The opened paste');
+    pre.textContent = shown;
+    wrap.appendChild(say); wrap.appendChild(copy); wrap.appendChild(pre);
+    box.replaceChildren(wrap);
+  } });
+});
+</script>` : ''}
 <script>
 window.addEventListener('DOMContentLoaded', function () {
   if (!window.OVShare) return;
@@ -511,7 +570,7 @@ window.addEventListener('DOMContentLoaded', function () {
         historyType: 'paste',
         historyTitle: title,
         footerVariant: 'compact',
-        jsonLd: restricted ? [] : [
+        jsonLd: lockedMeta ? [] : [
             ld.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
             ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${p.slug}` }]),
         ],
@@ -530,7 +589,7 @@ function newPage({ user, values = {}, error = null, fork = null }) {
   <p class="muted">${user ? `Posting as <strong>${esc(user.display_name || user.username)}</strong> — your pastes collect under <a href="/my">My pastes</a>.` : `Posting anonymously. <a href="/auth/login?next=%2Fnew">Sign in</a> to keep your pastes together and delete them later.`}</p>
 </header>
 ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
-<form class="paste-form" method="post" action="/new" data-new-paste>
+<form class="paste-form" method="post" action="/new" data-new-paste data-lock-network="${esc(config.networkUrl)}"${user ? ` data-subject="${esc(user.subject_id || '')}"` : ''}>
   <div class="tabs" role="tablist">
     <button type="button" class="tab active" data-tab="text" role="tab" aria-selected="true"><i class="fa-solid fa-code" aria-hidden="true"></i> Text or code</button>
     <button type="button" class="tab" data-tab="image" role="tab" aria-selected="false" hidden><i class="fa-solid fa-image" aria-hidden="true"></i> Screenshot</button>
@@ -555,6 +614,33 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     <label class="check"><input type="checkbox" name="burn_after_read" value="1"${v.burn_after_read ? ' checked' : ''}> Burn after reading</label>
     <label class="check"><input type="checkbox" name="is_nsfw" value="1"${v.is_nsfw ? ' checked' : ''}> Mark as NSFW</label>
   </div>
+  ${user ? `<section class="lock-it" data-lock-it hidden>
+    <label class="check lock-it-switch"><input type="checkbox" name="lock_it" value="1" data-lock-switch>
+      <i class="fa-solid fa-lock" aria-hidden="true"></i> <strong>Lock it</strong>
+      <span class="muted small">OpenVibe can’t read what’s inside.</span></label>
+    <div class="lock-it-body" data-lock-body hidden>
+      <p class="muted small">Choose how people open it. Your browser seals the content before it leaves this page; the key never reaches OpenVibe.</p>
+      <div class="lock-kinds" role="radiogroup" aria-label="How to lock it">
+        <label class="lock-kind"><input type="radio" name="lock_kind" value="people" checked>
+          <span><strong>For the people on the list</strong><small>Only you and the people you name can open it, each with their own keys. It switches the audience to Specific people.</small></span></label>
+        <label class="lock-kind"><input type="radio" name="lock_kind" value="password">
+          <span><strong>With a password</strong><small>Anyone you give the password to can open it. If the password is lost, nobody can open it, including OpenVibe.</small></span></label>
+        <label class="lock-kind"><input type="radio" name="lock_kind" value="link">
+          <span><strong>With the link</strong><small>The key travels in the link, after the #, which browsers never send to OpenVibe. Anyone with the whole link can open it.</small></span></label>
+      </div>
+      <div data-lock-for="people">
+        <label class="field"><span>People</span>
+          <input type="text" name="lock_people" placeholder="@maticus, @quinn" autocomplete="off" spellcheck="false">
+        </label>
+        <p class="muted small">Their OpenVibe names. Each needs a Locker: they make one the first time they open a locked item.</p>
+      </div>
+      <label class="field" data-lock-for="password" hidden><span>Password</span>
+        <input type="password" name="lock_password" autocomplete="new-password" spellcheck="false">
+      </label>
+      <label class="check"><input type="checkbox" name="show_title" value="1"> Show the title to people who can open it</label>
+      <p class="muted small">Lose the password, or your locker passphrase and recovery kit, and nobody can open this, including OpenVibe. There is no reset.</p>
+    </div>
+  </section>` : ''}
   <div class="form-actions">
     <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Create paste</button>
     <span class="muted small">By posting you agree to the <a href="${esc(config.liveUrl)}/tos">rules</a>. Say it, own it.</span>

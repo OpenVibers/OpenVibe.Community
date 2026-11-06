@@ -44,6 +44,11 @@ function llmsSections() {
                 { title: 'Accept, decline or cancel a transfer', url: `${u}/api/v1/paste/{slug}/share/transfer/{accept,decline,cancel}`,
                     note: `POST {"transfer_id":"<uuid>"} as the recipient (accept/decline) or the owner (cancel)` },
             ] },
+            // Locked pastes (Locker design 2026-11-06): sealed in the browser, never readable by us.
+            { title: 'Locked pastes', links: [
+                { title: 'Locked pastes on OpenVibe Community', url: `${u}/docs/locked-pastes`,
+                    note: 'people, password and link locks; the envelope format; the agent path with openvibe-sdk/locker' },
+            ] },
         ],
         optional: [
             { title: 'Sitemap', url: `${u}/sitemap.xml` },

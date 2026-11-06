@@ -21,6 +21,8 @@ function start({ clientSecret = 'shh' } = {}) {
     const grants = [];
     const resolveCalls = [];
     const pushes = [];   // POST /internal/notifications/push bodies
+    const keyCalls = []; // GET /api/v1/people/:subject/keys: who asked, with which token (the Locker's directory)
+    const lockerKeys = {}; // subject id → { subject, ecdh_public, signing_public, fingerprint }
     const issued = [];      // every client-credentials access token handed out (security-secrets.test.js looks for them)
     let issuer = 'http://network.test';
 
@@ -64,6 +66,17 @@ function start({ clientSecret = 'shh' } = {}) {
                 return json(200, { access_token: sign(user), refresh_token: 'refresh-2', token_type: 'Bearer', expires_in: 86400, user, preferences: { theme: 'vibe' } });
             }
             if (req.url === '/oauth/revoke') return json(200, { ok: true });
+            // The Locker key directory: a PERSON route (Network server/locker/keys.js), never a service token.
+            const keyPath = /^\/api\/v1\/people\/([^/]+)\/keys$/.exec(req.url);
+            if (keyPath && req.method === 'GET') {
+                const subject = decodeURIComponent(keyPath[1]);
+                const auth = String(req.headers.authorization || '');
+                keyCalls.push({ subject, authorization: auth });
+                try { jwt.verify(auth.slice(7), publicPem, { algorithms: ['RS256'], issuer }); }
+                catch { return json(401, { error: 'unauthorized' }); }
+                const found = lockerKeys[subject];
+                return found ? json(200, found) : json(404, { code: 'locker.no_keys', error: 'no keys' });
+            }
             if (req.url === '/internal/identity/resolve-batch' && req.method === 'POST') {
                 const auth = String(req.headers.authorization || '');
                 const v = serviceAuth.verifyServiceToken(auth.slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.network' });
@@ -124,7 +137,11 @@ function start({ clientSecret = 'shh' } = {}) {
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => {
         const url = `http://127.0.0.1:${server.address().port}`;
         issuer = url;
-        resolve({ url, grants, issued, resolveCalls, pushes, directory, addUser, sign, signService, publicPem, close: () => new Promise((r) => server.close(r)) });
+        resolve({
+            url, grants, issued, resolveCalls, pushes, keyCalls, directory, addUser, sign, signService, publicPem,
+            setKeys: (subjectId, keys) => { lockerKeys[subjectId] = keys; },
+            close: () => new Promise((r) => server.close(r)),
+        });
     }));
 }
 
