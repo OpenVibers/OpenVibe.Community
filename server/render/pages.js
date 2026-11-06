@@ -490,7 +490,7 @@ ${offer}
     ${actions}
   </header>
   ${bodyBlock}
-  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
+  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-lock" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
   <footer class="paste-foot">
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
