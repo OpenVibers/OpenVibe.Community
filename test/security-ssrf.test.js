@@ -118,7 +118,7 @@ function inventory() {
         assert.strictEqual((await send('GET', `/forum/general/${slug}`)).status, 200);
         const p = await send('POST', '/api/pastes', { json: { title: urls[5], content: `curl ${urls[5]}\n![x](${urls[2]})` } });
         assert.strictEqual(p.status, 201, p.text);
-        assert.strictEqual((await send('GET', `/p/${JSON.parse(p.text).slug}`)).status, 200);
+        assert.strictEqual((await send('GET', JSON.parse(p.text).url)).status, 200);
         await send('POST', `/api/pastes/${JSON.parse(p.text).slug}/comments`, { json: { message: `look ${urls[4]}` } });
         const f = new FormData();
         f.append('page_url', urls[6]);

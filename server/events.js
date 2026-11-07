@@ -77,7 +77,8 @@ async function publish(envelope) {
 }
 
 // ── Builders (read the row as it is after the change) ─────────────────────────────
-const pasteUrl = (p) => (p.visibility === 'public' && !p.deleted_at ? `${config.baseUrl}/p/${encodeURIComponent(p.slug)}` : null);
+// The id alone: an event is a machine envelope, and the canonical title+id address would carry the title.
+const pasteUrl = (p) => (p.visibility === 'public' && !p.deleted_at ? `${config.baseUrl}/p/${encodeURIComponent(p.public_id || p.slug)}` : null);
 const actorOf = (sub) => { const r = subjectRef(sub); return r ? { type: r.type, id: r.id } : null; };
 
 async function pasteCreated(p) {

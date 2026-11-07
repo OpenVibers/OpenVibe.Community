@@ -40,12 +40,13 @@ const MIGRATION = path.join(__dirname, '..', 'migrations', '0004_paste_comments_
     const legacyRows = async () => Number((await t.db.prepare('SELECT COUNT(*) AS n FROM paste_comments').get()).n);
 
     const pub = await create({ content: 'public paste', title: 'Pub' });
+    const pubUrl = await require('../server/pastes/store').canonicalForRef(t.db, pub);
 
     await check('the /p/<slug> form and POST /api/pastes/:slug/comments write the typed thread; /api/v1/comments reads both back', async () => {
-        const viaForm = await call(`/p/${pub}/comments`, { method: 'POST', cookie: samJwt, form: { message: 'from the page form' } });
+        const viaForm = await call(`/p/${pubUrl}/comments`, { method: 'POST', cookie: samJwt, form: { message: 'from the page form' } });
         assert.strictEqual(viaForm.status, 303, viaForm.text);
         const m = /^\/p\/([^#]+)#comment-(\d+)$/.exec(viaForm.headers.get('location'));
-        assert.ok(m && m[1] === pub, viaForm.headers.get('location'));
+        assert.ok(m && m[1] === pubUrl, viaForm.headers.get('location'));
         const viaApi = await call(`/api/pastes/${pub}/comments`, { method: 'POST', cookie: alexJwt, json: { message: 'from the paste API' } });
         assert.strictEqual(viaApi.status, 201, viaApi.text);
         assert.strictEqual(viaApi.json().comment.user_id, alex.subject_id);
@@ -73,30 +74,30 @@ const MIGRATION = path.join(__dirname, '..', 'migrations', '0004_paste_comments_
         assert.strictEqual(await legacyRows(), 0, 'nothing is written to paste_comments');
 
         // The paste page shows the same thread: comments with their anchors, sorting, the no-JS form.
-        const pageHtml = await call(`/p/${pub}`, { cookie: samJwt });
+        const pageHtml = await call(`/p/${pubUrl}`, { cookie: samJwt });
         assert.strictEqual(pageHtml.status, 200);
         for (const want of ['from the page form', 'from the paste API', 'from Live', `id="comment-${m[2]}"`, `id="comment-${viaApi.json().comment.id}"`,
-            `action="/p/${pub}/comments"`, `href="/p/${pub}?sort=old"`]) assert.ok(pageHtml.text.includes(want), want);
+            `action="/p/${pubUrl}/comments"`, `href="/p/${pubUrl}?sort=old"`]) assert.ok(pageHtml.text.includes(want), want);
         assert.ok(pageHtml.text.indexOf('from the paste API') < pageHtml.text.indexOf('from the page form'), 'newest first');
-        const oldest = await call(`/p/${pub}?sort=old`);
+        const oldest = await call(`/p/${pubUrl}?sort=old`);
         assert.ok(oldest.text.indexOf('from the page form') < oldest.text.indexOf('from the paste API'), '?sort=old: oldest first');
-        assert.ok(oldest.text.includes(`/auth/login?next=${encodeURIComponent(`/p/${pub}`)}`) && !oldest.text.includes(`action="/p/${pub}/comments"`), 'signed out: a sign-in link, no form');
-        const older = await call(`/p/${pub}?sort=new&after=${viaApi.json().comment.id}`);
+        assert.ok(oldest.text.includes(`/auth/login?next=${encodeURIComponent(`/p/${pubUrl}`)}`) && !oldest.text.includes(`action="/p/${pubUrl}/comments"`), 'signed out: a sign-in link, no form');
+        const older = await call(`/p/${pubUrl}?sort=new&after=${viaApi.json().comment.id}`);
         assert.ok(older.text.includes('from the page form') && !older.text.includes('from the paste API'), 'paged with ?after=');
 
         // Deleting a comment twice succeeds both times, as before.
         const del = await call(`/api/pastes/${pub}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'short-lived' } });
         for (let i = 0; i < 2; i++) assert.strictEqual((await call(`/api/pastes/${pub}/comments/${del.json().comment.id}`, { method: 'DELETE', cookie: samJwt })).status, 200);
-        assert.ok(!(await call(`/p/${pub}`)).text.includes('short-lived'));
+        assert.ok(!(await call(`/p/${pubUrl}`)).text.includes('short-lived'));
     });
 
     await check('the form: signed in only, never from another site', async () => {
-        const anon = await call(`/p/${pub}/comments`, { method: 'POST', form: { message: 'hi' } });
+        const anon = await call(`/p/${pubUrl}/comments`, { method: 'POST', form: { message: 'hi' } });
         assert.strictEqual(anon.status, 303);
-        assert.strictEqual(anon.headers.get('location'), `/auth/login?next=${encodeURIComponent(`/p/${pub}`)}`);
-        const foreign = await call(`/p/${pub}/comments`, { method: 'POST', cookie: samJwt, headers: { origin: 'https://evil.example' }, form: { message: 'hi' } });
+        assert.strictEqual(anon.headers.get('location'), `/auth/login?next=${encodeURIComponent(`/p/${pubUrl}`)}`);
+        const foreign = await call(`/p/${pubUrl}/comments`, { method: 'POST', cookie: samJwt, headers: { origin: 'https://evil.example' }, form: { message: 'hi' } });
         assert.strictEqual(foreign.status, 403);
-        const empty = await call(`/p/${pub}/comments`, { method: 'POST', cookie: samJwt, form: { message: '   ' } });
+        const empty = await call(`/p/${pubUrl}/comments`, { method: 'POST', cookie: samJwt, form: { message: '   ' } });
         assert.strictEqual(empty.status, 400);
         assert.strictEqual((await call('/p/no-such-paste-here/comments', { method: 'POST', cookie: samJwt, form: { message: 'hi' } })).status, 404);
     });

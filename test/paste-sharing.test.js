@@ -162,7 +162,8 @@ const pastesApiModule = require('../server/pastes/api');
         const pub = await make(alexJwt, { title: 'Listed public paste', content: 'public text' });
         const link = await make(alexJwt, { title: 'Link only paste', content: 'link text', visibility: 'unlisted' });
         const people = await make(alexJwt, { title: 'People only paste', content: 'people text', audience: 'people', members: ['@maticus'] });
-        assert.strictEqual((await call(`/p/${pub.slug}`)).status, 200);
+        const pubUrl = pub.paste.canonical_slug;
+        assert.strictEqual((await call(`/p/${pubUrl}`)).status, 200);
         assert.strictEqual((await call(`/p/${link.slug}`)).status, 200, 'the link is the key');
         assert.strictEqual((await call(`/api/pastes/${link.slug}`)).status, 200);
         assert.strictEqual((await call(`/p/${people.slug}`)).status, 404);
@@ -178,10 +179,10 @@ const pastesApiModule = require('../server/pastes/api');
         const llms = (await call('/llms-full.txt')).text;
         assert.ok(!llms.includes('People only paste'));
         const sitemap = (await call('/sitemap.xml')).text;
-        assert.ok(!sitemap.includes(`/p/${pub.slug}`) && !sitemap.includes(`/p/${people.slug}`), 'paste pages are noindex and never in a sitemap');
+        assert.ok(!sitemap.includes(`/p/${pubUrl}`) && !sitemap.includes(`/p/${people.slug}`), 'paste pages are noindex and never in a sitemap');
         // The agent twin is anonymous: a people paste has none.
         assert.strictEqual((await call(`/p/${people.slug}.md`)).status, 404, 'no Markdown twin of a restricted paste');
-        assert.strictEqual((await call(`/p/${pub.slug}.md`)).status, 200);
+        assert.strictEqual((await call(`/p/${pubUrl}.md`)).status, 200);
     });
 
     await check('the owner changes the audience; people drops it from the public list at once and the old column follows', async () => {
@@ -362,7 +363,7 @@ const pastesApiModule = require('../server/pastes/api');
         fd.append('screenshot', new Blob([jpeg], { type: 'image/jpeg' }), 'c.jpg');
         const made = await t.get('/api/pastes/screenshot', { method: 'POST', cookies: [`ov_token=${alexJwt}`], body: fd });
         assert.strictEqual(made.status, 201, made.text);
-        const slug = made.json().slug;
+        const slug = made.json().paste.canonical_slug;
         const home = await call('/');
         assert.strictEqual(home.status, 200);
         assert.match(home.text, new RegExp(`srcset="[^"]*/p/${slug}/screenshot\\?w=320&amp;fmt=webp 320w, [^"]*/p/${slug}/screenshot\\?w=640&amp;fmt=webp 640w"`), 'both card widths');

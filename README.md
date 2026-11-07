@@ -115,9 +115,15 @@ Moments feeds read it.
   `fine`. Text pastes are not reviewed. `paste.review_category`, `review_status`, `review_report_id`,
   `reviewed_at` and the requested fields are in the paste shape; the enforcement lives in `server/pastes/review.js`.
   Tests: `test/paste-review.test.js`.
-- **Slugs**: public pastes get a short `adj-noun-NN` slug; a new unlisted or private paste (and
-  a fork of one) gets `adj-noun-` + 16 random base62 characters, because its slug is the only
-  thing keeping it unlisted. Existing slugs never change and keep working.
+- **Addresses**: a public paste's canonical address is `/p/<title-slug>-<public_id>`. The
+  `public_id` is 8 base58 characters, generated once (migration 0021; existing rows are filled by
+  `scripts/backfill-paste-public-ids.js` in batches, and a read fills one lazily). The title slug is
+  up to six lowercase ASCII words from the title (or the first content line when untitled, or
+  nothing), so the id alone is a valid address and every old `adj-noun-NN` slug 301s to the
+  canonical one; a retitle moves it and the old form 301s. A new unlisted or private paste (and a
+  fork of one) keeps an `adj-noun-` + 16 random base62 secret slug: its secret part is the only
+  thing keeping it unlisted, and its public id is not a second key. `server/pastes/url.js` owns
+  the rules; `test/paste-urls.test.js` pins them.
 - **Deletes are soft** (content scrubbed, slug kept reserved); edits append `paste_versions`.
 
 Moving the data: Media's `openvibe.media.pastes-export` bundle was imported once (Wave 5, 2026-09-22; the ledger is
@@ -136,7 +142,7 @@ Pages (server-rendered HTML):
 | --- | --- |
 | `GET /` | Home: hero, latest pastes, most viewed, "start a paste" CTA, what is coming |
 | `GET /pastes` | Browse — `?q=` search, `?sort=new\|views`, `?lang=`, `?page=` |
-| `GET /p/:slug` | Paste page — highlighted body (server-side, highlight.js), raw/download/copy/fork/share, screenshot, related |
+| `GET /p/:slug` | Paste page at `/p/<title-slug>-<public id>` (old slugs and the bare id 301 there) — highlighted body (server-side, highlight.js), raw/download/copy/fork/share, screenshot, related |
 | `POST /p/:slug/comments` | Comment on the paste (signed in; the no-JS form) — its typed comment thread, the one `/c/:accessId` and the APIs show |
 | `GET /p/:slug/raw` | `live`: 302 → `https://openvibe.media/p/:slug/raw`; `community`: the text itself |
 | `GET /p/:slug/screenshot` | `live`: 302 → Media's `/p/:slug/screenshot`; `community`: 302 → the stored image URL |
@@ -664,9 +670,11 @@ Discovery is written by `openvibe-shared/seo`; Community only supplies the data
 (an `ai-summary` meta and a `WebPage` JSON-LD), with `article:*` times on pastes. JSON-LD:
 `WebSite` on the home page, `Article`/`ImageObject` with author and `datePublished` on paste
 pages, `DiscussionForumPosting` on threads, `BreadcrumbList` everywhere.
-Unlisted/private pastes, search result pages and members/staff spaces are `noindex`. The
-sitemap lists home, `/pastes`, the latest public pastes, `/forum`, `/pulse`, public spaces and
-their latest threads (rebuilt at most hourly). `/robots.txt` welcomes search and AI crawlers
+Every paste page is `noindex` (link-shared content, SEO-29), so no paste is in the sitemap and
+paste changes never ping IndexNow (a ping for a noindex page is two contradictory signals).
+Unlisted/private pastes, search result pages and members/staff spaces are `noindex` too. The
+sitemap lists home, `/pastes`, `/forum`, `/pulse`, public spaces and their latest threads
+(rebuilt at most hourly). `/robots.txt` welcomes search and AI crawlers
 and keeps them out of `/api/`, `/auth/`, `/my`, `/new`, `/forum/*/new` and `?sso=` URLs;
 `/llms.txt` maps the site and `/llms-full.txt` carries the latest public threads and text pastes
 in full (no NSFW, no burn-after-read, nothing members-only).

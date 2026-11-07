@@ -228,10 +228,11 @@
         }
         body.envelope = b64(sealed.bytes);
         var out = await api('/api/pastes', { method: 'POST', json: body });
+        var href = out && (out.url || (out.paste && out.paste.url));
         var slug = out && (out.slug || (out.paste && out.paste.slug));
-        if (!slug) throw new Error('No paste came back');
+        if (!href && !slug) throw new Error('No paste came back');
         status.textContent = 'Done — opening your paste…';
-        location.href = '/p/' + encodeURIComponent(slug) + (sealed.linkKey ? '#k=' + sealed.linkKey : '');
+        location.href = (href || '/p/' + encodeURIComponent(slug)) + (sealed.linkKey ? '#k=' + sealed.linkKey : '');
       }
 
       form.addEventListener('submit', function (e) {
@@ -258,10 +259,11 @@
           p = api('/api/pastes', { method: 'POST', json: Object.assign({ content: el.content.value, language: el.language.value }, common) });
         }
         p.then(function (out) {
+          var href = out && (out.url || (out.paste && out.paste.url));
           var slug = out && (out.slug || (out.paste && out.paste.slug));
-          if (!slug) throw new Error('No paste came back');
+          if (!href && !slug) throw new Error('No paste came back');
           status.textContent = 'Done — opening your paste…';
-          location.href = '/p/' + encodeURIComponent(slug);
+          location.href = href || '/p/' + encodeURIComponent(slug);
         }).catch(function (err) {
           btn.disabled = false; status.className = 'form-status error';
           status.textContent = err.status === 429 && err.data && err.data.cooldown ? 'Slow down — try again in ' + err.data.cooldown + 's.' : err.message;

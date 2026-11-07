@@ -1,4 +1,5 @@
 'use strict';
+const { canonicalSlug } = require('./pastes/url');
 
 /**
  * Sharing on Community pastes (design 2026-11-06, plan track Q; openvibe-sdk/share).
@@ -265,14 +266,14 @@ function describeRef(db) {
         if (!p) return {};
         const out = {
             title: !p.locked || p.title_shown ? (p.title || 'Untitled') : 'A locked paste',
-            link: `${config.baseUrl}/p/${encodeURIComponent(p.slug)}`,
+            link: `${config.baseUrl}/p/${encodeURIComponent(canonicalSlug(p))}`,
             roles: ['viewer'],
             audiences: AUDIENCES,
             transferable: true,
         };
         if (p.locked) {
             out.audiences = p.lock_kind === 'people' ? ['people', 'private'] : ['link', 'private'];
-            out.envelope_url = `${config.baseUrl}/p/${encodeURIComponent(p.slug)}/raw`;
+            out.envelope_url = `${config.baseUrl}/p/${encodeURIComponent(canonicalSlug(p))}/raw`;
         }
         return out;
     };

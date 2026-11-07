@@ -42,7 +42,8 @@ const { boot, check, done } = require('./helpers/app');
         });
         assert.strictEqual(r.status, 201, r.text);
         const out = r.json();
-        assert.ok(out.id && out.slug && out.url === `/p/${out.slug}` && out.paste);
+        assert.ok(out.id && out.slug && out.url === `/p/${out.paste.canonical_slug}` && out.paste, 'the answer names the canonical title+id address');
+        assert.match(out.paste.canonical_slug, /^[a-z0-9-]+-[1-9A-HJ-NP-Za-km-z]{8}$/);
         assert.notStrictEqual(out.slug, 'my-chosen-slug', 'browsers never pick slugs');
         assert.strictEqual(out.paste.owner_subject, alex.subject_id);
         assert.strictEqual(out.paste.origin, 'user');
@@ -236,7 +237,7 @@ const { boot, check, done } = require('./helpers/app');
         const r = await call('/api/pastes', { method: 'POST', ip: '203.0.113.90', body: fd });
         assert.strictEqual(r.status, 201, r.text);
         const out = r.json();
-        assert.strictEqual(out.url, `/p/${out.slug}`);
+        assert.strictEqual(out.url, `/p/${out.paste.canonical_slug}`);
         assert.notStrictEqual(out.paste.type, 'screenshot');
         assert.strictEqual(out.paste.title, 'Build log');
         assert.strictEqual(out.paste.content, 'npm ERR! code ERESOLVE');
@@ -250,7 +251,7 @@ const { boot, check, done } = require('./helpers/app');
         Buffer.from([0xff, 0xdb, 0x00, 0x04, 0x00, 0x00]),
         Buffer.from([0xff, 0xda, 0x00, 0x04, 0x00, 0x00]), Buffer.from('pixels', 'latin1'), Buffer.from([0xff, 0xd9]),
     ]);
-    let shotSlug;
+    let shotSlug, shotUrl;
 
     await check('screenshot upload: metadata stripped, bytes stored in Media with a service token, URL + media_ref kept', async () => {
         const fd = new FormData();
@@ -274,7 +275,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(up.v2 && up.kind === 'screenshot' && up.visibility === 'private', 'a v2 Media object: private screenshot');
         assert.strictEqual(up.owner, alex.subject_id, 'owned by the person');
         // The object is private in Media, so the answer names the guarded address, never Media's /o/<id> (a 404 to a browser).
-        assert.ok(/\/p\/[a-z0-9-]+\/screenshot$/.test(p.screenshot_url) && p.screenshot_url.endsWith(`/p/${p.slug}/screenshot`), p.screenshot_url);
+        assert.ok(/\/p\/[A-Za-z0-9-]+\/screenshot$/.test(p.screenshot_url) && p.screenshot_url.endsWith(`/p/${p.canonical_slug}/screenshot`), p.screenshot_url);
         assert.ok(!p.screenshot_url.includes('/o/'), 'never the Media object URL');
         assert.strictEqual(p.title, 'My desk');
         assert.strictEqual(p.content, 'look');
@@ -283,7 +284,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(meta.original_name, 'desk.jpg');
         const row = await t.db.prepare('SELECT media_ref FROM pastes WHERE slug = ?').get(p.slug);
         assert.match(row.media_ref, /^med_[0-9A-HJKMNP-TV-Z]{26}$/); assert.strictEqual(row.media_ref, up.key);
-        shotSlug = p.slug;
+        shotSlug = p.slug; shotUrl = p.canonical_slug;
         const viaCreate = new FormData();
         viaCreate.append('screenshot', new Blob([jpeg], { type: 'image/jpeg' }), 'b.jpg');
         const r2 = await call('/api/pastes', { method: 'POST', cookie: alexJwt, body: viaCreate });
@@ -340,7 +341,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(shot.headers.get('content-type'), 'image/jpeg');
         assert.ok(shot.text.includes('pixels'), 'the proxy serves the bytes');
         assert.strictEqual(shot.headers.get('location'), null, 'never a Media URL');
-        assert.strictEqual((await call(`/p/${shotSlug}/raw`)).headers.get('location'), `/p/${shotSlug}/screenshot`);
+        assert.strictEqual((await call(`/p/${shotSlug}/raw`)).headers.get('location'), `/p/${shotUrl}/screenshot`);
         assert.strictEqual((await call(`/p/${alexSlug}/screenshot`)).status, 404);
         const burn = (await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'once', burn_after_read: true } })).json().slug;
         assert.strictEqual((await call(`/p/${burn}/raw`)).text, 'once');

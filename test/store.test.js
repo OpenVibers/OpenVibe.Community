@@ -37,7 +37,7 @@ async function rejects(p, status, message) {
         const out = await svc.createText(alice, { title: '  Hello  ', content: 'const x = 1;\n  ', language: 'auto', visibility: 'public' });
         assert.match(out.slug, /^[a-z]+-[a-z]+-\d{2}$/);
         assert.deepStrictEqual(Object.keys(out), ['id', 'slug', 'url', 'paste']);
-        assert.strictEqual(out.url, `/p/${out.slug}`);
+        assert.strictEqual(out.url, `/p/${out.paste.canonical_slug}`);
         const p = out.paste;
         assert.strictEqual(p.title, 'Hello');
         assert.strictEqual(p.content, 'const x = 1;');
@@ -49,7 +49,7 @@ async function rejects(p, status, message) {
         assert.strictEqual(p.display_name, 'Alice');
         assert.strictEqual(p.avatar_url, 'https://openvibe.media/a.png');
         assert.strictEqual(p.profile_color, '#f0a');
-        assert.strictEqual(p.raw_url, `/p/${out.slug}/raw`);
+        assert.strictEqual(p.raw_url, `/p/${p.canonical_slug}/raw`);
         assert.strictEqual(p.is_owner, true);
         for (const k of ['views', 'copies', 'likes', 'unique_views']) assert.strictEqual(p[k], 0);
         pub = out.slug;

@@ -454,6 +454,15 @@ function statusCompatible(was, now) {
     return was === now;
 }
 
+/**
+ * A permanent move of an HTML page (200 → 301) is compatible: the old client's link still opens the same
+ * content in a browser. It is how the pastes' title+id addresses replaced the old adjective-noun-number slugs.
+ */
+function movedPage(rec, got) {
+    return rec && rec.method === 'GET' && rec.kind === 'html' && rec.status >= 200 && rec.status < 300
+        && got.status === 301 && !!got.location;
+}
+
 // ── Replaying calls ──────────────────────────────────────────
 
 function kindOf(contentType, text) {
@@ -546,7 +555,7 @@ function callProblems(rec, got, probe = []) {
     const problems = [];
     if (got.status === 0) return [`no answer (${got.error})`];
     if (isNoRoute(got, probe)) return ['the route is gone (it answers as an unknown path)'];
-    if (!statusCompatible(rec.status, got.status)) problems.push(`answered ${got.status}, N-1 answered ${rec.status}`);
+    if (!statusCompatible(rec.status, got.status) && !movedPage(rec, got)) problems.push(`answered ${got.status}, N-1 answered ${rec.status}`);
     else if (rec.kind === 'json' && got.kind !== 'json' && rec.status < 500) problems.push(`answered ${got.kind}, N-1 answered JSON`);
     if (rec.location && got.location && rec.status >= 300 && rec.status < 400 && got.location.split('?')[0] !== rec.location.split('?')[0]) problems.push(`redirects to ${got.location}, N-1 to ${rec.location}`);
     if (rec.reads && got.json != null && got.status >= 200 && got.status < 300) problems.push(...readProblems(rec.reads, got.json));

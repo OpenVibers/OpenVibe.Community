@@ -18,6 +18,12 @@ const { boot, check, done } = require('./helpers/app');
     await ins.run('dark-owl-55', alex.subject_id, 'paste', 'secret notes', 'unlisted <script>alert(1)</script>', 'text', 'unlisted', null, 2, 0, '2026-09-12 08:00:00', '2026-09-12 08:00:00');
     await ins.run('fair-moon-23', sam.subject_id, 'screenshot', 'Desktop shot', 'my desktop', 'text', 'public', 'https://openvibe.media/o/med_FAIRMOON', 40, 0, '2026-09-11 08:00:00', '2026-09-11 08:00:00');
     await ins.run('grim-vale-61', alex.subject_id, 'paste', 'private thing', 'private', 'text', 'private', null, 0, 0, '2026-09-10 08:00:00', '2026-09-10 08:00:00');
+    // The canonical title+id address each public fixture is served at (the old slugs 301 there).
+    const canon = async (slug) => await require('../server/pastes/store').canonicalForRef(t.db, slug);
+    const amberSlug = await canon('amber-fox-42');
+    const blueSlug = await canon('blue-lake-17');
+    const shotSlug = await canon('fair-moon-23');
+    const coldSlug = await canon('cold-ridge-88');
 
     await check('home renders hero, the latest pastes as a rail, the forum, roadmap and questions with full SEO head', async () => {
         const r = await t.get('/');
@@ -45,13 +51,13 @@ const { boot, check, done } = require('./helpers/app');
         has(r.text, '<section class="ovk-rail ovk-rail--m" id="latest" aria-labelledby="latest-h">');
         has(r.text, '<h2 id="latest-h">Latest pastes</h2>');
         has(r.text, '<a class="ovk-rail-more" href="/pastes">See all');
-        assert.ok(/<article class="ovk-card ovk-card--post"[^>]*>[\s\S]*?href="\/p\/amber-fox-42"/.test(r.text), 'a paste is a kit card linking its page');
+        assert.ok(r.text.includes(`href="/p/${amberSlug}"`) && /<article class="ovk-card ovk-card--post"/.test(r.text), 'a paste is a kit card linking its page');
         has(r.text, 'href="/pastes?sort=views"', 'the most viewed are a quick filter');
         has(r.text, '<details class="ovk-fold" id="api">');
         assert.ok(!/<h2>Most viewed<\/h2>|id="trending"|id="spaces"|class="sc-cta"|class="sc-sec sc-network"/.test(r.text), 'no shelf repeats another (most viewed, What lives here, the closing call, Part of OpenVibe)');
         // Most viewed (/pastes?sort=views) puts the 900-view nginx paste first.
         const views = await t.get('/pastes?sort=views');
-        assert.ok(views.text.indexOf('blue-lake-17') > 0 && views.text.indexOf('blue-lake-17') < views.text.indexOf('amber-fox-42'), 'most viewed first');
+        assert.ok(views.text.indexOf(blueSlug) > 0 && views.text.indexOf(blueSlug) < views.text.indexOf(amberSlug), 'most viewed first');
         // Unlisted/private fixtures never show on shared pages.
         assert.ok(![r.text, views.text].some((html) => html.includes('dark-owl-55') || html.includes('grim-vale-61')));
         // Navbar/footer init payload matches the shared-chrome contract.
@@ -104,7 +110,7 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('every page carries the boost marker and script, and the navbar signs in back to the current page', async () => {
-        for (const url of ['/', '/pastes', '/new', '/p/amber-fox-42']) {
+        for (const url of ['/', '/pastes', '/new', `/p/${amberSlug}`]) {
             const r = await t.get(url);
             assert.strictEqual(r.status, 200, url);
             assert.match(r.text, /<meta name="ov-boost" content="community@[^"]+">/, `${url}: the boost marker`);
@@ -116,10 +122,10 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('paste page: SEO head, Article JSON-LD with author/datePublished, highlighted body, actions, related', async () => {
         const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views;
-        const r = await t.get('/p/amber-fox-42');
+        const r = await t.get(`/p/${amberSlug}`);
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>Hello world in JavaScript · OpenVibe.Community</title>');
-        has(r.text, '<link rel="canonical" href="https://openvibe.community/p/amber-fox-42">');
+        has(r.text, `<link rel="canonical" href="https://openvibe.community/p/${amberSlug}">`);
         has(r.text, '<meta name="robots" content="noindex">');
         has(r.text, '<meta property="og:type" content="article">');
         has(r.text, 'article:published_time');
@@ -131,8 +137,8 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(article.hasPart.programmingLanguage, 'javascript');
         assert.ok(ld.some((o) => o['@type'] === 'BreadcrumbList'));
         has(r.text, 'class="hljs-keyword">const</span>', 'server-side highlighted');
-        has(r.text, 'href="/p/amber-fox-42/raw"');
-        has(r.text, 'href="/p/amber-fox-42/download"');
+        has(r.text, `href="/p/${amberSlug}/raw"`);
+        has(r.text, `href="/p/${amberSlug}/download"`);
         has(r.text, 'data-copy-content="amber-fox-42"');
         has(r.text, 'data-ov-share-sheet', 'the one Share sheet (sharing pilot, 2026-11-06)');
         assert.ok(!r.text.includes('twitter.com/intent/tweet'), 'no hand-made X link any more');
@@ -155,11 +161,11 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('screenshot paste: og:image and the picture go through the checked proxy, never the Media URL', async () => {
-        const r = await t.get('/p/fair-moon-23');
-        assert.match(r.text, /<meta property="og:image" content="[^"]*\/p\/fair-moon-23\/screenshot">/, 'og:image is the proxy');
+        const r = await t.get(`/p/${shotSlug}`);
+        assert.match(r.text, /<meta property="og:image" content="[^"]*\/p\/(?:desktop-shot-)?[A-Za-z0-9-]+\/screenshot">/, 'og:image is the proxy');
         has(r.text, '<meta name="twitter:card" content="summary_large_image">');
         has(r.text, '"@type":"ImageObject"');
-        has(r.text, '<img src="/p/fair-moon-23/screenshot"');
+        has(r.text, `<img src="/p/${shotSlug}/screenshot"`);
         assert.ok(!r.text.includes('openvibe.media/o/med_FAIRMOON'), 'the Media URL never reaches the HTML (sharing pilot)');
     });
 
@@ -174,16 +180,16 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('raw serves the text from the store; the screenshot goes through the proxy; download is an attachment without a view', async () => {
-        const raw = await t.get('/p/amber-fox-42/raw');
+        const raw = await t.get(`/p/${amberSlug}/raw`);
         assert.strictEqual(raw.status, 200);
         assert.ok(raw.text.startsWith('const greet'));
-        const shot = await t.get('/p/fair-moon-23/screenshot');
+        const shot = await t.get(`/p/${shotSlug}/screenshot`);
         assert.notStrictEqual(shot.status, 302, 'the screenshot is streamed by the checked proxy, not a redirect to Media');
         assert.ok(!String(shot.headers.get('location') || '').includes('openvibe.media'), 'no Media URL in a redirect');
         const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views;
-        const dl = await t.get('/p/amber-fox-42/download');
+        const dl = await t.get(`/p/${amberSlug}/download`);
         assert.strictEqual(dl.status, 200);
-        assert.strictEqual(dl.headers.get('content-disposition'), 'attachment; filename="amber-fox-42.js"');
+        assert.strictEqual(dl.headers.get('content-disposition'), `attachment; filename="${amberSlug}.js"`);
         assert.ok(dl.text.startsWith('const greet'));
         assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get('amber-fox-42')).views, before, 'download does not count a view');
     });
@@ -192,17 +198,17 @@ const { boot, check, done } = require('./helpers/app');
         const all = await t.get('/pastes');
         assert.strictEqual(all.status, 200);
         has(all.text, '<link rel="canonical" href="https://openvibe.community/pastes">');
-        has(all.text, 'href="/p/blue-lake-17"');
+        has(all.text, `href="/p/${blueSlug}"`);
         const q = await t.get('/pastes?q=nginx');
         has(q.text, '<meta name="robots" content="noindex,follow">');
-        has(q.text, 'href="/p/blue-lake-17"');
-        assert.ok(!q.text.includes('href="/p/amber-fox-42"'));
+        has(q.text, `href="/p/${blueSlug}"`);
+        assert.ok(!q.text.includes(`href="/p/${amberSlug}"`));
         const views = await t.get('/pastes?sort=views');
         const res = views.text.slice(views.text.indexOf('id="results"'));
-        assert.ok(res.indexOf('blue-lake-17') < res.indexOf('amber-fox-42') && res.indexOf('amber-fox-42') < res.indexOf('cold-ridge-88'));
+        assert.ok(res.indexOf(blueSlug) < res.indexOf(amberSlug) && res.indexOf(amberSlug) < res.indexOf(coldSlug));
         const py = await t.get('/pastes?lang=python');
-        has(py.text, 'href="/p/cold-ridge-88"');
-        assert.ok(!py.text.includes('href="/p/amber-fox-42"'));
+        has(py.text, `href="/p/${coldSlug}"`);
+        assert.ok(!py.text.includes(`href="/p/${amberSlug}"`));
         has(py.text, '<option value="python" selected>');
         const old = await t.get('/pastes/amber-fox-42');
         assert.strictEqual(old.status, 301);
@@ -216,8 +222,8 @@ const { boot, check, done } = require('./helpers/app');
         const mine = await t.get('/my', { cookies: [`ov_token=${token}`] });
         assert.strictEqual(mine.status, 200);
         has(mine.text, '<meta name="robots" content="noindex,nofollow">');
-        for (const slug of ['amber-fox-42', 'cold-ridge-88', 'dark-owl-55', 'grim-vale-61']) has(mine.text, `href="/p/${slug}"`);
-        assert.ok(!mine.text.includes('blue-lake-17'));
+        for (const slug of [amberSlug, coldSlug, 'dark-owl-55', 'grim-vale-61']) has(mine.text, `href="/p/${slug}"`);
+        assert.ok(!mine.text.includes(blueSlug));
     });
 
     await check('/new renders the form (private option only when signed in) and the no-JS post creates in the store', async () => {

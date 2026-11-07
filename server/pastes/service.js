@@ -18,6 +18,7 @@
 const crypto = require('crypto');
 const events = require('../events');
 const store = require('./store');
+const { canonicalSlug, publicIdOfRef } = require('./url');
 const spam = require('./spam');
 const commentStore = require('../comments/store');
 const { discussionModerator } = require('../identity/capabilities');
@@ -91,18 +92,11 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     const L = { ...DEFAULT_LIMITS, ...limits };
     // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
     const tell = async (fn) => { if (!pulse) return; try { await fn(pulse); } catch (err) { console.warn('[Pastes] pulse:', err.message); } };
-    // IndexNow (openvibe-shared/indexnow): a public, indexable paste page appearing, changing or going away
-    // pings the engines with its path and the sitemap. Private, unlisted, NSFW and burn-after-read pages are
-    // not in the sitemap, so they never ping.
+    // IndexNow (openvibe-shared/indexnow): a paste page is noindex (SEO-29: link-shared content, not
+    // search-found content), so there is nothing to announce. Pinging a URL the page tells engines not to
+    // index is two contradictory signals (URL findings 2026-11-07, finding 4), so paste changes never ping.
+    const pingIndexNow = () => {};
     const site = String(config.baseUrl || '').replace(/\/$/, '');
-    const indexable = (p) => !!(p && p.visibility === 'public' && !Number(p.is_nsfw) && !Number(p.burn_after_read));
-    const pingIndexNow = (...rows) => {
-        if (!indexnow || !indexnow.enabled) return;
-        const slugs = new Set();
-        for (const p of rows) if (indexable(p)) slugs.add(p.slug);
-        if (!slugs.size) return;
-        indexnow.pingSoon([...slugs].map((s) => `${site}/p/${s}`).concat(`${site}/sitemap.xml`));
-    };
     const visitorSecret = process.env.VIEW_HASH_SECRET
         || crypto.createHash('sha256').update(`community-views:${(config.oauth && config.oauth.clientSecret) || crypto.randomBytes(16).toString('hex')}`).digest('hex');
 
@@ -164,7 +158,19 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
      * confirms a slug).
      */
     async function visible(v, slug) {
-        const p = await store.getBySlug(db, String(slug));
+        const ref = String(slug);
+        let p = await store.getBySlug(db, ref);
+        // A canonical /p/<title-slug>-<id> (or the bare id) names the paste by its id: the title slug is
+        // decoration and may have changed since the link was copied. The old adjective-noun-number slug still
+        // resolves through getBySlug, so it can 301 on the page route.
+        if (!p) {
+            const id = publicIdOfRef(ref);
+            if (id) {
+                const byId = await store.getByPublicId(db, id);
+                // A secret paste's secret part is its access control: the stored public id is not a second key.
+                if (byId && byId.visibility === 'public' && !Number(byId.burn_after_read)) p = byId;
+            }
+        }
         if (!p || !await mayView(v, p)) fail(404, 'Paste not found');
         return p;
     }
@@ -233,11 +239,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         // its owner chose to keep it outside the envelope. The envelope's address is how a browser opens it.
         const locked = !!p.locked;
         const titleShown = !locked || !!p.title_shown;
+        const canonical = canonicalSlug(p);
         return {
             unique_views: p.unique_views || 0,
             id: p.id,
             app_id: 'community',
             slug: p.slug,
+            canonical_slug: canonical,
             user_id: p.owner_subject || null,
             owner_subject: p.owner_subject || null,
             origin: p.origin,
@@ -249,13 +257,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             locked,
             lock: locked ? (p.lock_kind || null) : null,
             title_shown: locked ? !!p.title_shown : true,
-            envelope_url: locked ? `/p/${encodeURIComponent(p.slug)}/raw` : null,
+            envelope_url: locked ? `/p/${encodeURIComponent(canonical)}/raw` : null,
             stream_id: streamIdOf(ref),
             stream_ref: ref,
             // The guarded address, never Media's own object URL: screenshots are stored private in Media (the share
             // rules decide who sees one), so /o/<id> is a 404 to every browser. /p/<slug>/screenshot checks the paste's
             // audience and streams the bytes (2026-11-07: every image paste and AI moment on openvibe.live was broken).
-            screenshot_url: p.screenshot_url && !locked ? `${site || ''}/p/${encodeURIComponent(p.slug)}/screenshot` : null,
+            screenshot_url: p.screenshot_url && !locked ? `${site || ''}/p/${encodeURIComponent(canonical)}/screenshot` : null,
             metadata: metadataFor(p.metadata, isOwner(v, p) || isService(v)),
             burn_after_read: !!p.burn_after_read,
             forked_from: p.forked_from || null,
@@ -272,8 +280,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             ai_tags: locked ? null : (p.ai_tags || null),
             ai_analyzed_at: locked ? null : (p.ai_analyzed_at || null),
             revision: p.revision,
-            url: `/p/${p.slug}`,
-            raw_url: `/p/${p.slug}/raw`,
+            url: `/p/${canonical}`,
+            raw_url: `/p/${canonical}/raw`,
             created_at: p.created_at,
             updated_at: p.updated_at,
             is_owner: isOwner(v, p),
@@ -470,7 +478,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
     async function created(row, extra = {}) {
         await tell((p) => p.pasteCreated(row));
         pingIndexNow(row);
-        return { id: row.id, slug: row.slug, url: `/p/${row.slug}`, ...extra };
+        return { id: row.id, slug: row.slug, url: `/p/${canonicalSlug(row)}`, ...extra };
     }
 
     // ═════════════════════════════════════════════════════════
@@ -515,7 +523,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         async publicForDiscovery(slug) {
             const p = await store.getBySlug(db, String(slug));
             if (!p || p.visibility !== 'public' || p.type !== 'paste' || Number(p.is_nsfw) || Number(p.burn_after_read)) return null;
-            return { slug: p.slug, title: p.title, content: p.content };
+            return { slug: p.slug, public_id: p.public_id, canonical_slug: canonicalSlug(p), title: p.title, content: p.content };
         },
 
         /** The share state of a paste for the page: its audience and, for the recipient, their pending offer. */
@@ -550,9 +558,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
 
         /** GET /p/:slug/raw — plain text, Media's raw rules (a burn paste survives exactly one read). */
         async raw(v, slug, ctx = {}) {
-            const p = await store.getBySlug(db, String(slug));
-            if (!p || !await mayView(v, p)) fail(404, 'Not found');
-            if (p.type === 'screenshot') return { redirect: `/p/${encodeURIComponent(p.slug)}/screenshot` };
+            const p = await visible(v, slug);
+            if (p.type === 'screenshot') return { redirect: `/p/${encodeURIComponent(canonicalSlug(p))}/screenshot` };
             if (p.type !== 'paste') fail(404, 'Not found');
             // A locked paste's raw is its envelope, as bytes: application/octet-stream, `.ovlk`.
             if (p.locked) {
@@ -572,8 +579,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
 
         /** GET /p/:slug/screenshot target (the stored Media URL). For a burn-after-read screenshot it is a read (raw's rule). */
         async screenshotUrl(v, slug) {
-            const p = await store.getBySlug(db, String(slug));
-            if (!p || !p.screenshot_url || !await mayView(v, p)) fail(404, 'Not found');
+            const p = await visible(v, slug);
+            if (!p.screenshot_url) fail(404, 'Not found');
             if (p.burn_after_read && !isOwner(v, p)) {
                 if (p.views > 0) await burn(p);
                 await store.bumpViews(db, p.id);

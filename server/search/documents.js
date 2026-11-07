@@ -103,7 +103,7 @@ function createSearchDocuments({ db }) {
         if (tags.length) facets.tags = tags;
         const doc = {
             owner: 'community', type: 'paste', id: pasteDocId(p), deleted: false, visibility: 'public',
-            canonical_url: `${config.baseUrl}/p/${encodeURIComponent(p.slug)}`,
+            canonical_url: `${config.baseUrl}/p/${encodeURIComponent(require('../pastes/url').canonicalSlug(p))}`,
             title: pasteTitle(p, shot),
             summary: clean(p.ai_summary, 4000) || clean(shot ? '' : p.content, 300) || `A ${shot ? 'screenshot' : 'paste'} on OpenVibe.Community.`,
             body: shot ? clean(p.ai_summary, 8000) : String(p.content || '').slice(0, 40000),

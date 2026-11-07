@@ -48,12 +48,11 @@ const json = (body) => ({ method: 'POST', headers: { 'content-type': 'applicatio
         assert.deepStrictEqual(pings, []);
     });
 
-    await check('a publish pings the paste path and the sitemap', async () => {
+    await check('a publish never pings: the paste page is noindex', async () => {
+        pings.length = 0;
         const r = await t.get('/api/pastes', json({ content: 'a published paste' }));
         assert.strictEqual(r.status, 201, r.text);
-        const slug = r.json().slug;
-        assert.ok(pings.includes(`https://openvibe.community/p/${slug}`), JSON.stringify(pings));
-        assert.ok(pings.includes('https://openvibe.community/sitemap.xml'), JSON.stringify(pings));
+        assert.deepStrictEqual(pings, [], 'IndexNow must not be told about a noindex page');
     });
 
     await check('an NSFW paste never pings', async () => {
@@ -67,15 +66,15 @@ const json = (body) => ({ method: 'POST', headers: { 'content-type': 'applicatio
     const alex = t.network.addUser({ network_user_id: 7, username: 'alex', display_name: 'Alex' });
     const svc = (cap) => t.network.signService({ cap });
 
-    await check('unpublishing a public paste pings it again', async () => {
+    await check('publishing or unpublishing a paste never pings either', async () => {
         pings.length = 0;
         const created = await t.get('/api/pastes', { ...json({ content: 'mine' }), headers: { 'content-type': 'application/json', authorization: `Bearer ${svc(['community.paste.create'])}`, 'x-ov-subject': alex.subject_id } });
         assert.strictEqual(created.status, 201, created.text);
-        const slug = created.json().slug;
-        pings.length = 0;
+        const slug = created.json().paste.canonical_slug;
+        assert.deepStrictEqual(pings, [], 'creation is a noindex page');
         const updated = await t.get(`/api/pastes/${slug}`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${svc(['community.paste.write'])}`, 'x-ov-subject': alex.subject_id }, body: JSON.stringify({ visibility: 'unlisted' }) });
         assert.strictEqual(updated.status, 200, updated.text);
-        assert.ok(pings.includes(`https://openvibe.community/p/${slug}`), JSON.stringify(pings));
+        assert.deepStrictEqual(pings, [], 'a visibility change on a noindex page pings nobody');
     });
 
     await t.close();

@@ -68,15 +68,15 @@ const PNG = (() => {
     const as = (cookie, p) => t.get(p, { cookies: cookie ? [`ov_token=${cookie}`] : [] });
 
     try {
-        let fineSlug;
+        let fineSlug, finePage;
         await check('fine: the paste keeps its visibility and serves to everyone', async () => {
             state.category = 'fine';
             const r = await upload(alexJwt, { title: 'A receipt', visibility: 'public' });
             assert.strictEqual(r.status, 201, r.text);
             const p = r.json().paste;
-            fineSlug = p.slug;
+            fineSlug = p.slug; finePage = p.canonical_slug;
             assert.deepStrictEqual([p.review_category, p.review_status, p.visibility, p.is_nsfw], ['fine', 'clear', 'public', false]);
-            assert.strictEqual((await as(null, `/p/${fineSlug}`)).status, 200);
+            assert.strictEqual((await as(null, `/p/${finePage}`)).status, 200);
             assert.ok((await as(null, '/api/pastes')).json().pastes.some((x) => x.slug === fineSlug));
         });
 
@@ -135,7 +135,8 @@ const PNG = (() => {
             assert.deepStrictEqual([out.checked, out.cleared], [1, 1]);
             const row = await t.db.prepare('SELECT visibility, review_status, is_nsfw FROM pastes WHERE slug = ?').get(pendingSlug);
             assert.deepStrictEqual([row.visibility, row.review_status, Number(row.is_nsfw)], ['public', 'clear', 0]);
-            assert.strictEqual((await as(null, `/p/${pendingSlug}`)).status, 200, 'the public page is back');
+            const cleared = await require('../server/pastes/store').canonicalForRef(t.db, pendingSlug);
+            assert.strictEqual((await as(null, `/p/${cleared}`)).status, 200, 'the public page is back');
             assert.ok((await as(null, '/api/pastes')).json().pastes.some((x) => x.slug === pendingSlug));
         });
 
