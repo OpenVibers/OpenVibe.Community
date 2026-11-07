@@ -313,7 +313,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         for (const r of rows) {
             const lines = String(r.content || '').split('\n');
             if (!out.has(r.post_id)) out.set(r.post_id, []);
-            out.get(r.post_id).push({ slug: r.slug, title: r.title, language: r.language || 'text', type: r.type, url: `/p/${r.slug}`, screenshot_url: r.type === 'screenshot' ? r.screenshot_url : null,
+            out.get(r.post_id).push({ slug: r.slug, title: r.title, language: r.language || 'text', type: r.type, url: `/p/${r.slug}`, screenshot_url: r.type === 'screenshot' && r.screenshot_url ? `/p/${encodeURIComponent(r.slug)}/screenshot` : null,
                 lines: r.content ? lines.length : 0, excerpt: r.type === 'screenshot' ? null : lines.slice(0, 12).join('\n').slice(0, 1500) });
         }
         return out;
