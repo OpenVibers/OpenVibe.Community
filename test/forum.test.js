@@ -60,6 +60,15 @@ const forumStore = require('../server/forum/store');
         assert.strictEqual(forumStore.slugify('☃☃☃'), 'thread');
     });
 
+    await check('a board-style thread page carries one Ask your agent chip in its action row', async () => {
+        const page = await t.get('/forum/general/hello-world');
+        assert.strictEqual(page.status, 200);
+        const asks = page.text.match(/<button[^>]*data-ov-ask[^>]*>/g) || [];
+        assert.strictEqual(asks.length, 1, 'one Ask your agent chip: ' + asks.join(' | '));
+        assert.ok(asks[0].includes('data-ov-ask="About the forum thread “Hello, World!” (https://openvibe.community/forum/general/hello-world): "'), asks[0]);
+        assert.ok(asks[0].includes('class="ovk-ask ovk-btn'), 'the shared kit chip');
+    });
+
     await check('a title that makes one of the forum\'s own route words takes -2, so /forum/<space>/<slug> stays a thread', async () => {
         for (const [title, slug] of [['New', 'new-2'], ['Log', 'log-2'], ['Settings', 'settings-2'], ['Members', 'members-2'], ['Chat room', 'chat-room-2'], ['Discuss', 'discuss-2']]) {
             const r = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: alexJwt, json: { title, body: 'reserved word' } });

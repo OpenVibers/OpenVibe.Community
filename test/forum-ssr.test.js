@@ -64,6 +64,13 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>How do I &lt;b&gt;embed&lt;/b&gt; comments? · OpenVibe.Community</title>');
         has(r.text, `<link rel="canonical" href="https://openvibe.community${url}">`);
+        // The Ask your agent chip (openvibe-shared 4.135.0): in the thread's action row, its title escaped, its address.
+        const asks = r.text.match(/<button[^>]*data-ov-ask[^>]*>/g) || [];
+        assert.strictEqual(asks.length, 1, 'one Ask your agent chip: ' + asks.join(' | '));
+        assert.ok(asks[0].includes('data-ov-ask="About the forum thread “How do I &lt;b&gt;embed&lt;/b&gt; comments?” (https://openvibe.community/forum/general/how-do-i-b-embed-b-comments): "'), asks[0]);
+        assert.ok(asks[0].includes('class="ovk-ask ovk-btn'), 'the shared kit chip');
+        assert.ok(!asks[0].includes('<b>'), 'the title is escaped in the chip');
+        has(r.text, '/shared/kit.css', 'the kit’s look is on the page');
         has(r.text, '<meta property="og:type" content="article">');
         has(r.text, '<meta property="article:published_time"');
         has(r.text, '<strong>Live</strong>');
