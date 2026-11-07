@@ -372,6 +372,14 @@ async function createApp(opts = {}) {
         },
     }));
 
+    // The menu's network card (frame.menu-cards@1): the forum's most replied-to threads this week, from the
+    // forum's own public query (server/forum/store.js hotThisWeek) so gated and members-only spaces stay out.
+    {
+        const { createMenuCard } = require('./menu-card');
+        const menuCard = createMenuCard({ load: async () => await forum.hotThisWeek(6) });
+        app.get('/.well-known/openvibe-menu.json', menuCard.handler);
+    }
+
     // ── Machine endpoints ────────────────────────────────────
     // Written by openvibe-shared/seo from server/discovery.js; the sitemap is rebuilt at most hourly.
     app.get('/robots.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))

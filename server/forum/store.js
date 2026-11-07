@@ -212,6 +212,17 @@ async function recentThreads(db, { visibilities = ['public'], limit = 50, spaceS
                        ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(...visibilities, spaceSlug, spaceSlug, limit);
 }
 
+/** The threads with the most live replies since `since` (YYYY-MM-DD HH:MM:SS, UTC), public forum only. */
+async function hotThisWeek(db, { since, limit = 6 } = {}) {
+    return await db.prepare(`SELECT t.id, t.slug, t.title, s.slug AS space_slug, COUNT(p.id) AS replies, MAX(t.last_activity_at) AS last_at
+                       FROM threads t JOIN spaces s ON s.id = t.space_id
+                       JOIN posts p ON p.thread_id = t.id AND p.is_opening = 0 AND p.deleted_at IS NULL AND p.created_at >= ?
+                       WHERE t.deleted_at IS NULL AND t.members_only_owner IS NULL
+                         AND s.visibility = 'public' AND s.members_only_owner IS NULL
+                       GROUP BY t.id, t.slug, t.title, s.slug
+                       ORDER BY replies DESC, last_at DESC, t.id DESC LIMIT ?`).all(since, limit);
+}
+
 async function setThreadFlags(db, id, { pinned, locked }) {
     const sets = [], params = [];
     if (pinned !== undefined) { sets.push('pinned = ?'); params.push(pinned ? 1 : 0); }
@@ -351,7 +362,7 @@ async function recentPosts(db, threadId, limit = 50) {
 module.exports = {
     SORTS, slugify,
     listSpaces, getSpace, getSpaceById,
-    getThread, getThreadBySlug, createThread, listThreads, recentThreads, setThreadFlags, setThreadMembersOnly, setThreadLabels, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
+    getThread, getThreadBySlug, createThread, listThreads, recentThreads, hotThisWeek, setThreadFlags, setThreadMembersOnly, setThreadLabels, setSpaceMembersOnly, softDeleteThread, countThreadsSince,
     listCategories, getCategory, getCategoryById, upsertCategory, deleteCategory, setThreadCategory, setThreadStatus, getThreadByKey,
     lastPosts, listGroups, updateSpace, createSpace, authorStats, bumpViews,
     listModerators, moderatesSpace, addModerator, removeModerator,
