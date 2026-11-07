@@ -334,10 +334,24 @@ const pastesApiModule = require('../server/pastes/api');
         const bytes = await call(`/p/${slug}/screenshot`, { cookie: maticusJwt });
         assert.strictEqual(bytes.status, 200);
         assert.strictEqual(bytes.headers.get('content-type'), 'image/jpeg');
+        assert.strictEqual(bytes.headers.get('cache-control'), 'private, no-store', 'a members-only screenshot is never cached');
         assert.ok(bytes.text.includes('PIXELS'));
         assert.strictEqual((await call(`/p/${slug}/screenshot`, { cookie: samJwt })).status, 404);
         assert.strictEqual((await call(`/p/${slug}/screenshot`)).status, 404);
         assert.strictEqual((await call(`/p/${slug}/screenshot`, { cookie: alexJwt })).status, 200, 'the owner too');
+    });
+
+    await check('a public screenshot is cached like an asset; a members-only one never is', async () => {
+        const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x00, 0x00]), Buffer.from('PIXELS'), Buffer.from([0xff, 0xd9])]);
+        const fd = new FormData();
+        fd.append('title', 'Shot for everyone');
+        fd.append('audience', 'public');
+        fd.append('screenshot', new Blob([jpeg], { type: 'image/jpeg' }), 'p.jpg');
+        const made = await t.get('/api/pastes/screenshot', { method: 'POST', cookies: [`ov_token=${alexJwt}`], body: fd });
+        assert.strictEqual(made.status, 201, made.text);
+        const got = await call(`/p/${made.json().slug}/screenshot`);
+        assert.strictEqual(got.status, 200);
+        assert.strictEqual(got.headers.get('cache-control'), 'public, max-age=31536000, immutable', 'a public screenshot is an immutable asset');
     });
 
     await check('the move script re-hosts, deletes the old object, and retries a failed delete; --keep-old keeps it', async () => {

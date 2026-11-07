@@ -633,10 +633,16 @@ async function createApp(opts = {}) {
         if (!SLUG_RE.test(req.params.slug)) return notFound(res);
         try {
             await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug);
-            const row = await db.prepare('SELECT media_ref, screenshot_url FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(req.params.slug);
+            const row = await db.prepare('SELECT media_ref, screenshot_url, visibility, burn_after_read, locked FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(req.params.slug);
             const got = row ? await app.locals.pasteMedia.bytes(row) : null;
             if (!got) return notFound(res);
-            res.set('X-Content-Type-Options', 'nosniff').set('Cache-Control', cache.htmlHeaders({ private: true }));
+            // A public paste's screenshot never changes under this URL, so it is cached like any other
+            // content-addressed asset: the home page shows six of them and each is several hundred KB,
+            // and re-downloading every one on every visit was most of the home page's 4 MB. Anything
+            // whose audience is a person (private, burn-after-read, locked) stays private and uncached.
+            const shared = row.visibility === 'public' && !Number(row.burn_after_read) && !row.locked;
+            res.set('X-Content-Type-Options', 'nosniff')
+                .set('Cache-Control', shared ? cache.assetHeaders('screenshot.png', { hashed: true }) : cache.htmlHeaders({ private: true }));
             res.type(got.type || 'application/octet-stream').send(got.body);
         } catch (err) {
             if (err.status === 410) return res.status(410).type('text/plain').set('X-Content-Type-Options', 'nosniff').send('This paste has been burned after reading.');
