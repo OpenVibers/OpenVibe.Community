@@ -15,6 +15,8 @@ const { boot, check, done } = require('./helpers/app');
     await ins.run('fair-moon-23', sam.subject_id, 'screenshot', 'Desktop shot', 'my desktop', 'text', 'public', 'https://openvibe.media/o/med_FAIRMOON', 40, '2026-09-11 08:00:00', '2026-09-11 08:00:00');
     await ins.run('dark-owl-55', alex.subject_id, 'paste', 'secret notes', 'unlisted', 'text', 'unlisted', null, 2, '2026-09-12 08:00:00', '2026-09-12 08:00:00');
     await ins.run('grim-vale-61', alex.subject_id, 'paste', 'private thing', 'private', 'text', 'private', null, 0, '2026-09-10 08:00:00', '2026-09-10 08:00:00');
+    const canon = async (slug) => await require('../server/pastes/store').canonicalForRef(t.db, slug);
+    const amber = await canon('amber-fox-42'), shot = await canon('fair-moon-23');
 
     await check('robots.txt allows crawling, blocks the private routes, points at the sitemap', async () => {
         const r = await t.get('/robots.txt');
@@ -58,7 +60,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(full.status, 200);
         assert.ok(full.headers.get('content-type').startsWith('text/plain'));
         assert.strictEqual(full.headers.get('cache-control'), cache.htmlHeaders({ maxAge: 3600 }));
-        assert.ok(full.text.includes('### Hello world in JavaScript\n\nURL: https://openvibe.community/p/amber-fox-42\n\nconst x = 1;'));
+        assert.ok(full.text.includes(`### Hello world in JavaScript\n\nURL: https://openvibe.community/p/${amber}\n\nconst x = 1;`));
         assert.ok(!full.text.includes('dark-owl-55') && !full.text.includes('grim-vale-61') && !full.text.includes('secret notes'));
 
         // The catalog keeps a short preview for a few seconds. Discovery must read the
@@ -100,12 +102,12 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('a noindex page says so in the meta tag and in X-Robots-Tag; an indexable page sends no such header', async () => {
-        for (const path of ['/p/amber-fox-42', '/p/fair-moon-23', '/c/cth_0000000000000000000000', '/nope-not-a-page']) {
+        for (const path of [`/p/${amber}`, `/p/${shot}`, '/c/cth_0000000000000000000000', '/nope-not-a-page']) {
             const r = await t.get(path);
             assert.ok(r.headers.get('x-robots-tag') && /(?:^|,)\s*noindex/.test(r.headers.get('x-robots-tag')),
                 `${path}: X-Robots-Tag (got ${r.headers.get('x-robots-tag')})`);
         }
-        assert.strictEqual((await t.get('/p/amber-fox-42')).headers.get('x-robots-tag'), 'noindex');
+        assert.strictEqual((await t.get(`/p/${amber}`)).headers.get('x-robots-tag'), 'noindex');
         for (const path of ['/', '/pastes', '/updates']) {
             assert.strictEqual((await t.get(path)).headers.get('x-robots-tag'), null, path);
         }
@@ -115,7 +117,7 @@ const { boot, check, done } = require('./helpers/app');
         const r = await t.get('/feed.xml');
         assert.strictEqual(r.status, 200);
         assert.ok(r.text.includes('<rss version="2.0"'));
-        assert.ok(r.text.includes('<link>https://openvibe.community/p/amber-fox-42</link>'));
+        assert.ok(r.text.includes(`<link>https://openvibe.community/p/${amber}</link>`));
         assert.ok(r.text.includes('<atom:link href="https://openvibe.community/feed.xml" rel="self" type="application/rss+xml"/>'));
         assert.ok(r.text.includes('<author>Alex</author>'));
         assert.ok(r.text.includes('<pubDate>Tue, 15 Sep 2026 10:00:00 GMT</pubDate>'));
@@ -124,11 +126,11 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('a page head has the canonical, Open Graph, Twitter and ai-summary tags from openvibe-shared/seo', async () => {
-        const r = await t.get('/p/amber-fox-42');
+        const r = await t.get(`/p/${amber}`);
         assert.strictEqual(r.status, 200);
         const head = r.text.split('</head>')[0];
-        assert.ok(head.includes('<link rel="canonical" href="https://openvibe.community/p/amber-fox-42">'));
-        assert.ok(head.includes('<meta property="og:url" content="https://openvibe.community/p/amber-fox-42">'));
+        assert.ok(head.includes(`<link rel="canonical" href="https://openvibe.community/p/${amber}">`));
+        assert.ok(head.includes(`<meta property="og:url" content="https://openvibe.community/p/${amber}">`));
         assert.ok(head.includes('<meta property="og:title" content="Hello world in JavaScript · OpenVibe.Community">'));
         assert.ok(head.includes('<meta property="og:site_name" content="OpenVibe.Community">'));
         assert.match(head, /<meta property="og:description" content="[^"]+">/);
@@ -156,13 +158,13 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('HTML pages carry the private page policy; raw and download never reach a shared cache', async () => {
-        for (const path of ['/', '/pastes', '/p/amber-fox-42', '/updates', '/nope-not-a-page']) {
+        for (const path of ['/', '/pastes', `/p/${amber}`, '/updates', '/nope-not-a-page']) {
             const r = await t.get(path);
             assert.ok(r.headers.get('content-type').startsWith('text/html'), path);
             assert.strictEqual(r.headers.get('cache-control'), cache.htmlHeaders({ private: true }), path);
         }
-        assert.strictEqual((await t.get('/p/amber-fox-42/raw')).headers.get('cache-control'), 'private, no-store');
-        assert.strictEqual((await t.get('/p/amber-fox-42/download')).headers.get('cache-control'), 'private, no-store');
+        assert.strictEqual((await t.get(`/p/${amber}/raw`)).headers.get('cache-control'), 'private, no-store');
+        assert.strictEqual((await t.get(`/p/${amber}/download`)).headers.get('cache-control'), 'private, no-store');
     });
 
     await check('JSON-LD builders (server/render/jsonld.js): absolute breadcrumbs, a paste Article, AI never a person', async () => {

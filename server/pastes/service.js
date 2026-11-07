@@ -523,7 +523,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         async publicForDiscovery(slug) {
             const p = await store.getBySlug(db, String(slug));
             if (!p || p.visibility !== 'public' || p.type !== 'paste' || Number(p.is_nsfw) || Number(p.burn_after_read)) return null;
-            return { slug: p.slug, title: p.title, content: p.content };
+            return { slug: p.slug, public_id: p.public_id, canonical_slug: canonicalSlug(p), title: p.title, content: p.content };
         },
 
         /** The share state of a paste for the page: its audience and, for the recipient, their pending offer. */
