@@ -58,7 +58,7 @@ const comments = require('../server/comments/store');
         assert.deepStrictEqual(evs.map((e) => e.event_type), ['community.thread.created', 'community.post.created', 'community.thread.created']);
         evs.forEach(ok);
         assert.strictEqual(evs[0].visibility, 'public');
-        assert.ok(/\/s\/general\/t\//.test(evs[0].payload.url));
+        assert.ok(/\/forum\/general\//.test(evs[0].payload.url));
         assert.strictEqual(evs[2].visibility, 'internal');
         assert.strictEqual(evs[2].payload.visibility, 'members');
         assert.strictEqual(evs[2].payload.url, null);

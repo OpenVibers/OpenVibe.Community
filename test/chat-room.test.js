@@ -125,9 +125,9 @@ function startStubChat() {
         chat.state.down = true;
         r = await api('PUT', '/showcase/chat-room', alexJwt, { room: 'night-owls' });
         assert.deepStrictEqual([r.status, r.json().code], [503, 'chat_room.unavailable']);
-        const f = await form(alexJwt, '/s/showcase/chat-room', { room: 'night-owls' });
+        const f = await form(alexJwt, '/forum/showcase/chat-room', { room: 'night-owls' });
         assert.strictEqual(f.status, 303);
-        assert.match(f.headers.get('location'), /^\/s\/showcase\?chat_error=.*#chat-room$/);
+        assert.match(f.headers.get('location'), /^\/forum\/showcase\?chat_error=.*#chat-room$/);
         const page = await t.get(f.headers.get('location').replace(/#.*$/, ''), { cookies: [`ov_token=${alexJwt}`] });
         assert.match(page.text, /<p class="alert alert-error" role="alert">OpenVibe.Chat did not answer/);
         chat.state.down = false;
@@ -135,23 +135,23 @@ function startStubChat() {
     });
 
     await check('the space page links the room; its owner gets the forms; others only the link', async () => {
-        let page = await t.get('/s/showcase');
+        let page = await t.get('/forum/showcase');
         assert.strictEqual(page.status, 200);
         assert.match(page.text, /<section class="chat-room" id="chat-room"/);
         assert.match(page.text, /<a class="btn" href="https:\/\/openvibe\.chat\/r\/night-owls" rel="noopener">.*Night Owls<\/a>/);
-        assert.ok(!page.text.includes('action="/s/showcase/chat-room"'), 'no forms for a visitor');
-        page = await t.get('/s/showcase', { cookies: [`ov_token=${samJwt}`] });
-        assert.ok(!page.text.includes('action="/s/showcase/chat-room"'), 'nor for another person');
-        page = await t.get('/s/showcase', { cookies: [`ov_token=${alexJwt}`] });
-        assert.ok(page.text.includes('action="/s/showcase/chat-room"') && page.text.includes('action="/s/showcase/chat-room/detach"'));
-        page = await t.get('/s/general');
+        assert.ok(!page.text.includes('action="/forum/showcase/chat-room"'), 'no forms for a visitor');
+        page = await t.get('/forum/showcase', { cookies: [`ov_token=${samJwt}`] });
+        assert.ok(!page.text.includes('action="/forum/showcase/chat-room"'), 'nor for another person');
+        page = await t.get('/forum/showcase', { cookies: [`ov_token=${alexJwt}`] });
+        assert.ok(page.text.includes('action="/forum/showcase/chat-room"') && page.text.includes('action="/forum/showcase/chat-room/detach"'));
+        page = await t.get('/forum/general');
         assert.ok(!page.text.includes('id="chat-room"'), 'a space without a room shows nothing');
-        page = await t.get('/s/general', { cookies: [`ov_token=${bossJwt}`] });
+        page = await t.get('/forum/general', { cookies: [`ov_token=${bossJwt}`] });
         assert.match(page.text, /Attach a chat room/, 'staff may attach one anywhere');
         // Forum-style spaces show it too.
         await api('PUT', '/general/chat-room', bossJwt, { room: 'staff-room' });
-        assert.match((await t.get('/s/general')).text, /href="https:\/\/openvibe\.chat\/r\/staff-room"/);
-        assert.strictEqual((await form(alexJwt, '/s/showcase/chat-room', { room: 'night-owls' }, 'https://evil.example')).status, 403, 'forms from elsewhere are refused');
+        assert.match((await t.get('/forum/general')).text, /href="https:\/\/openvibe\.chat\/r\/staff-room"/);
+        assert.strictEqual((await form(alexJwt, '/forum/showcase/chat-room', { room: 'night-owls' }, 'https://evil.example')).status, 403, 'forms from elsewhere are refused');
     });
 
     await check('replace, then detach: idempotent, and Chat is told when the person may remove its side', async () => {
@@ -164,8 +164,8 @@ function startStubChat() {
         // The owner puts theirs back and detaches it without JavaScript: both sides go.
         r = await api('PUT', '/showcase/chat-room', alexJwt, { room: 'night-owls' });
         assert.strictEqual(r.status, 201);
-        const f = await form(alexJwt, '/s/showcase/chat-room/detach', {});
-        assert.deepStrictEqual([f.status, f.headers.get('location')], [303, '/s/showcase#chat-room']);
+        const f = await form(alexJwt, '/forum/showcase/chat-room/detach', {});
+        assert.deepStrictEqual([f.status, f.headers.get('location')], [303, '/forum/showcase#chat-room']);
         assert.ok(!(await rows()).some((x) => x.room_slug === 'night-owls'));
         assert.strictEqual(chat.attachments.has('night-owls|showcase'), false, 'Chat\'s side went too');
         r = await api('DELETE', '/showcase/chat-room', alexJwt);

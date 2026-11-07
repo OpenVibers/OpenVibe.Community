@@ -314,7 +314,7 @@ const sent = (gw, op) => gw.sockets.flatMap((s) => s.sent).filter((p) => p.op ==
         gw.dispatch('MESSAGE_CREATE', { id: nextId(), channel_id: anchor.external_channel_id, type: 19, content: 'Looks **great**', author: { id: KIM, username: 'kim', global_name: 'Kim' }, message_reference: { message_id: anchor.external_message_id } });
         const locked = nextId();
         await waitFor(async () => await t.db.prepare("SELECT 1 FROM posts WHERE origin = 'discord'").get(), 'the Discord reply stored');
-        const page = await call(`/s/general/t/${th.json().thread.slug}`);
+        const page = await call(`/forum/general/${th.json().thread.slug}`);
         assert.strictEqual(page.status, 200);
         assert.ok(page.text.includes('badge-relay') && page.text.includes('Kim') && page.text.includes('<strong>great</strong>'), 'the reply shows with its Discord badge');
         await t.db.prepare('UPDATE threads SET locked = 1').run();

@@ -10,6 +10,7 @@
  */
 
 const SORTS = ['hot', 'new', 'top', 'active'];
+const { RESERVED_THREAD_SLUGS } = require('./paths');
 
 // ── Spaces ───────────────────────────────────────────────────
 
@@ -91,7 +92,10 @@ function slugify(title) {
 
 async function uniqueSlug(db, spaceId, base) {
     const taken = db.prepare('SELECT 1 FROM threads WHERE space_id = ? AND slug = ?');
-    if (!await taken.get(spaceId, base)) return base;
+    // /forum/<space>/<slug> shares its namespace with the space's own sub-routes: a title that makes one of
+    // those words takes the -2 suffix instead.
+    const start = RESERVED_THREAD_SLUGS.has(base) ? `${base.slice(0, 54)}-2` : base;
+    if (!await taken.get(spaceId, start)) return start;
     for (let n = 2; n < 10_000; n++) {
         const candidate = `${base.slice(0, 54)}-${n}`;
         if (!await taken.get(spaceId, candidate)) return candidate;

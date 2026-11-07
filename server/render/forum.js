@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Forum pages — /s (spaces), /s/:space (threads), /s/:space/t/:slug (a thread), /s/:space/new.
+ * Forum pages — /forum (spaces), /forum/:space (threads), /forum/:space/:slug (a thread), /forum/:space/new.
  * Complete without JavaScript: sorting and pagination are links, replying, voting and the
  * moderator buttons are plain form posts. Every user value is escaped; post bodies are the safe
  * Markdown renderer's output (render/markdown.js).
@@ -38,7 +38,7 @@ function spaceHref(slug, { sort = 'hot', page = 1, category = null, status = nul
     if (sort && sort !== 'hot') q.set('sort', sort);
     if (page > 1) q.set('page', String(page));
     const s = q.toString();
-    return `/s/${encodeURIComponent(slug)}${s ? `?${s}` : ''}`;
+    return `/forum/${encodeURIComponent(slug)}${s ? `?${s}` : ''}`;
 }
 
 /** The optional "Rule applied" select and reason box every moderator form carries. `id` keeps its ids unique. */
@@ -67,11 +67,11 @@ const visBadge = (s) => (VIS_LABELS[s.visibility] ? ` <span class="badge badge-v
 const vipBadge = (x) => (x && x.members_only ? ` <span class="badge badge-vis badge-vip" title="For this creator's OpenVibe.VIP members"><i class="fa-solid fa-star" aria-hidden="true"></i> VIP members only</span>` : '');
 const vipJoin = (mo, label = 'Join on OpenVibe.VIP') => (mo && mo.join_url ? `<a class="btn btn-primary" href="${esc(mo.join_url)}" rel="noopener">${esc(label)}</a>` : '');
 
-// ── /s ───────────────────────────────────────────────────────
+// ── /forum ───────────────────────────────────────────────────────
 function spacesPage({ spaces }) {
     const list = spaces.length ? `<ul class="space-list">${spaces.map((s) => `
     <li class="space-item">
-      <a class="space-link" href="/s/${esc(s.slug)}"><h2>${esc(s.name)}${visBadge(s)}</h2></a>
+      <a class="space-link" href="/forum/${esc(s.slug)}"><h2>${esc(s.name)}${visBadge(s)}</h2></a>
       ${s.description ? `<p class="muted">${esc(s.description)}</p>` : ''}
       <p class="small muted">${num(s.thread_count)} ${s.thread_count === 1 ? 'thread' : 'threads'}${s.last_activity_at ? ` · last activity ${timeTag(s.last_activity_at)}` : ''}</p>
     </li>`).join('')}
@@ -86,22 +86,22 @@ ${list}`;
     return renderPage({
         title: 'Forum',
         description: 'Forums on OpenVibe.Community: general talk, feedback and feature requests, and a showcase of what the people of OpenVibe make.',
-        canonicalPath: '/s',
+        canonicalPath: '/forum',
         active: 'spaces',
-        feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
-        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }])],
+        feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/forum/feed.xml' }],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }])],
         body,
     });
 }
 
-// ── /s/:space ────────────────────────────────────────────────
+// ── /forum/:space ────────────────────────────────────────────────
 function threadRow(t, space) {
     const flags = `${t.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${t.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}`;
     const labels = labelsUi.inForce(t);
     return `<li class="thread-row${space.votes === false ? ' no-votes' : ''}"${labelsUi.attrs(labels, { owner: t.author && t.author.subject })}>
     ${space.votes === false ? '' : `<span class="thread-score" title="Score">${num(t.score)}</span>`}
     <div class="thread-main">
-      <a class="thread-title" href="/s/${esc(space.slug)}/t/${esc(t.slug)}">${flags}${esc(t.title)}</a>${statusBadge(t)}${categoryBadge(t, space)}${vipBadge(t)}
+      <a class="thread-title" href="/forum/${esc(space.slug)}/${esc(t.slug)}">${flags}${esc(t.title)}</a>${statusBadge(t)}${categoryBadge(t, space)}${vipBadge(t)}
       ${labelsUi.chips(labels)}
       <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
     </div>
@@ -119,11 +119,11 @@ function chatRoomBox(space, { canManage = false, error = null } = {}) {
     const link = r ? `<p><a class="btn" href="${esc(r.url)}" rel="noopener"><i class="fa-solid fa-comments" aria-hidden="true"></i> ${esc(r.name)}</a> <span class="muted small">${kind} on OpenVibe.Chat${r.visibility === 'private' ? ' · members only' : ''}</span></p>` : '';
     const manage = canManage ? `<details class="space-settings"${error ? ' open' : ''}><summary>${r ? 'Change or detach the chat room' : 'Attach a chat room'}</summary>
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
-  <form class="paste-form" method="post" action="/s/${esc(space.slug)}/chat-room">
+  <form class="paste-form" method="post" action="/forum/${esc(space.slug)}/chat-room">
     <label class="field"><span>Room address or link (you must own the room on OpenVibe.Chat)</span><input name="room" required maxlength="300" placeholder="night-owls or https://openvibe.chat/r/night-owls" value="${r ? esc(r.slug) : ''}"></label>
     <div class="form-actions"><button class="btn btn-primary" type="submit">${r ? 'Attach this room instead' : 'Attach'}</button></div>
   </form>
-  ${r ? `<form class="inline-form" method="post" action="/s/${esc(space.slug)}/chat-room/detach"><button class="btn btn-sm btn-ghost" type="submit">Detach the chat room</button></form>` : ''}
+  ${r ? `<form class="inline-form" method="post" action="/forum/${esc(space.slug)}/chat-room/detach"><button class="btn btn-sm btn-ghost" type="submit">Detach the chat room</button></form>` : ''}
 </details>` : '';
     return `<section class="chat-room" id="chat-room" aria-labelledby="chat-room-h"><h2 class="h3" id="chat-room-h">Chat room</h2>${link}${manage}</section>`;
 }
@@ -138,13 +138,13 @@ function spacePage({ space, threads, sort, page, pages, total, user, categories 
     const statusNav = (space.statuses || []).length ? `<nav class="chips" aria-label="Status">${chip('Any status', spaceHref(space.slug, { sort, category }), !status)}${space.statuses.map((st) => chip(esc(STATUS_LABELS[st] || st), spaceHref(space.slug, { sort, category, status: st }), st === status)).join('')}</nav>` : '';
     const canStart = viewer.can_start !== false;
     const startLabel = space.thread_kind === 'request' ? 'New request' : space.thread_kind === 'roadmap' ? 'New roadmap item' : 'New thread';
-    const start = canStart ? `<p><a class="btn btn-primary" href="/s/${esc(space.slug)}/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> ${startLabel}</a>${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</p>`
-        : `<p class="muted small">Staff add roadmap items. Open one to ask about it or argue for it, or suggest something new in <a href="/s/feedback">Feedback</a>.</p>`;
+    const start = canStart ? `<p><a class="btn btn-primary" href="/forum/${esc(space.slug)}/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> ${startLabel}</a>${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</p>`
+        : `<p class="muted small">Staff add roadmap items. Open one to ask about it or argue for it, or suggest something new in <a href="/forum/feedback">Feedback</a>.</p>`;
     const categoryName = category ? (categories.find((c) => c.slug === category) || {}).name : null;
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › <span aria-current="page">${esc(space.name)}</span></nav>
-  <h1>${esc(space.name)}${visBadge(space)}${feedable ? ` <a class="rss-link" href="/s/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="fa-solid fa-rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <span aria-current="page">${esc(space.name)}</span></nav>
+  <h1>${esc(space.name)}${visBadge(space)}${feedable ? ` <a class="rss-link" href="/forum/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="fa-solid fa-rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
   ${start}
 </header>
@@ -152,19 +152,19 @@ ${chatRoom}
 ${categoryNav}${statusNav}
 <nav class="tabs sort-tabs" aria-label="Sort threads">${tabs}</nav>
 <section data-results>
-  ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? `<p class="empty">Nothing here yet. <a href="${esc(spaceHref(space.slug))}">See everything in ${esc(space.name)}</a>.</p>` : canStart ? `<p class="empty">No threads yet — <a href="/s/${esc(space.slug)}/new">start the first one</a>.</p>` : '<p class="empty">Nothing here yet.</p>'}
+  ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? `<p class="empty">Nothing here yet. <a href="${esc(spaceHref(space.slug))}">See everything in ${esc(space.name)}</a>.</p>` : canStart ? `<p class="empty">No threads yet — <a href="/forum/${esc(space.slug)}/new">start the first one</a>.</p>` : '<p class="empty">Nothing here yet.</p>'}
   ${pager((n) => spaceHref(space.slug, { sort, page: n, category, status }), page, pages)}
 </section>
 ${footer}
-<footer class="space-foot"><a class="small" href="/s/${esc(space.slug)}/log">Moderation log</a></footer>`;
+<footer class="space-foot"><a class="small" href="/forum/${esc(space.slug)}/log">Moderation log</a></footer>`;
     return renderPage({
         title: `${space.name}${categoryName ? ` · ${categoryName}` : ''}${status ? ` · ${STATUS_LABELS[status] || status}` : ''} — ${SORT_LABELS[sort].toLowerCase()} threads${page > 1 ? ` (page ${page})` : ''}`,
         description: `${space.description || `Threads in ${space.name}`} ${num(total)} ${total === 1 ? 'thread' : 'threads'} on OpenVibe.Community.`,
         canonicalPath: spaceHref(space.slug, { sort, page, category, status }),
         robots: indexable ? 'index,follow' : filtered && space.visibility === 'public' && !space.members_only ? 'noindex,follow' : 'noindex,nofollow',
         active: 'spaces',
-        feeds: feedable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : [],
-        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }])],
+        feeds: feedable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : [],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }, { name: space.name, url: `/forum/${space.slug}` }])],
         body,
     });
 }
@@ -181,7 +181,7 @@ function modActions({ base, space, thread, viewer, categories = [] }) {
   </div>` : '';
 }
 
-// ── /s/:space/t/:slug ────────────────────────────────────────
+// ── /forum/:space/:slug ────────────────────────────────────────
 function postHtml(p, n, { base = '', page = 1, catalogue = [], canModerate = false } = {}) {
     if (p.deleted) return `<article class="post post-deleted" id="post-${p.id}"><p class="muted small">#${n} · This post was deleted.</p></article>`;
     return `<article class="post${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
@@ -271,7 +271,7 @@ function labelsBox(base, thread, viewer) {
 }
 
 function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, user, error = null, draft = '', categories = [], attachmentsEnabled = false, reactions = [], crosspost = null }) {
-    const base = `/s/${space.slug}/t/${thread.slug}`;
+    const base = `/forum/${space.slug}/${thread.slug}`;
     const opening = posts.find((p) => p.is_opening) || null;
     const gated = !!(space.members_only || thread.members_only);
     const indexable = space.visibility === 'public' && !gated;
@@ -292,7 +292,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
 
     const body = `
 <article class="thread">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span></nav>
   <header class="thread-head">
     ${space.votes === false ? '' : voteForm(base, thread, viewer)}
     <div>
@@ -325,21 +325,21 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         footerVariant: 'compact',
         ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
-            ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/s/${space.slug}/feed.xml` }] : []),
+            ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : []),
             { title: `OpenVibe.Community — ${thread.title}`, href: `${base}/feed.xml` },
         ],
         jsonLd: [
             ...(gated ? [] : [ld.threadLd({ space, thread, posts, opening, description })]),
-            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: thread.title, url: base }]),
+            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }, { name: space.name, url: `/forum/${space.slug}` }, { name: thread.title, url: base }]),
         ],
         body,
     });
 }
 
-// ── /s/:space/new ────────────────────────────────────────────
+// ── /forum/:space/new ────────────────────────────────────────────
 function newThreadPage({ space, user, values = {}, error = null, categories = [], attachments = false }) {
     const categoryField = categories.length ? `<label class="field"><span>Category</span><select name="category"><option value="">None</option>${categories.map((c) => `<option value="${esc(c.slug)}"${values.category === c.slug ? ' selected' : ''}>${esc(c.name)}${c.description ? ` — ${esc(c.description)}` : ''}</option>`).join('')}</select></label>` : '';
-    const form = user ? `<form class="paste-form" method="post" action="/s/${esc(space.slug)}/new"${attachments ? ' enctype="multipart/form-data"' : ''}>
+    const form = user ? `<form class="paste-form" method="post" action="/forum/${esc(space.slug)}/new"${attachments ? ' enctype="multipart/form-data"' : ''}>
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   ${space.thread_kind === 'request' ? '<p class="muted small">A request is open to votes. Search first: if it is already here, vote for it instead.</p>' : ''}
   <label class="field"><span>Title</span><input type="text" name="title" minlength="3" maxlength="200" required value="${esc(values.title || '')}" placeholder="What is it about?"></label>
@@ -353,17 +353,17 @@ function newThreadPage({ space, user, values = {}, error = null, categories = []
     <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
     <span class="muted small">Posting as <strong>${esc(user.display_name || user.username || 'you')}</strong>. By posting you agree to the <a href="/terms">rules</a>.</span>
   </div>
-</form>` : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/s/${space.slug}/new`)}">Sign in with your OpenVibe account</a> to start a thread. Reading needs no account.</p>`;
+</form>` : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/forum/${space.slug}/new`)}">Sign in with your OpenVibe account</a> to start a thread. Reading needs no account.</p>`;
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">New thread</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">New thread</span></nav>
   <h1>New thread in ${esc(space.name)}</h1>
 </header>
 ${form}`;
     return renderPage({
         title: `New thread · ${space.name}`,
         description: `Start a thread in ${space.name} on OpenVibe.Community.`,
-        canonicalPath: `/s/${space.slug}/new`,
+        canonicalPath: `/forum/${space.slug}/new`,
         robots: 'noindex,follow',
         active: 'spaces',
         footerVariant: 'compact',
@@ -377,14 +377,14 @@ ${form}`;
  * What someone without the creator's VIP membership sees: the space (and thread title), why, and
  * the join link — never a post. `reason` is VIP's (not_signed_in, not_a_member, vip_unavailable, …).
  */
-function membersOnlyPage({ space, thread = null, members_only: mo = null, reason, user, next = '/s' }) {
+function membersOnlyPage({ space, thread = null, members_only: mo = null, reason, user, next = '/forum' }) {
     const creator = mo && mo.owner_username ? `@${mo.owner_username}` : 'this creator';
     const why = reason === 'not_signed_in' || !user
         ? `<p><a class="btn" href="/auth/login?next=${encodeURIComponent(next)}">Sign in</a> if you are already a member.</p>`
         : reason === 'vip_unavailable' || reason === 'entitlement_unknown'
             ? '<p class="muted">We could not confirm your membership just now. Try again in a moment.</p>'
             : '<p class="muted">Your account does not have an active membership for this.</p>';
-    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › ${thread ? `<a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
+    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › ${thread ? `<a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
     const body = `
 <header class="page-head">
   ${crumbs}
@@ -399,7 +399,7 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
     return renderPage({
         title: `${thread ? thread.title : space.name} · members only`,
         description: `For ${creator}'s OpenVibe.VIP members on OpenVibe.Community.`,
-        canonicalPath: thread ? `/s/${space.slug}/t/${thread.slug}` : `/s/${space.slug}`,
+        canonicalPath: thread ? `/forum/${space.slug}/${thread.slug}` : `/forum/${space.slug}`,
         robots: 'noindex,nofollow',
         active: 'spaces',
         footerVariant: 'compact',
@@ -407,7 +407,7 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
     });
 }
 
-// ── /s/:space/log ────────────────────────────────────────────
+// ── /forum/:space/log ────────────────────────────────────────────
 /** What a log row removed, as the public log may name it: a live title, a post in it, or a removed thread. */
 function logTarget(e) {
     if (!e.thread) return '<span class="muted">a removed thread</span>';
@@ -432,23 +432,23 @@ function moderationLogPage({ space, entries }) {
     </tr>`).join('');
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/s">Forum</a> › <a href="/s/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">Moderation log</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">Moderation log</span></nav>
   <h1>Moderation log</h1>
   <p class="muted">What moderation did in ${esc(space.name)} and why. Newest first; who acted is shown by role only.</p>
 </header>
 ${entries.length ? `<table class="board-table mod-log"><caption class="sr-only">Moderation actions in ${esc(space.name)}</caption>
   <thead><tr><th scope="col">When</th><th scope="col">What</th><th scope="col">Action</th><th scope="col">Rule</th><th scope="col">Reason</th><th scope="col">By</th></tr></thead>
   <tbody>${rows}</tbody></table>` : '<p class="empty">No moderation actions in this forum yet.</p>'}
-<footer class="space-foot"><a class="small" href="/s/${esc(space.slug)}">Back to ${esc(space.name)}</a>${space.visibility === 'public' && !space.members_only ? `<span class="sep"> · </span><a class="small" href="/s/${esc(space.slug)}/feed.xml">RSS</a>` : ''}</footer>`;
+<footer class="space-foot"><a class="small" href="/forum/${esc(space.slug)}">Back to ${esc(space.name)}</a>${space.visibility === 'public' && !space.members_only ? `<span class="sep"> · </span><a class="small" href="/forum/${esc(space.slug)}/feed.xml">RSS</a>` : ''}</footer>`;
     return renderPage({
         title: `Moderation log · ${space.name}`,
         description: `What moderation did in ${space.name} on OpenVibe.Community, and why: the action, the rule and the reason.`,
-        canonicalPath: `/s/${space.slug}/log`,
+        canonicalPath: `/forum/${space.slug}/log`,
         robots: space.visibility === 'public' && !space.members_only ? 'index,follow' : 'noindex,nofollow',
         active: 'spaces',
         footerVariant: 'compact',
         pageCss: ['modlog.css'],
-        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/s' }, { name: space.name, url: `/s/${space.slug}` }, { name: 'Moderation log', url: `/s/${space.slug}/log` }])],
+        jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }, { name: space.name, url: `/forum/${space.slug}` }, { name: 'Moderation log', url: `/forum/${space.slug}/log` }])],
         body,
     });
 }

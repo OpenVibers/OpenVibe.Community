@@ -82,7 +82,7 @@ function discussionAuthorLd(a) {
 /** DiscussionForumPosting for a thread page: the opening post, counters and the replies on the page. */
 function threadLd({ space, thread, posts, opening, description }) {
     const { markdownToText } = require('./markdown');
-    const url = abs(`/s/${space.slug}/t/${thread.slug}`);
+    const url = abs(`/forum/${space.slug}/${thread.slug}`);
     const replies = posts.filter((p) => !p.is_opening && !p.deleted).slice(0, 20);
     return {
         '@context': 'https://schema.org',
@@ -94,7 +94,7 @@ function threadLd({ space, thread, posts, opening, description }) {
         author: discussionAuthorLd(thread.author),
         datePublished: isoDate(thread.created_at) || undefined,
         dateModified: isoDate((opening && opening.updated_at) || thread.created_at) || undefined,
-        isPartOf: { '@type': 'CollectionPage', name: space.name, url: abs(`/s/${space.slug}`) },
+        isPartOf: { '@type': 'CollectionPage', name: space.name, url: abs(`/forum/${space.slug}`) },
         commentCount: thread.reply_count,
         interactionStatistic: [
             { '@type': 'InteractionCounter', interactionType: 'https://schema.org/CommentAction', userInteractionCount: thread.reply_count },

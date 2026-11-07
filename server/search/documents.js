@@ -78,7 +78,7 @@ function createSearchDocuments({ db }) {
         if (t.crosspost_of) facets.crosspost = true;
         const doc = {
             owner: 'community', type: 'thread', id: String(t.id), deleted: false, visibility: 'public',
-            canonical_url: `${config.baseUrl}/s/${encodeURIComponent(t.space_slug)}/t/${encodeURIComponent(t.slug)}`,
+            canonical_url: `${config.baseUrl}/forum/${encodeURIComponent(t.space_slug)}/${encodeURIComponent(t.slug)}`,
             title: clean(t.title, 500) || 'Thread',
             summary: clean(plain(opening && opening.body_markdown), 300) || `A thread in ${t.space_name} on OpenVibe.Community.`,
             body: posts.map((p) => clean(plain(p.body_markdown), 8000)).filter(Boolean).join('\n').slice(0, 40000),

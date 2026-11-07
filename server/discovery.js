@@ -9,10 +9,11 @@ const config = require('./config');
 const catalog = require('./pastes/catalog');
 const source = require('./pastes/source');
 const { abs } = require('./render/layout');
+const { spacePath, threadPath } = require('./forum/paths');
 const { isoDate, clean } = require('./render/jsonld');
 
 const SITEMAP_TTL_MS = 60 * 60 * 1000;
-const ROBOTS_DISALLOW = ['/api/', '/auth/', '/my', '/new', '/s/*/new', '/*?sso='];
+const ROBOTS_DISALLOW = ['/api/', '/auth/', '/my', '/new', '/forum/*/new', '/*?sso='];
 const SUMMARY = 'The discussion side of the OpenVibe network: pastes (text and screenshots), forums with threads, and the Pulse feed of what is happening across the network.';
 const CONTENT_LABELS = 'Pastes made by the OpenVibe AI (moments caught from live streams) carry origin "ai" and are labelled as AI-generated; everything else was written by people.';
 
@@ -29,7 +30,7 @@ function llmsSections() {
             { title: 'Browse', links: [
                 { title: 'OpenVibe.Community', url: `${u}/`, note: 'pastes, forum and network activity' },
                 { title: 'Pastes', url: `${u}/pastes`, note: 'public pastes, newest first (?type=pastes|images|all, ?sort=views, ?lang=<language>)' },
-                { title: 'Forum', url: `${u}/s`, note: 'open discussion forums and their threads', html: true },
+                { title: 'Forum', url: `${u}/forum`, note: 'open discussion forums and their threads', html: true },
                 { title: 'Pulse', url: `${u}/pulse`, note: 'network activity', html: true },
             ] },
             // The API is a primary entry for an agent, not something to skip.
@@ -53,7 +54,7 @@ function llmsSections() {
         optional: [
             { title: 'Sitemap', url: `${u}/sitemap.xml` },
             { title: 'Latest pastes (RSS)', url: `${u}/feed.xml` },
-            { title: 'Latest threads (RSS)', url: `${u}/s/feed.xml` },
+            { title: 'Latest threads (RSS)', url: `${u}/forum/feed.xml` },
             { title: 'Full text for language models', url: `${u}/llms-full.txt` },
         ],
     };
@@ -68,7 +69,7 @@ async function llmsFullSections() {
     if (_forum) {
         const threads = await _forum.recentPublic({ limit: 50 });
         sections.push({ title: 'Latest threads', pages: threads.map((t) => ({
-            title: `${t.title} (${t.space_name})`, url: abs(`/s/${t.space_slug}/t/${t.slug}`), text: markdownToText(t.opening, Infinity),
+            title: `${t.title} (${t.space_name})`, url: abs(threadPath(t.space_slug, t.slug)), text: markdownToText(t.opening, Infinity),
         })) });
     }
     const pastes = (await catalog.latest(30)).filter((p) => !Number(p.is_nsfw) && !Number(p.burn_after_read) && p.type !== 'screenshot');
@@ -93,10 +94,10 @@ async function buildSitemapRows() {
     // No /p/:slug rows: a paste is link-shared content and is noindex (SEO-29), so it must not be
     // in a sitemap. The /pastes browse and search pages above are the surfaces meant for search.
     if (_forum) {
-        add('/s', null, 'hourly', '0.8');
+        add('/forum', null, 'hourly', '0.8');
         add('/pulse', null, 'hourly', '0.5');
-        for (const s of await _forum.publicSpaces()) add(`/s/${s.slug}`, s.last_activity_at || null, 'hourly', '0.7');
-        for (const t of await _forum.recentPublic({ limit: 1000 })) add(`/s/${t.space_slug}/t/${t.slug}`, isoDate(t.last_activity_at || t.created_at), 'daily', '0.6');
+        for (const s of await _forum.publicSpaces()) add(spacePath(s.slug), s.last_activity_at || null, 'hourly', '0.7');
+        for (const t of await _forum.recentPublic({ limit: 1000 })) add(threadPath(t.space_slug, t.slug), isoDate(t.last_activity_at || t.created_at), 'daily', '0.6');
     }
     return rows;
 }
@@ -120,22 +121,22 @@ async function pasteFeedItems() {
     });
 }
 
-/** Threads (forum.recentPublic rows) for /s/feed.xml and /s/:space/feed.xml. */
+/** Threads (forum.recentPublic rows) for /forum/feed.xml and /forum/:space/feed.xml. */
 function threadFeedItems(threads) {
     const { markdownToText } = require('./render/markdown');
     return threads.map((t) => {
-        const url = abs(`/s/${t.space_slug}/t/${t.slug}`);
+        const url = abs(threadPath(t.space_slug, t.slug));
         const description = markdownToText(t.opening, 300);
         return { title: t.title, link: url, guid: url, description, content: description,
             author: undefined, published: isoDate(t.created_at), updated: isoDate(t.last_activity_at || t.created_at) };
     });
 }
 
-/** A thread's newest posts for /s/:space/t/:slug/feed.xml (opening post and replies). */
+/** A thread's newest posts for /forum/:space/:slug/feed.xml (opening post and replies). */
 function postFeedItems(space, thread, posts) {
     const { markdownToText } = require('./render/markdown');
     return posts.map((p) => {
-        const url = abs(`/s/${space.slug}/t/${thread.slug}#post-${p.id}`);
+        const url = abs(`${threadPath(space.slug, thread.slug)}#post-${p.id}`);
         const description = markdownToText(p.body_markdown || '', 300);
         return { title: p.is_opening ? thread.title : `Re: ${thread.title}`, link: url, guid: url, description, content: description,
             author: undefined, published: isoDate(p.created_at), updated: isoDate(p.updated_at || p.created_at) };

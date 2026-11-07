@@ -61,7 +61,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null, origin
         // The first page of each filter is worth indexing; deep cursors and empty pages are not.
         robots: after || !items.length ? 'noindex,follow' : 'index,follow',
         active: 'pulse',
-        feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/s/feed.xml' }],
+        feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/forum/feed.xml' }],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pulse', url: '/pulse' }])],
         body,
     });

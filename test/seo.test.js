@@ -21,7 +21,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(r.status, 200);
         assert.ok(r.headers.get('content-type').startsWith('text/plain'));
         assert.ok(r.text.includes('User-agent: *\nAllow: /'));
-        for (const d of ['/api/', '/auth/', '/my', '/new', '/s/*/new', '/*?sso=']) assert.ok(r.text.includes(`Disallow: ${d}\n`), d);
+        for (const d of ['/api/', '/auth/', '/my', '/new', '/forum/*/new', '/*?sso=']) assert.ok(r.text.includes(`Disallow: ${d}\n`), d);
         assert.ok(r.text.includes('Sitemap: https://openvibe.community/sitemap.xml'));
         assert.strictEqual(r.headers.get('cache-control'), cache.htmlHeaders({ maxAge: 3600 }));
     });

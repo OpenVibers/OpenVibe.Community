@@ -76,7 +76,7 @@ const SECRET = `whsec_${'cd'.repeat(32)}`;
         r = await call(`/api/v1/spaces/general/threads/${threadSlug}/posts`, { method: 'POST', cookie: kimJwt, json: { body: 'kim here' } });
         assert.strictEqual(r.status, 201, r.text);
         // The no-JS form: the thread page again, the plain message in the reply form, the draft kept.
-        r = await call(`/s/general/t/${threadSlug}/reply`, { method: 'POST', cookie: samJwt, form: { body: 'my <draft>' } });
+        r = await call(`/forum/general/${threadSlug}/reply`, { method: 'POST', cookie: samJwt, form: { body: 'my <draft>' } });
         assert.strictEqual(r.status, 403);
         assert.ok(r.text.includes('<p class="alert alert-error" role="alert">You cannot reply in this thread: its author blocked you</p>'), 'the message in the form');
         assert.ok(r.text.includes('my &lt;draft&gt;</textarea>'), 'the draft kept, escaped');

@@ -79,14 +79,14 @@ function createPulse({ db, network = null, config = {} } = {}) {
         async threadCreated(thread, space) {
             if (!thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return;
             await recordLocal('thread', thread.id, {
-                title: thread.title, path: `/s/${space.slug}/t/${thread.slug}`,
+                title: thread.title, path: `/forum/${space.slug}/${thread.slug}`,
                 actor: thread.author_subject, origin: thread.origin === 'ai' ? 'ai' : (thread.origin === 'system' ? 'system' : 'user'), at: thread.created_at,
             });
         },
         async postCreated(post, thread, space) {
             if (!post || !thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner || post.is_opening) return;
             await recordLocal('post', post.id, {
-                title: `Re: ${thread.title}`, path: `/s/${space.slug}/t/${thread.slug}#post-${post.id}`,
+                title: `Re: ${thread.title}`, path: `/forum/${space.slug}/${thread.slug}#post-${post.id}`,
                 actor: post.author_subject, origin: post.origin === 'ai' ? 'ai' : 'user', at: post.created_at,
             });
         },

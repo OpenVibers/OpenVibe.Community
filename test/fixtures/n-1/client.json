@@ -489,7 +489,7 @@
   },
   {
    "method": "GET",
-   "path": "/s",
+   "path": "/forum",
    "auth": "anon",
    "accept": "html",
    "status": 200,
@@ -556,7 +556,7 @@
   },
   {
    "method": "GET",
-   "path": "/s/general",
+   "path": "/forum/general",
    "auth": "anon",
    "accept": "html",
    "status": 200,
@@ -633,7 +633,7 @@
   },
   {
    "method": "GET",
-   "path": "/s/discuss?paste={@paste}",
+   "path": "/forum/discuss?paste={@paste}",
    "auth": "anon",
    "accept": "html",
    "status": 200,
@@ -644,40 +644,40 @@
   },
   {
    "method": "GET",
-   "path": "/s/general/feed.xml",
+   "path": "/forum/general/feed.xml",
    "auth": "anon",
    "accept": "html",
    "status": 200,
    "kind": "other",
    "from": [
-    "page /s/general"
+    "page /forum/general"
    ]
   },
   {
    "method": "GET",
-   "path": "/s/general/new",
+   "path": "/forum/general/new",
    "auth": "anon",
    "accept": "html",
    "status": 200,
    "kind": "html",
    "from": [
-    "page /s/general"
+    "page /forum/general"
    ]
   },
   {
    "method": "GET",
-   "path": "/s/general/t/{@thread_slug}",
+   "path": "/forum/general/{@thread_slug}",
    "auth": "anon",
    "accept": "html",
    "status": 200,
    "kind": "html",
    "from": [
-    "page /s/general"
+    "page /forum/general"
    ]
   },
   {
    "method": "GET",
-   "path": "/s/general/t/n-1-thread",
+   "path": "/forum/general/n-1-thread",
    "auth": "anon",
    "accept": "html",
    "status": 200,
@@ -688,14 +688,14 @@
   },
   {
    "method": "GET",
-   "path": "/auth/login?next=%2Fs%2Fgeneral%2Ft%2F{@thread_slug}",
+   "path": "/auth/login?next=%2Fforum%2Fgeneral%2Ft%2F{@thread_slug}",
    "auth": "anon",
    "accept": "html",
    "status": 302,
    "kind": "html",
    "location": "/oauth/authorize",
    "from": [
-    "page /s/general/t/n-1-thread"
+    "page /forum/general/n-1-thread"
    ]
   },
   {
@@ -734,7 +734,7 @@
   },
   {
    "method": "GET",
-   "path": "/s/feed.xml",
+   "path": "/forum/feed.xml",
    "auth": "anon",
    "accept": "html",
    "status": 200,
@@ -944,7 +944,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/new-space",
+   "path": "/forum/new",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -954,7 +954,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/chat-room",
+   "path": "/forum/general/chat-room",
    "auth": "anon",
    "status": 303,
    "kind": "empty",
@@ -965,7 +965,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/chat-room/detach",
+   "path": "/forum/general/chat-room/detach",
    "auth": "anon",
    "status": 303,
    "kind": "empty",
@@ -976,7 +976,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/new",
+   "path": "/forum/general/new",
    "auth": "anon",
    "status": 303,
    "kind": "empty",
@@ -987,7 +987,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/settings",
+   "path": "/forum/general/settings",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -997,7 +997,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/category",
+   "path": "/forum/general/n-1-thread/category",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -1007,7 +1007,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/crosspost",
+   "path": "/forum/general/n-1-thread/crosspost",
    "auth": "anon",
    "status": 303,
    "kind": "empty",
@@ -1018,7 +1018,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/delete",
+   "path": "/forum/general/n-1-thread/delete",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -1028,7 +1028,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/members-only",
+   "path": "/forum/general/n-1-thread/members-only",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -1038,7 +1038,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/react",
+   "path": "/forum/general/n-1-thread/react",
    "auth": "anon",
    "status": 303,
    "kind": "empty",
@@ -1049,7 +1049,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/reply",
+   "path": "/forum/general/n-1-thread/reply",
    "auth": "anon",
    "status": 303,
    "kind": "empty",
@@ -1061,7 +1061,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/state",
+   "path": "/forum/general/n-1-thread/state",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -1071,7 +1071,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/status",
+   "path": "/forum/general/n-1-thread/status",
    "auth": "anon",
    "status": 403,
    "kind": "html",
@@ -1081,7 +1081,7 @@
   },
   {
    "method": "POST",
-   "path": "/s/general/t/n-1-thread/vote",
+   "path": "/forum/general/n-1-thread/vote",
    "auth": "anon",
    "status": 400,
    "kind": "html",

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **The forum moved from `/s` to `/forum`** (design 2026-11-07, section 13 "URLs people already know"). The board
+  is `/forum`, a space `/forum/<space>`, and a thread `/forum/<space>/<thread>` (the `/t/` segment is gone);
+  `/forum/new` and `/forum/discuss` replace `/s/new-space` and `/s/discuss`. Every old `/s` address answers a
+  permanent redirect with the query kept — 301 for reads, 308 for form posts, so `/s/<space>/t/<slug>` becomes
+  `/forum/<space>/<slug>` without losing a method or body.
+  - A thread slug may never be one of a space's own sub-route words (`new`, `log`, `settings`, `feed.xml`,
+    `moderators`, `chat-room`, `members`, `about`, `search`, `rules`, `wiki`, `edit`, `discuss`): a title that would
+    make one takes `-2`. A space may not take `new`, `discuss`, `feed.xml`, `search` or `about`.
+  - Sitemap, robots (`/forum/*/new`), IndexNow pings, feeds, `llms.txt`, canonical links and BreadcrumbList
+    (`Forum › Space › Thread`), Search documents, Pulse items, `community.thread/post.created` URLs and the Discord
+    relay all use `/forum`.
+
 - **Locked pastes** (Locker design 2026-11-06, "The pilot, spelled out: locked pastes"). A new text paste can be
   locked: the browser seals it, Community stores the envelope and never sees the content key.
   - `POST /api/pastes` takes `locked: true` and `envelope: <base64 locker.envelope.v1>` **instead of** `content`; a

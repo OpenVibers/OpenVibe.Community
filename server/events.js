@@ -102,14 +102,14 @@ async function threadCreated(thread, spaceSlug, spaceVisibility = 'public') {
     const visibility = forumVisibility(thread, spaceVisibility);
     return await record('community.thread.created', { type: 'thread', id: String(thread.id) }, {
         thread_id: Number(thread.id), space: spaceSlug, author: subjectRef(thread.author_subject), visibility,
-        url: visibility === 'public' ? `${config.baseUrl}/s/${encodeURIComponent(spaceSlug)}/t/${encodeURIComponent(thread.slug)}` : null,
+        url: visibility === 'public' ? `${config.baseUrl}/forum/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(thread.slug)}` : null,
     }, { isPublic: visibility === 'public', actor: actorOf(thread.author_subject) });
 }
 async function postCreated(post, thread, spaceSlug, spaceVisibility = 'public') {
     const visibility = forumVisibility(thread, spaceVisibility);
     return await record('community.post.created', { type: 'post', id: String(post.id) }, {
         post_id: Number(post.id), thread_id: Number(thread.id), space: spaceSlug, author: subjectRef(post.author_subject), visibility,
-        url: visibility === 'public' ? `${config.baseUrl}/s/${encodeURIComponent(spaceSlug)}/t/${encodeURIComponent(thread.slug)}#p${post.id}` : null,
+        url: visibility === 'public' ? `${config.baseUrl}/forum/${encodeURIComponent(spaceSlug)}/${encodeURIComponent(thread.slug)}#p${post.id}` : null,
     }, { isPublic: visibility === 'public', actor: actorOf(post.author_subject) });
 }
 /**

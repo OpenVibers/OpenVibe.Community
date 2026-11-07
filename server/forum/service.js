@@ -40,6 +40,7 @@
  * (moderator services can detach). Community keeps the link: space_chat_rooms.
  */
 const store = require('./store');
+const { spacePath, threadPath, RESERVED_SPACE_SLUGS } = require('./paths');
 const events = require('../events');
 const { applyVote, myVotes, parseVote } = require('../votes');
 const { fail, isoTime } = require('../http/v1');
@@ -114,11 +115,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     const site = String(config.baseUrl || '').replace(/\/$/, '');
     const indexableSpace = (s) => !!(s && s.visibility === 'public' && !s.members_only_owner);
     const ping = (urls) => { if (indexnow && indexnow.enabled) indexnow.pingSoon(urls); };
-    const pingSpace = (s) => { if (indexableSpace(s)) ping([`${site}/s/${s.slug}`, `${site}/sitemap.xml`]); };
+    const pingSpace = (s) => { if (indexableSpace(s)) ping([`${site}${spacePath(s.slug)}`, `${site}/sitemap.xml`]); };
     const pingThread = (space, t, { withSpace = false } = {}) => {
         if (!indexableSpace(space) || !t || t.members_only_owner) return;
-        const urls = [`${site}/s/${space.slug}/t/${t.slug}`, `${site}/sitemap.xml`];
-        if (withSpace) urls.push(`${site}/s/${space.slug}`);
+        const urls = [`${site}${threadPath(space.slug, t.slug)}`, `${site}/sitemap.xml`];
+        if (withSpace) urls.push(`${site}${spacePath(space.slug)}`);
         ping(urls);
     };
 
@@ -244,7 +245,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     }
 
     // ── shapes ───────────────────────────────────────────────
-    const threadUrl = (space, t) => `/s/${space.slug}/t/${t.slug}`;
+    const threadUrl = (space, t) => threadPath(space.slug, t.slug);
 
     const shapeCategory = (c) => (c ? { slug: c.slug, name: c.name, description: c.description || null, position: c.position, thread_count: c.thread_count != null ? c.thread_count : undefined } : null);
 
@@ -348,7 +349,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     async function shapeSpace(s, mo = null) {
         return {
-            slug: s.slug, name: s.name, description: s.description, visibility: s.visibility, url: `/s/${s.slug}`,
+            slug: s.slug, name: s.name, description: s.description, visibility: s.visibility, url: spacePath(s.slug),
             thread_kind: s.thread_kind || 'discussion', statuses: STATUSES[s.thread_kind] || [],
             style: STYLES.includes(s.style) ? s.style : 'feed', votes: s.votes !== 0, reactions: s.reactions !== 0,
             group: s.group_slug ? { slug: s.group_slug, name: s.group_name } : null,
@@ -398,11 +399,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         if (thread.crosspost_of) {
             const t = await store.getThread(db, thread.crosspost_of);
             const sp = t ? await store.getSpaceById(db, t.space_id) : null;
-            if (t && visible(sp) && !t.members_only_owner) from = { space: sp.name, title: t.title, url: `/s/${sp.slug}/t/${t.slug}` };
+            if (t && visible(sp) && !t.members_only_owner) from = { space: sp.name, title: t.title, url: threadPath(sp.slug, t.slug) };
         }
         const to = (await Promise.all((await db.prepare('SELECT t.slug, t.title, s.slug AS space_slug FROM threads t JOIN spaces s ON s.id = t.space_id WHERE t.crosspost_of = ? AND t.deleted_at IS NULL ORDER BY t.id').all(thread.id))
             .map(async (r) => ({ r, sp: await store.getSpace(db, r.space_slug) })))).filter(({ sp }) => visible(sp))
-            .map(({ r, sp }) => ({ space: sp.name, title: r.title, url: `/s/${sp.slug}/t/${r.slug}` }));
+            .map(({ r, sp }) => ({ space: sp.name, title: r.title, url: threadPath(sp.slug, r.slug) }));
         const targets = person(v) && !thread.members_only_owner
             ? (await store.listSpaces(db, moderator(v) ? ['public', 'members', 'staff'] : ['public', 'members'])).filter((sp) => sp.id !== thread.space_id && !sp.members_only_owner && (sp.thread_kind !== 'roadmap' || moderator(v)))
                 .map((sp) => ({ slug: sp.slug, name: sp.name }))
@@ -547,7 +548,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const shaped = await Promise.all(rows.map(async (r) => {
                 const sp = await shapeSpace(r, await membersOnly(r.members_only_owner, projections));
                 const l = last.get(r.id);
-                sp.last_post = l ? { id: l.post_id, thread: { slug: l.thread_slug, title: l.thread_title, url: `/s/${r.slug}/t/${l.thread_slug}` }, author: authors.author(l.author_subject, l.origin, projections), created_at: isoTime(l.created_at) } : null;
+                sp.last_post = l ? { id: l.post_id, thread: { slug: l.thread_slug, title: l.thread_title, url: threadPath(r.slug, l.thread_slug) }, author: authors.author(l.author_subject, l.origin, projections), created_at: isoTime(l.created_at) } : null;
                 return sp;
             }));
             // The board index: groups in order, each with its top-level spaces; child boards under their parent.
@@ -593,7 +594,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         async createSpace(v, body = {}) {
             if (!moderator(v)) fail(403, 'capability.denied', 'Only moderators create forums');
             const slug = String(body.slug || '').trim().toLowerCase();
-            if (!SPACE_SLUG.test(slug) || ['new-space', 'discuss', 'feed', 'new'].includes(slug)) fail(400, 'space.invalid_slug', 'A forum address is 2 to 40 lowercase letters, digits and dashes (not new-space, discuss, feed or new)');
+            if (!SPACE_SLUG.test(slug) || RESERVED_SPACE_SLUGS.has(slug) || slug === 'new-space') fail(400, 'space.invalid_slug', 'A forum address is 2 to 40 lowercase letters, digits and dashes (not new, discuss, feed.xml, search, about or new-space)');
             if (await store.getSpace(db, slug)) fail(409, 'space.slug_taken', 'That address is taken');
             const visibility = ['public', 'members', 'staff'].includes(body.visibility) ? body.visibility : 'public';
             const fields = await spaceFields({ ...body, name: body.name }, null);
@@ -636,7 +637,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 .run(space.id, out.room.id, out.room.slug, out.room.name, out.room.kind, out.room.visibility, v.subject || null);
             if (before && !same) await chatRooms.detach({ token: v.token, room: before.room_slug, space: space.slug });
             pingSpace(space);
-            return { space: { slug: space.slug, name: space.name, url: `/s/${space.slug}` }, chat_room: shapeChatRoom(await chatRoomRow(space.id)), created: !same };
+            return { space: { slug: space.slug, name: space.name, url: spacePath(space.slug) }, chat_room: shapeChatRoom(await chatRoomRow(space.id)), created: !same };
         },
 
         /** Detach the space's chat room — the space's owner or staff (moderator services too). Idempotent. → { detached, chat } */
@@ -712,7 +713,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 entries: rows.map((r) => ({
                     id: r.id, action: r.action, rule: r.rule || null, reason: r.reason || null,
                     actor_role: r.actor_role, created_at: isoTime(r.created_at),
-                    thread: r.thread_id && !r.thread_deleted_at ? { slug: r.thread_slug, title: r.thread_title, url: `/s/${space.slug}/t/${r.thread_slug}` } : null,
+                    thread: r.thread_id && !r.thread_deleted_at ? { slug: r.thread_slug, title: r.thread_title, url: threadPath(space.slug, r.thread_slug) } : null,
                     post_id: r.post_id || null,
                 })),
             };
@@ -787,7 +788,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (await store.countThreadsSince(db, w.author, '-1 day') >= threadsPerDay && threadsPerDay > 0) fail(429, 'request.rate_limited', `Daily thread limit reached (${threadsPerDay}/day)`);
             const opening = await db.prepare('SELECT body_markdown FROM posts WHERE thread_id = ? AND is_opening = 1').get(thread.id);
             const excerpt = markdownToText(opening ? opening.body_markdown : '', 400).split('\n').map((l) => `> ${l}`).join('\n');
-            const text = `Crossposted from **${space.name}**: [${thread.title.replace(/[[\]]/g, '')}](/s/${space.slug}/t/${thread.slug})${excerpt.trim() !== '>' ? `\n\n${excerpt}` : ''}`;
+            const text = `Crossposted from **${space.name}**: [${thread.title.replace(/[[\]]/g, '')}](${threadPath(space.slug, thread.slug)})${excerpt.trim() !== '>' ? `\n\n${excerpt}` : ''}`;
             const { thread: created } = await store.createThread(db, { space_id: target.id, title: thread.title, author_subject: w.author, origin: 'user', body_markdown: text,
                 kind, status: FIRST_STATUS[kind] || null, crosspost_of: thread.id });
             if (pulse) await hook(async () => await pulse.threadCreated(created, target));

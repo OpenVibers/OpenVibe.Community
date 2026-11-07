@@ -59,7 +59,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(cfg.navbar.service, 'community');
         // The bar (2026-10-28): the forum first, every place with an icon (the phone app bar); search is the magnifier,
         // which offers this site's own search page first.
-        assert.deepStrictEqual(cfg.navbar.links.map((l) => l.href), ['/s', '/pastes', '/pulse', '/new']);
+        assert.deepStrictEqual(cfg.navbar.links.map((l) => l.href), ['/forum', '/pastes', '/pulse', '/new']);
         assert.ok(cfg.navbar.links.every((l) => l.icon) && cfg.navbar.appBar === true && cfg.navbar.search && cfg.navbar.search.page === '/search');
         assert.strictEqual(cfg.navbar.menu.after[0].href, '/my');
         assert.strictEqual(cfg.navbar.history.type, 'page');
@@ -70,7 +70,7 @@ const { boot, check, done } = require('./helpers/app');
         // The home's other shelves: the forum's places and the roadmap (both seeded at boot), and questions whose
         // FAQPage JSON-LD is exactly what the page shows.
         const forum = (/<section class="sc-sec sc-apps-sec" id="forum"[\s\S]*?<\/section>/.exec(r.text) || [''])[0];
-        assert.ok(forum.includes('<ul class="sc-apps">') && forum.includes('<a href="/s/general">') && forum.includes('href="/s">All forums'), 'the forum\'s places as a launcher');
+        assert.ok(forum.includes('<ul class="sc-apps">') && forum.includes('<a href="/forum/general">') && forum.includes('href="/forum">All forums'), 'the forum\'s places as a launcher');
         assert.ok(/<dt>public pastes<\/dt><dd>\d+<\/dd>/.test(r.text), 'the real count of public pastes');
         const faq = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].flatMap((m) => [].concat(JSON.parse(m[1]))).find((x) => x['@type'] === 'FAQPage');
         const shown = [...r.text.matchAll(/<summary>([^<]*)<\/summary>/g)].map((m) => m[1].replace(/&#39;/g, "'"));

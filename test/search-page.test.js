@@ -19,7 +19,7 @@ const { createSearchQuery, SearchUnavailable } = require('../server/search/query
             if (down) throw new SearchUnavailable('Search did not answer: connect ECONNREFUSED');
             return {
                 results: [
-                    { owner: 'community', type: 'thread', id: '18', title: 'Forum <b>boards</b>', canonical_url: 'https://openvibe.community/s/roadmap/t/forum-boards', facets: { space: 'roadmap' }, authorship: 'human', updated_at: '2026-09-25T18:37:20.000Z', snippet_html: 'classic <mark>forum</mark> boards <img src=x onerror=alert(1)>' },
+                    { owner: 'community', type: 'thread', id: '18', title: 'Forum <b>boards</b>', canonical_url: 'https://openvibe.community/forum/roadmap/forum-boards', facets: { space: 'roadmap' }, authorship: 'human', updated_at: '2026-09-25T18:37:20.000Z', snippet_html: 'classic <mark>forum</mark> boards <img src=x onerror=alert(1)>' },
                     { owner: 'community', type: 'paste', id: 'amber-fox-42', title: 'Quick sort', canonical_url: 'https://openvibe.community/p/amber-fox-42', facets: { kind: 'paste', syntax: 'javascript' }, authorship: 'ai_generated', summary: 'a sort' },
                 ],
                 next_cursor: 'abc_123',
@@ -32,7 +32,7 @@ const { createSearchQuery, SearchUnavailable } = require('../server/search/query
         const r = await t.get('/search?q=forum&type=thread');
         assert.strictEqual(r.status, 200);
         assert.deepStrictEqual(asked.at(-1), { q: 'forum', type: 'thread', cursor: '' });
-        assert.ok(r.text.includes('href="/s/roadmap/t/forum-boards"'));
+        assert.ok(r.text.includes('href="/forum/roadmap/forum-boards"'));
         assert.ok(r.text.includes('Forum &lt;b&gt;boards&lt;/b&gt;'), 'the title is escaped');
         assert.ok(r.text.includes('classic <mark>forum</mark> boards &lt;img'), 'only <mark> survives');
         assert.ok(!r.text.includes('<img src=x'));

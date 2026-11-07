@@ -183,11 +183,11 @@ function startVip() {
         assert.ok(!pulse.includes('Backstage with Cora') && !pulse.includes('Members lounge') && !pulse.includes('member reply'));
         assert.strictEqual((await t.db.prepare("SELECT COUNT(*) AS c FROM pulse_items WHERE source_type = 'thread' AND source_id IN (?, ?)").get(String(secret.id), String(showcaseThread.id))).c, 0);
         const sitemap = (await call('/sitemap.xml')).text;
-        assert.ok(!sitemap.includes(secret.slug) && !sitemap.includes('/s/showcase'), 'no gated thread or space in the sitemap');
-        const feed = (await call('/s/feed.xml')).text;
+        assert.ok(!sitemap.includes(secret.slug) && !sitemap.includes('/forum/showcase'), 'no gated thread or space in the sitemap');
+        const feed = (await call('/forum/feed.xml')).text;
         assert.ok(!feed.includes('Backstage') && !feed.includes('Members lounge'));
-        assert.strictEqual((await call('/s/showcase/feed.xml')).status, 404);
-        const general = (await call('/s/general/feed.xml')).text;
+        assert.strictEqual((await call('/forum/showcase/feed.xml')).status, 404);
+        const general = (await call('/forum/general/feed.xml')).text;
         assert.ok(!general.includes('Backstage') && !general.includes('secret backstage body'));
         // A thread gated after the fact leaves Pulse as well.
         const later = (await call('/api/v1/spaces/general/threads', { method: 'POST', who: cora, json: { title: 'Soon private', body: 'soon' } })).json().thread;
@@ -200,34 +200,34 @@ function startVip() {
     });
 
     await check('SSR: a teaser with the join link (403, noindex) for outsiders; the posts for members, still noindex and without JSON-LD', async () => {
-        const anon = await call(`/s/general/t/${secret.slug}`);
+        const anon = await call(`/forum/general/${secret.slug}`);
         assert.strictEqual(anon.status, 403);
         assert.ok(anon.text.includes('https://openvibe.vip/cora'));
         assert.ok(anon.text.includes('Backstage with Cora'));
         assert.ok(!anon.text.includes('secret backstage body') && !anon.text.includes('member reply'));
         assert.ok(/noindex/.test(anon.text));
         assert.ok(anon.text.includes('/auth/login?next='), 'signed out: a sign-in link');
-        const space = await call('/s/showcase', { who: stan });
+        const space = await call('/forum/showcase', { who: stan });
         assert.strictEqual(space.status, 403);
         assert.ok(space.text.includes('https://openvibe.vip/cora') && !space.text.includes('Members lounge'));
-        assert.strictEqual((await call('/s/showcase/new', { who: stan })).status, 403, 'no new-thread form for outsiders');
-        const reply = await form(`/s/general/t/${secret.slug}/reply`, stan, { body: 'sneaky' });
+        assert.strictEqual((await call('/forum/showcase/new', { who: stan })).status, 403, 'no new-thread form for outsiders');
+        const reply = await form(`/forum/general/${secret.slug}/reply`, stan, { body: 'sneaky' });
         assert.strictEqual(reply.status, 403);
-        const member = await call(`/s/general/t/${secret.slug}`, { who: mia });
+        const member = await call(`/forum/general/${secret.slug}`, { who: mia });
         assert.strictEqual(member.status, 200);
         assert.ok(member.text.includes('secret backstage body'));
         assert.ok(/noindex/.test(member.text));
         assert.ok(!member.text.includes('DiscussionForumPosting'), 'no structured data for a gated thread');
-        const listing = await call('/s/general', { who: stan });
+        const listing = await call('/forum/general', { who: stan });
         assert.ok(listing.text.includes('Backstage with Cora') && listing.text.includes('VIP members only'));
         assert.ok(!listing.text.includes('secret backstage body'));
         // The author's no-JS toggle.
         const own = (await call('/api/v1/spaces/general/threads', { method: 'POST', who: cora, json: { title: 'Toggle me', body: 'toggle' } })).json().thread;
-        const page = await call(`/s/general/t/${own.slug}`, { who: cora });
-        assert.ok(page.text.includes(`/s/general/t/${own.slug}/members-only`));
-        const on = await form(`/s/general/t/${own.slug}/members-only`, cora, { on: '1' });
+        const page = await call(`/forum/general/${own.slug}`, { who: cora });
+        assert.ok(page.text.includes(`/forum/general/${own.slug}/members-only`));
+        const on = await form(`/forum/general/${own.slug}/members-only`, cora, { on: '1' });
         assert.strictEqual(on.status, 303);
-        assert.strictEqual((await call(`/s/general/t/${own.slug}`, { who: stan })).status, 403);
+        assert.strictEqual((await call(`/forum/general/${own.slug}`, { who: stan })).status, 403);
     });
 
     await check('convergence: VIP stops granting → Community refuses within the cache TTL (30 s); at once on vip.membership.changed', async () => {
@@ -255,7 +255,7 @@ function startVip() {
         const r = await call('/api/v1/spaces/showcase/members-only', { method: 'PUT', who: boss, json: { owner: null } });
         assert.strictEqual(r.json().space.members_only, null);
         assert.strictEqual((await call('/api/v1/spaces/showcase/threads', { who: stan })).status, 200);
-        assert.ok((await call('/sitemap.xml')).text.includes('/s/showcase'));
+        assert.ok((await call('/sitemap.xml')).text.includes('/forum/showcase'));
     });
 
     await t.close();

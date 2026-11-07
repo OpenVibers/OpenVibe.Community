@@ -30,7 +30,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     });
 
     await check('a thread page marks its author and names the items files; the CSP reaches Inventory', async () => {
-        const ok = await t.get('/s/general/new', { ...form({ title: 'Wearing things', body: 'Look at my name.' }), cookies: [`ov_token=${alexJwt}`] });
+        const ok = await t.get('/forum/general/new', { ...form({ title: 'Wearing things', body: 'Look at my name.' }), cookies: [`ov_token=${alexJwt}`] });
         assert.strictEqual(ok.status, 303, ok.text);
         const r = await t.get(ok.headers.get('location'));
         assert.strictEqual(r.status, 200);

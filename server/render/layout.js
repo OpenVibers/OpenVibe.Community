@@ -64,7 +64,7 @@ function navbarInit(opts) {
         links: [
             // The product's own places: the main ones carry an icon (phones get them as the bottom tab bar), the rest fold
             // into the navbar's More (Shared 4.22). Search is the navbar's magnifier; What shipped is the footer's.
-            { label: 'Forum', href: '/s', icon: 'fa-comments', active: opts.active === 'spaces' },
+            { label: 'Forum', href: '/forum', icon: 'fa-comments', active: opts.active === 'spaces' },
             { label: 'Pastes', href: '/pastes', icon: 'fa-paste', active: opts.active === 'pastes' },
             { label: 'Pulse', href: '/pulse', icon: 'fa-bolt', active: opts.active === 'pulse' },
             { label: 'New paste', href: '/new', icon: 'fa-plus', active: opts.active === 'new' },
@@ -95,11 +95,11 @@ function footerInit(opts) {
             heading: 'Community',
             items: [
                 { name: 'Pastes', url: '/pastes' },
-                { name: 'Forum', url: '/s' },
+                { name: 'Forum', url: '/forum' },
                 { name: 'Pulse', url: '/pulse' },
                 { name: 'New paste', url: '/new' },
                 { name: 'My pastes', url: '/my' },
-                { name: 'Roadmap', url: '/s/roadmap' },
+                { name: 'Roadmap', url: '/forum/roadmap' },
                 { name: 'Source code', url: 'https://github.com/OpenVibers/OpenVibe.Community' },
             ],
         }],

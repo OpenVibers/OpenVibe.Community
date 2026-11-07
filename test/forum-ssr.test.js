@@ -1,7 +1,7 @@
 'use strict';
 /**
- * Forum pages without JavaScript: /s, /s/:space (sort + pagination links), /s/:space/t/:slug
- * (posts, reply/vote/moderation forms), /s/:space/new — plain form posts, SEO (canonical, OG,
+ * Forum pages without JavaScript: /forum, /forum/:space (sort + pagination links), /forum/:space/:slug
+ * (posts, reply/vote/moderation forms), /forum/:space/new — plain form posts, SEO (canonical, OG,
  * JSON-LD DiscussionForumPosting, robots for members/staff spaces), sitemap, feeds, robots.txt.
  */
 const assert = require('assert');
@@ -25,39 +25,39 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     const adminJwt = net.sign({ id: 1, subject_id: ids.newId('user'), username: 'boss', display_name: 'Boss', role: 'admin' });
     const as = (jwt, opts = {}) => ({ ...opts, cookies: [`ov_token=${jwt}`] });
 
-    await check('/s lists the public spaces with SEO head, breadcrumbs and the threads feed', async () => {
-        const r = await t.get('/s');
+    await check('/forum lists the public spaces with SEO head, breadcrumbs and the threads feed', async () => {
+        const r = await t.get('/forum');
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>Forum · OpenVibe.Community</title>');
-        has(r.text, '<link rel="canonical" href="https://openvibe.community/s">');
+        has(r.text, '<link rel="canonical" href="https://openvibe.community/forum">');
         has(r.text, '<meta name="robots" content="index,follow">');
-        has(r.text, 'href="/s/feed.xml"');
-        for (const s of ['general', 'feedback', 'showcase']) has(r.text, `href="/s/${s}"`);
+        has(r.text, 'href="/forum/feed.xml"');
+        for (const s of ['general', 'feedback', 'showcase']) has(r.text, `href="/forum/${s}"`);
         assert.ok(ld(r.text).some((o) => o['@type'] === 'BreadcrumbList'));
         const cfg = JSON.parse(r.text.match(/window\.__OV_PAGE = (.*);\n/)[1]);
-        assert.strictEqual(cfg.navbar.links.find((l) => l.href === '/s').active, true);
+        assert.strictEqual(cfg.navbar.links.find((l) => l.href === '/forum').active, true);
     });
 
     await check('no-JS new thread: anonymous → sign in; signed in → 303 to the thread; errors re-render escaped', async () => {
-        const page = await t.get('/s/general/new');
+        const page = await t.get('/forum/general/new');
         assert.strictEqual(page.status, 200);
-        has(page.text, '/auth/login?next=%2Fs%2Fgeneral%2Fnew');
+        has(page.text, '/auth/login?next=%2Fforum%2Fgeneral%2Fnew');
         has(page.text, '<meta name="robots" content="noindex,follow">');
-        const anon = await t.get('/s/general/new', form({ title: 'Anon thread', body: 'x' }));
+        const anon = await t.get('/forum/general/new', form({ title: 'Anon thread', body: 'x' }));
         assert.strictEqual(anon.status, 303);
-        assert.match(anon.headers.get('location'), /^\/auth\/login\?next=%2Fs%2Fgeneral%2Fnew$/);
-        const bad = await t.get('/s/general/new', as(alexJwt, form({ title: 'x', body: '<img src=x onerror=alert(1)>' })));
+        assert.match(anon.headers.get('location'), /^\/auth\/login\?next=%2Fforum%2Fgeneral%2Fnew$/);
+        const bad = await t.get('/forum/general/new', as(alexJwt, form({ title: 'x', body: '<img src=x onerror=alert(1)>' })));
         assert.strictEqual(bad.status, 400);
         has(bad.text, 'Titles are 3 to 200 characters');
         has(bad.text, '&lt;img src=x onerror=alert(1)&gt;</textarea>');
-        const ok = await t.get('/s/general/new', as(alexJwt, form({ title: 'How do I <b>embed</b> comments?', body: 'Asking for **Live**.\n\n```js\nconst x = "<y>";\n```\n\n<script>alert(1)</script>' })));
+        const ok = await t.get('/forum/general/new', as(alexJwt, form({ title: 'How do I <b>embed</b> comments?', body: 'Asking for **Live**.\n\n```js\nconst x = "<y>";\n```\n\n<script>alert(1)</script>' })));
         assert.strictEqual(ok.status, 303, ok.text);
-        assert.strictEqual(ok.headers.get('location'), '/s/general/t/how-do-i-b-embed-b-comments');
-        const foreign = await t.get('/s/general/new', as(alexJwt, { ...form({ title: 'Cross site', body: 'x' }), headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' } }));
+        assert.strictEqual(ok.headers.get('location'), '/forum/general/how-do-i-b-embed-b-comments');
+        const foreign = await t.get('/forum/general/new', as(alexJwt, { ...form({ title: 'Cross site', body: 'x' }), headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' } }));
         assert.strictEqual(foreign.status, 403, 'a form sent from another site is refused');
     });
 
-    const url = '/s/general/t/how-do-i-b-embed-b-comments';
+    const url = '/forum/general/how-do-i-b-embed-b-comments';
 
     await check('thread page: escaped title, safe Markdown, canonical, OG article, JSON-LD DiscussionForumPosting', async () => {
         const r = await t.get(url);
@@ -117,57 +117,57 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         assert.ok(!r.text.includes(`action="${url}/reply"`));
         has(r.text, '<h1><i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> <i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ');
         assert.ok(!r.text.includes('aria-label="Pinned"'), 'the pin does not carry an aria-label on an icon');
-        const list = await t.get('/s/general');
+        const list = await t.get('/forum/general');
         has(list.text, '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span>');
         assert.ok(!list.text.includes('aria-label="Pinned"'), 'the list pin does not carry an aria-label either');
         const admin = await t.get(url, as(adminJwt));
         has(admin.text, 'Unpin');
         has(admin.text, 'Unlock');
-        const mine = await t.get('/s/general/new', as(samJwt, form({ title: 'Short lived', body: 'x' })));
+        const mine = await t.get('/forum/general/new', as(samJwt, form({ title: 'Short lived', body: 'x' })));
         const mineUrl = mine.headers.get('location');
         assert.strictEqual((await t.get(`${mineUrl}/delete`, as(alexJwt, form({})))).status, 403);
         const del = await t.get(`${mineUrl}/delete`, as(samJwt, form({})));
         assert.strictEqual(del.status, 303);
-        assert.strictEqual(del.headers.get('location'), '/s/general');
+        assert.strictEqual(del.headers.get('location'), '/forum/general');
         assert.strictEqual((await t.get(mineUrl)).status, 404);
     });
 
     await check('space page: hot/new/top tabs as links, server pagination with rel=prev/next and canonical', async () => {
         const space = await forumStore.getSpace(t.db, 'showcase');
         for (let i = 1; i <= 27; i++) await forumStore.createThread(t.db, { space_id: space.id, title: `Showcase item ${i}`, author_subject: alex.subject_id, body_markdown: `item ${i}` });
-        const p1 = await t.get('/s/showcase?sort=new');
+        const p1 = await t.get('/forum/showcase?sort=new');
         assert.strictEqual(p1.status, 200);
-        has(p1.text, '<link rel="canonical" href="https://openvibe.community/s/showcase?sort=new">');
-        has(p1.text, 'href="/s/showcase"');
-        has(p1.text, 'href="/s/showcase?sort=top"');
-        has(p1.text, 'rel="next" href="/s/showcase?sort=new&amp;page=2"');
+        has(p1.text, '<link rel="canonical" href="https://openvibe.community/forum/showcase?sort=new">');
+        has(p1.text, 'href="/forum/showcase"');
+        has(p1.text, 'href="/forum/showcase?sort=top"');
+        has(p1.text, 'rel="next" href="/forum/showcase?sort=new&amp;page=2"');
         has(p1.text, 'Page 1 of 2');
         assert.strictEqual((p1.text.match(/class="thread-row"/g) || []).length, 25);
-        const p2 = await t.get('/s/showcase?sort=new&page=2');
-        has(p2.text, 'rel="prev" href="/s/showcase?sort=new"');
-        has(p2.text, '<link rel="canonical" href="https://openvibe.community/s/showcase?sort=new&amp;page=2">');
+        const p2 = await t.get('/forum/showcase?sort=new&page=2');
+        has(p2.text, 'rel="prev" href="/forum/showcase?sort=new"');
+        has(p2.text, '<link rel="canonical" href="https://openvibe.community/forum/showcase?sort=new&amp;page=2">');
         has(p2.text, 'Showcase item 1<');
-        assert.strictEqual((await t.get('/s/showcase?page=9')).status, 404);
-        assert.strictEqual((await t.get('/s/nowhere')).status, 404);
+        assert.strictEqual((await t.get('/forum/showcase?page=9')).status, 404);
+        assert.strictEqual((await t.get('/forum/nowhere')).status, 404);
     });
 
     await check('members and staff spaces: sign-in redirect, noindex for members, 404 for non-staff; never in feeds or sitemap', async () => {
         await t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members'), ('mods', 'Mods', 'staff')").run();
         const ins = await forumStore.getSpace(t.db, 'insiders');
         await forumStore.createThread(t.db, { space_id: ins.id, title: 'Members only chat', author_subject: alex.subject_id, body_markdown: 'psst' });
-        const anon = await t.get('/s/insiders');
+        const anon = await t.get('/forum/insiders');
         assert.strictEqual(anon.status, 303);
-        assert.strictEqual(anon.headers.get('location'), '/auth/login?next=%2Fs%2Finsiders');
-        const member = await t.get('/s/insiders', as(samJwt));
+        assert.strictEqual(anon.headers.get('location'), '/auth/login?next=%2Fforum%2Finsiders');
+        const member = await t.get('/forum/insiders', as(samJwt));
         assert.strictEqual(member.status, 200);
         has(member.text, '<meta name="robots" content="noindex,nofollow">');
-        const th = await t.get('/s/insiders/t/members-only-chat', as(samJwt));
+        const th = await t.get('/forum/insiders/members-only-chat', as(samJwt));
         has(th.text, '<meta name="robots" content="noindex,nofollow">');
-        assert.strictEqual((await t.get('/s/mods', as(samJwt))).status, 404);
-        assert.strictEqual((await t.get('/s/mods', as(adminJwt))).status, 200);
-        const feed = await t.get('/s/feed.xml');
+        assert.strictEqual((await t.get('/forum/mods', as(samJwt))).status, 404);
+        assert.strictEqual((await t.get('/forum/mods', as(adminJwt))).status, 200);
+        const feed = await t.get('/forum/feed.xml');
         assert.ok(!feed.text.includes('Members only chat'));
-        assert.strictEqual((await t.get('/s/insiders/feed.xml')).status, 404);
+        assert.strictEqual((await t.get('/forum/insiders/feed.xml')).status, 404);
         require('../server/discovery').resetCaches();
         const map = await t.get('/sitemap.xml');
         assert.ok(!map.text.includes('members-only-chat'));
@@ -176,7 +176,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     await check('AI threads are labelled as AI on the page and in JSON-LD (never a person)', async () => {
         const space = await forumStore.getSpace(t.db, 'feedback');
         await forumStore.createThread(t.db, { space_id: space.id, title: 'Weekly summary', origin: 'ai', body_markdown: 'What people asked for.' });
-        const r = await t.get('/s/feedback/t/weekly-summary');
+        const r = await t.get('/forum/feedback/weekly-summary');
         has(r.text, 'OpenVibe AI');
         has(r.text, '<span class="badge badge-ai"');
         assert.deepStrictEqual(ld(r.text).find((o) => o['@type'] === 'DiscussionForumPosting').author, { '@type': 'Organization', name: 'OpenVibe AI' });
@@ -185,17 +185,17 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
     await check('sitemap, feeds and robots.txt include the forum', async () => {
         require('../server/discovery').resetCaches();
         const map = await t.get('/sitemap.xml');
-        for (const loc of ['/s', '/s/general', '/pulse', url]) has(map.text, `<loc>https://openvibe.community${loc}</loc>`);
-        const feed = await t.get('/s/feed.xml');
+        for (const loc of ['/forum', '/forum/general', '/pulse', url]) has(map.text, `<loc>https://openvibe.community${loc}</loc>`);
+        const feed = await t.get('/forum/feed.xml');
         assert.strictEqual(feed.status, 200);
         has(feed.text, '<rss version="2.0"');
         has(feed.text, `<link>https://openvibe.community${url}</link>`);
         has(feed.text, '<title>How do I &lt;b&gt;embed&lt;/b&gt; comments?</title>');
-        const spaceFeed = await t.get('/s/showcase/feed.xml');
+        const spaceFeed = await t.get('/forum/showcase/feed.xml');
         has(spaceFeed.text, 'Showcase item 27');
         assert.ok(!spaceFeed.text.includes('embed'));
         const robots = await t.get('/robots.txt');
-        has(robots.text, 'Disallow: /s/*/new');
+        has(robots.text, 'Disallow: /forum/*/new');
     });
 
     await t.close();

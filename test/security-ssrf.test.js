@@ -115,7 +115,7 @@ function inventory() {
         const th = await send('POST', '/api/v1/spaces/general/threads', { json: { title: 'links', body: `see [this](${urls[1]}) and ![img](${urls[2]}) and <img src="${urls[3]}"> ${urls[1]}` } });
         assert.strictEqual(th.status, 201, th.text);
         const slug = JSON.parse(th.text).thread.slug;
-        assert.strictEqual((await send('GET', `/s/general/t/${slug}`)).status, 200);
+        assert.strictEqual((await send('GET', `/forum/general/${slug}`)).status, 200);
         const p = await send('POST', '/api/pastes', { json: { title: urls[5], content: `curl ${urls[5]}\n![x](${urls[2]})` } });
         assert.strictEqual(p.status, 201, p.text);
         assert.strictEqual((await send('GET', `/p/${JSON.parse(p.text).slug}`)).status, 200);
@@ -130,7 +130,7 @@ function inventory() {
         await send('PUT', '/api/v1/spaces/general/chat-room', { json: { room: urls[7] } });
         const map = await send('POST', '/api/v1/relay/mappings', { cookie: bossJwt, json: { space: 'general', webhook_url_ref: `${C}/hook` } });
         assert.strictEqual(map.status, 400, 'a mapping names a variable, never a URL');
-        for (const page of ['/', '/pulse', '/api/v1/pulse', '/s/general', '/feed.xml', '/s/feed.xml', '/sitemap.xml']) await send('GET', page);
+        for (const page of ['/', '/pulse', '/api/v1/pulse', '/forum/general', '/feed.xml', '/forum/feed.xml', '/sitemap.xml']) await send('GET', page);
         await new Promise((r) => setTimeout(r, 200));
         assert.deepStrictEqual(hits, [], 'Community fetched a URL it was handed');
     });

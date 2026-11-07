@@ -36,7 +36,7 @@ module.exports = {
     forms: true,
     keep: () => true,
     /** Pages an open tab may hold (anonymous): every link, script and form in them is replayed too. */
-    crawl: ['/', '/pastes', '/p/{@paste}', '/s/general', '/s/general/t/n-1-thread', '/c/{@comment_access}', '/search', '/pulse', '/new', '/my'],
+    crawl: ['/', '/pastes', '/p/{@paste}', '/forum/general', '/forum/general/n-1-thread', '/c/{@comment_access}', '/search', '/pulse', '/new', '/my'],
     origins: ['https://openvibe.community'],
     /** Values for template expressions, first match wins; '@name' is a seeded row (boot-child.js ids). */
     samples: [
