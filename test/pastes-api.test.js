@@ -273,7 +273,9 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(p.owner_subject, alex.subject_id);
         assert.ok(up.v2 && up.kind === 'screenshot' && up.visibility === 'private', 'a v2 Media object: private screenshot');
         assert.strictEqual(up.owner, alex.subject_id, 'owned by the person');
-        assert.strictEqual(p.screenshot_url, `https://openvibe.media/o/${up.key}`);
+        // The object is private in Media, so the answer names the guarded address, never Media's /o/<id> (a 404 to a browser).
+        assert.ok(/\/p\/[a-z0-9-]+\/screenshot$/.test(p.screenshot_url) && p.screenshot_url.endsWith(`/p/${p.slug}/screenshot`), p.screenshot_url);
+        assert.ok(!p.screenshot_url.includes('/o/'), 'never the Media object URL');
         assert.strictEqual(p.title, 'My desk');
         assert.strictEqual(p.content, 'look');
         const meta = JSON.parse(p.metadata);

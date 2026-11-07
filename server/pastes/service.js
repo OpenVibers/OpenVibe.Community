@@ -252,7 +252,10 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             envelope_url: locked ? `/p/${encodeURIComponent(p.slug)}/raw` : null,
             stream_id: streamIdOf(ref),
             stream_ref: ref,
-            screenshot_url: p.screenshot_url || null,
+            // The guarded address, never Media's own object URL: screenshots are stored private in Media (the share
+            // rules decide who sees one), so /o/<id> is a 404 to every browser. /p/<slug>/screenshot checks the paste's
+            // audience and streams the bytes (2026-11-07: every image paste and AI moment on openvibe.live was broken).
+            screenshot_url: p.screenshot_url && !locked ? `${site || ''}/p/${encodeURIComponent(p.slug)}/screenshot` : null,
             metadata: metadataFor(p.metadata, isOwner(v, p) || isService(v)),
             burn_after_read: !!p.burn_after_read,
             forked_from: p.forked_from || null,
