@@ -6,6 +6,7 @@
  * openvibe-shared/seo's jsonLdTag (via headTags).
  */
 const config = require('../config');
+const { canonicalSlug } = require('../pastes/url');
 const { abs, SITE_NAME, DEFAULT_DESCRIPTION } = require('./layout');
 
 function isoDate(v) {
@@ -44,7 +45,7 @@ function authorLd(paste) {
 
 function pasteLd(paste, { description, image }) {
     const isScreenshot = paste.type === 'screenshot';
-    const url = abs(`/p/${paste.slug}`);
+    const url = abs(`/p/${paste.canonical_slug || canonicalSlug(paste)}`);
     const base = {
         '@context': 'https://schema.org',
         '@type': isScreenshot ? 'ImageObject' : 'Article',

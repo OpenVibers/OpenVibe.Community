@@ -33,7 +33,7 @@ const comments = require('../server/comments/store');
         evs.forEach(ok);
         assert.ok(!JSON.stringify(evs).includes('secret'), 'no title or content in any event');
         assert.strictEqual(evs[0].visibility, 'public');
-        assert.strictEqual(evs[0].payload.url, 'https://openvibe.community/p/amber-fox-42'.replace('https://openvibe.community', require('../server/config').baseUrl));
+        assert.strictEqual(evs[0].payload.url, `${require('../server/config').baseUrl}/p/${p.public_id}`, 'the event carries the bare id, never the title slug');
         assert.deepStrictEqual(evs[1].payload.changed, ['content']);
         assert.strictEqual(evs[2].visibility, 'internal', 'an unlisted paste is not a public event');
         assert.strictEqual(evs[2].payload.url, null);

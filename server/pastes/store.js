@@ -11,6 +11,7 @@
  * stay reserved and a re-import can never bring them back; every read below skips them.
  */
 const crypto = require('crypto');
+const { newPublicId, publicIdOfRef, canonicalSlug } = require('./url');
 
 // ── Slugs (the same adjective-noun-number style OpenVibe.Media has always minted) ──
 const SLUG_ADJECTIVES = [
@@ -124,24 +125,62 @@ const likeEscape = (s) => String(s).replace(/[\\%_]/g, (c) => `\\${c}`);
 
 // ── Pastes ───────────────────────────────────────────────────
 
+/** One random id, stored once; two readers racing fill the first assignment and the other re-reads it. */
+async function ensurePublicId(db, row) {
+    if (!row || row.public_id) return row;
+    const id = newPublicId();
+    const info = await db.prepare('UPDATE pastes SET public_id = ? WHERE id = ? AND public_id IS NULL').run(id, row.id);
+    if (info.changes) return { ...row, public_id: id };
+    return await db.prepare('SELECT * FROM pastes WHERE id = ?').get(row.id) || row;
+}
+
 async function getBySlug(db, slug) {
-    return await db.prepare('SELECT * FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(String(slug)) || null;
+    return await ensurePublicId(db, await db.prepare('SELECT * FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(String(slug)) || null);
 }
 
 async function getById(db, id) {
-    return await db.prepare('SELECT * FROM pastes WHERE id = ? AND deleted_at IS NULL').get(id) || null;
+    return await ensurePublicId(db, await db.prepare('SELECT * FROM pastes WHERE id = ? AND deleted_at IS NULL').get(id) || null);
 }
 
-const INSERT_COLUMNS = ['slug', 'owner_subject', 'origin', 'type', 'title', 'content', 'language', 'visibility',
+async function getByPublicId(db, id) {
+    if (!publicIdOfRef(id)) return null;
+    return await ensurePublicId(db, await db.prepare('SELECT * FROM pastes WHERE public_id = ? AND deleted_at IS NULL').get(String(id)) || null);
+}
+
+/**
+ * The canonical /p/ segment for a reference, without loading the service's access rules: a row page
+ * redirect can happen before a view is counted. An old public slug resolves to the new title+id form;
+ * a link/private or burn paste keeps its secret slug, so its canonical is the reference itself.
+ */
+async function canonicalForRef(db, ref) {
+    const raw = String(ref == null ? '' : ref);
+    let row = await db.prepare('SELECT id, slug, public_id, visibility, burn_after_read, title, content FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(raw);
+    if (!row) {
+        const id = publicIdOfRef(raw);
+        if (!id) return null;
+        row = await db.prepare('SELECT id, slug, public_id, visibility, burn_after_read, title, content FROM pastes WHERE public_id = ? AND deleted_at IS NULL').get(id);
+        // The id is a public address only for a public, non-burn paste; a secret paste's slug is the key and
+        // the id must not turn into a second, weaker one.
+        if (row && (row.visibility !== 'public' || Number(row.burn_after_read))) return null;
+    }
+    if (!row) return null;
+    if (!row.public_id) row = await ensurePublicId(db, row);
+    return canonicalSlug(row);
+}
+
+const INSERT_COLUMNS = ['slug', 'public_id', 'owner_subject', 'origin', 'type', 'title', 'content', 'language', 'visibility',
     'screenshot_url', 'media_ref', 'stream_ref', 'metadata', 'burn_after_read', 'forked_from', 'pinned', 'is_nsfw',
     'ai_summary', 'ai_tags', 'ai_analyzed_at', 'locked', 'lock_kind', 'envelope', 'title_shown'];
 
 /** Insert a new paste (fields already validated); returns the stored row. */
 async function insertPaste(db, fields) {
-    const cols = INSERT_COLUMNS.filter((c) => fields[c] !== undefined);
+    // Every paste gets its public id once, even a secret one: the column is what a later public title+id
+    // address is built from, and it never changes.
+    const values = { ...fields, public_id: fields.public_id || newPublicId() };
+    const cols = INSERT_COLUMNS.filter((c) => values[c] !== undefined);
     return await db.tx(async () => {
         const info = await db.prepare(`INSERT INTO pastes (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')}) RETURNING id`)
-            .run(...cols.map((c) => fields[c]));
+            .run(...cols.map((c) => values[c]));
         const row = await getById(db, info.lastInsertRowid);
         await require('../events').pasteCreated(row);   // community.paste.created, in this transaction
         return row;
@@ -436,7 +475,7 @@ async function mapSet(db, system, type, id, targetType, targetId) {
         .run(String(system), String(type), String(id), String(targetType), String(targetId));
 }
 
-module.exports = {
+module.exports = { ensurePublicId, getByPublicId, canonicalForRef, canonicalSlug, publicIdOfRef,
     generateSlug, slugTaken, retireSlug, sanitizeTitle, detectLanguage,
     getBySlug, getById, insertPaste, updatePaste, listVersions, softDelete, listPastes,
     countOwnerSince, lastPasteTime, hasLiked, toggleLike, incrementCopies, bumpViews, recordVisit, pruneVisits,

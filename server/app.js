@@ -503,6 +503,17 @@ async function createApp(opts = {}) {
             descriptor: require('./agent-descriptor'),
             render: require('./agent-pages').createAgentPages({ views: agentViews }).renderPublicPage,
         });
+        // An old paste address's twin 301s to the canonical address's twin, exactly as the page does, so the
+        // Markdown a crawler stores names one URL.
+        app.use(async (req, res, next) => {
+            if (!String(req.path || '').startsWith('/p/') || !String(req.path || '').endsWith('.md')) return next();
+            let slug;
+            try { slug = decodeURIComponent(req.path.slice(3, -3)); } catch { return next(); }
+            const canonical = await require('./pastes/store').canonicalForRef(db, slug).catch(() => null);
+            if (!canonical || canonical === slug) return next();
+            const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+            return res.redirect(301, `/p/${encodeURIComponent(canonical)}.md${q}`);
+        });
         app.use((req, res, next) => {
             // The manifest exactly: the rest of /.well-known/ (security.txt) belongs to the app.
             if (req.path === '/.well-known/agent.json') return agentRouter(req, res, next);
@@ -566,7 +577,11 @@ async function createApp(opts = {}) {
         if (!SLUG_RE.test(slug)) return { status: 404, body: pages.errorPage({ status: 404, title: 'Paste not found', message: 'That link does not point at a paste.' }) };
         // A twin is not a person reading: never consume a burn-after-read paste for one.
         if (twin) {
-            const row = await db.prepare('SELECT burn_after_read FROM pastes WHERE slug = ?').get(slug);
+            let row = await db.prepare('SELECT burn_after_read FROM pastes WHERE slug = ?').get(slug);
+            if (!row) {
+                const id = require('./pastes/url').publicIdOfRef(slug);
+                if (id) row = await db.prepare('SELECT burn_after_read FROM pastes WHERE public_id = ?').get(id);
+            }
             if (!row || Number(row.burn_after_read)) return null;
         }
         let paste;
@@ -576,7 +591,7 @@ async function createApp(opts = {}) {
             if (err.status === 404) {
                 // A paste shared with specific people answers the gate: "Ask for access" when signed
                 // in, "Sign in" otherwise, and never its title, content, screenshot or comments.
-                const sh = await sharing.shareOf(slug);
+                const sh = await sharing.shareOf(await require('./pastes/store').canonicalForRef(db, slug) || slug);
                 if (sh && sh.audience === 'people') {
                     const signInUrl = `/auth/login?next=${encodeURIComponent(`/p/${slug}`)}`;
                     return { status: 404, body: pages.gatePage({ slug, signedInAs: user && user.username ? user.username : null, signInUrl }) };
@@ -596,15 +611,23 @@ async function createApp(opts = {}) {
         const sort = query.sort === 'old' ? 'old' : 'new';
         const thread = paste.burn_after_read ? null : await comments.forRef(viewer, pasteRef(paste.slug), { sort, after, limit: 30 });
         return {
-            status: 200, slug: paste.slug,
+            status: 200, slug: paste.slug, canonical: paste.canonical_slug || paste.slug,
             body: pages.pastePage({ paste, related, user, comments: thread, commentSort: sort, commentsAfter: after, share }),
         };
     }
 
     app.get('/p/:slug', withUser, wrap(async (req, res) => {
+        // The id is the address; the title slug before it is decoration. An old adjective-noun-number slug, a
+        // bare id or a title that has since changed all 301 to the one canonical form (query kept), before a
+        // view is counted.
+        const canonical = await require('./pastes/store').canonicalForRef(db, req.params.slug);
+        if (canonical && canonical !== req.params.slug) {
+            const q = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+            return res.redirect(301, `/p/${encodeURIComponent(canonical)}${q}`);
+        }
         const out = await pasteView(req.params.slug, req.query, { viewer: req.viewer, user: req.user, ctx: ctxOf(req) });
         if (!out) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
-        if (out.status === 200) twinLink(res, `/p/${encodeURIComponent(out.slug)}`);
+        if (out.status === 200) twinLink(res, `/p/${encodeURIComponent(out.canonical || out.slug)}`);
         html(res, out.body, out.status);
     }));
 
@@ -614,16 +637,21 @@ async function createApp(opts = {}) {
         const { slug } = req.params;
         const origin = req.get('origin');
         if (origin && origin !== 'null' && origin !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
-        const back = `/p/${encodeURIComponent(slug)}`;
+        let back = `/p/${encodeURIComponent(slug)}`;
         try {
             if (!SLUG_RE.test(slug)) throw new v1.ApiError(404, 'ref.not_found', 'No such paste');
+            // The URL may be the canonical title+id form; the comment thread is keyed by the paste's stored
+            // slug, so resolve the paste first and keep the stable ref.
+            const found = await source.getPaste(slug, { ...ctxOf(req), noView: true });
+            const stable = found.slug;
+            back = `/p/${encodeURIComponent(found.canonical_slug || stable)}`;
             if (!req.viewer || !req.viewer.subject) return res.redirect(303, `/auth/login?next=${encodeURIComponent(back)}`);
-            const { thread } = await comments.resolve(req.viewer, { ref: pasteRef(slug) });
+            const { thread } = await comments.resolve(req.viewer, { ref: pasteRef(stable) });
             const b = req.body || {};
             const out = await comments.add(req.viewer, thread.id, { message: String(b.message || '').slice(0, 5000), parent_id: b.parent_id || null });
             return res.redirect(303, `${back}#comment-${out.comment.id}`);
         } catch (err) {
-            if (!(err instanceof v1.ApiError)) return next(err);
+            if (!(err instanceof v1.ApiError) && !(err && err.name === 'PasteError')) return next(err);
             if (err.status === 401) return res.redirect(303, `/auth/login?next=${encodeURIComponent(back)}`);
             if (err.status === 404) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
             return html(res, pages.errorPage({ status: err.status, title: err.status === 429 ? 'Slow down' : 'That did not work', message: err.message }), err.status);
@@ -656,7 +684,7 @@ async function createApp(opts = {}) {
         if (variant && variant.error) return res.status(400).type('text/plain').set('X-Content-Type-Options', 'nosniff').send(variant.error);
         try {
             await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug);
-            const row = await db.prepare('SELECT media_ref, screenshot_url, visibility, burn_after_read, locked FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(req.params.slug);
+            const row = await db.prepare('SELECT media_ref, screenshot_url, visibility, burn_after_read, locked FROM pastes WHERE (slug = ? OR public_id = ?) AND deleted_at IS NULL').get(req.params.slug, require('./pastes/url').publicIdOfRef(req.params.slug) || '');
             const got = row ? await app.locals.pasteMedia.bytes(row, variant) : null;
             if (!got) return notFound(res);
             // A public paste's screenshot never changes under this URL, so it is cached like any other
@@ -688,7 +716,7 @@ async function createApp(opts = {}) {
                     .type('application/octet-stream').send(out.bytes);
             } catch (err) { if (err.status === 404) return res.status(404).type('text/plain').send('Not found'); throw err; }
         }
-        if (paste.type === 'screenshot') return res.redirect(302, `/p/${encodeURIComponent(slug)}/screenshot`);
+        if (paste.type === 'screenshot') return res.redirect(302, `/p/${encodeURIComponent(paste.canonical_slug || slug)}/screenshot`);
         res.set('Content-Disposition', `attachment; filename="${slug}.${extensionFor(paste.language)}"`);
         res.set('Cache-Control', cache.htmlHeaders({ private: true }));
         res.type('text/plain; charset=utf-8').send(String(paste.content || ''));

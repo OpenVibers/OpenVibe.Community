@@ -15,29 +15,33 @@ const { boot, check, done } = require('./helpers/app');
     const asAlex = { kind: 'user', subject: alex.subject_id, staff: false, origin: 'user' };
     const anon = { kind: 'anonymous', subject: null, staff: false, origin: 'user' };
 
-    const js = (await svc.createText(asAlex, { title: 'Hello world in JavaScript', content: 'const greet = (name) => `Hi ${name}`;\n', language: 'javascript' })).slug;
-    const nginx = (await svc.createText(anon, { title: 'nginx snippet', content: 'server {\n  listen 80;\n}\n', language: 'nginx' })).slug;
-    const py = (await svc.createText(asAlex, { title: 'python helper', content: 'def add(a, b):\n    return a + b\n', language: 'python' })).slug;
+    const jsP = await svc.createText(asAlex, { title: 'Hello world in JavaScript', content: 'const greet = (name) => `Hi ${name}`;\n', language: 'javascript' });
+    const nginxP = await svc.createText(anon, { title: 'nginx snippet', content: 'server {\n  listen 80;\n}\n', language: 'nginx' });
+    const pyP = await svc.createText(asAlex, { title: 'python helper', content: 'def add(a, b):\n    return a + b\n', language: 'python' });
     const unl = (await svc.createText(asAlex, { title: 'secret notes', content: 'unlisted <script>alert(1)</script>', visibility: 'unlisted' })).slug;
     const priv = (await svc.createText(asAlex, { title: 'private thing', content: 'private', visibility: 'private' })).slug;
     const burn = (await svc.createText(asAlex, { title: 'burn me', content: 'once only', burn_after_read: true })).slug;
+    const js = jsP.slug, jsUrl = jsP.paste.canonical_slug;
+    const nginx = nginxP.slug, nginxUrl = nginxP.paste.canonical_slug;
+    const py = pyP.slug, pyUrl = pyP.paste.canonical_slug;
     await t.db.prepare('UPDATE pastes SET views = 900 WHERE slug = ?').run(nginx);
     await t.db.prepare("INSERT INTO pastes (slug, owner_subject, type, title, content, screenshot_url) VALUES ('fair-moon-23', ?, 'screenshot', 'Desktop shot', 'my desktop', 'https://openvibe.media/f/abc-desk.png')").run(alex.subject_id);
+    const shotUrl = await require('../server/pastes/store').canonicalForRef(t.db, 'fair-moon-23');
 
     await check('home: latest + most viewed come from the store; nothing hidden; Live is never asked', async () => {
         const r = await t.get('/');
         assert.strictEqual(r.status, 200);
-        has(r.text, `href="/p/${js}"`);
+        has(r.text, `href="/p/${jsUrl}"`);
         // The most viewed are the home's quick filter (/pastes?sort=views), read from the same store.
         has(r.text, 'href="/pastes?sort=views"');
         const views = await t.get('/pastes?sort=views');
-        assert.ok(views.text.indexOf(nginx) > 0 && views.text.indexOf(nginx) < views.text.indexOf(js), 'most viewed first');
+        assert.ok(views.text.indexOf(nginxUrl) > 0 && views.text.indexOf(nginxUrl) < views.text.indexOf(jsUrl), 'most viewed first');
         assert.ok(![r.text, views.text].some((html) => html.includes(unl) || html.includes(priv)));
         assert.strictEqual(t.live.calls.filter((c) => c.path.startsWith('/api/pastes')).length, 0);
     });
 
     await check('paste page: rendered from the store, view counted, author from the projection', async () => {
-        const r = await t.get(`/p/${js}`, { headers: { 'x-forwarded-for': '198.51.100.20' } });
+        const r = await t.get(`/p/${jsUrl}`, { headers: { 'x-forwarded-for': '198.51.100.20' } });
         assert.strictEqual(r.status, 200);
         has(r.text, '<title>Hello world in JavaScript · OpenVibe.Community</title>');
         has(r.text, 'class="hljs-keyword">const</span>');
@@ -72,54 +76,54 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('download reads the store without a view; screenshots use the stored Media URL', async () => {
         const before = (await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py)).views;
-        const dl = await t.get(`/p/${py}/download`);
+        const dl = await t.get(`/p/${pyUrl}/download`);
         assert.strictEqual(dl.status, 200);
-        assert.strictEqual(dl.headers.get('content-disposition'), `attachment; filename="${py}.py"`);
+        assert.strictEqual(dl.headers.get('content-disposition'), `attachment; filename="${pyUrl}.py"`);
         assert.ok(dl.text.startsWith('def add'));
         assert.strictEqual((await t.db.prepare('SELECT views FROM pastes WHERE slug = ?').get(py)).views, before);
-        const shot = await t.get('/p/fair-moon-23');
-        assert.match(shot.text, /<meta property="og:image" content="[^"]*\/p\/fair-moon-23\/screenshot">/);
-        const dls = await t.get('/p/fair-moon-23/download');
-        assert.strictEqual(dls.headers.get('location'), '/p/fair-moon-23/screenshot');
+        const shot = await t.get(`/p/${shotUrl}`);
+        has(shot.text, `<meta property="og:image" content="https://openvibe.community/p/${shotUrl}/screenshot">`);
+        const dls = await t.get(`/p/${shotUrl}/download`);
+        assert.strictEqual(dls.headers.get('location'), `/p/${shotUrl}/screenshot`);
     });
 
     await check('browse: search, views sort and language filter over the store', async () => {
         const q = await t.get('/pastes?q=nginx');
-        has(q.text, `href="/p/${nginx}"`);
-        assert.ok(!q.text.includes(`href="/p/${js}"`));
+        has(q.text, `href="/p/${nginxUrl}"`);
+        assert.ok(!q.text.includes(`href="/p/${jsUrl}"`));
         const views = await t.get('/pastes?sort=views');
         const res = views.text.slice(views.text.indexOf('id="results"'));
-        assert.ok(res.indexOf(nginx) < res.indexOf(js));
+        assert.ok(res.indexOf(nginxUrl) < res.indexOf(jsUrl));
         const lang = await t.get('/pastes?lang=python');
-        has(lang.text, `href="/p/${py}"`);
-        assert.ok(!lang.text.includes(`href="/p/${js}"`));
+        has(lang.text, `href="/p/${pyUrl}"`);
+        assert.ok(!lang.text.includes(`href="/p/${jsUrl}"`));
     });
 
     await check('a Markdown paste reads as a document, its source a click away; code pastes are unchanged', async () => {
-        const doc = (await svc.createText(anon, { title: 'Notes', content: '# Notes!\n\n### Part\n\n| a | b |\n|---|--:|\n| 1 | 2 |\n\n- x\n  - y\n\n<script>alert(1)</script>', language: 'markdown' })).slug;
-        const r = await t.get(`/p/${doc}`);
+        const docP = await svc.createText(anon, { title: 'Notes', content: '# Notes!\n\n### Part\n\n| a | b |\n|---|--:|\n| 1 | 2 |\n\n- x\n  - y\n\n<script>alert(1)</script>', language: 'markdown' });
+        const r = await t.get(`/p/${docP.paste.canonical_slug}`);
         assert.strictEqual(r.status, 200);
         // Its opening # only repeats the title (the page's h1), so it is left out and ### leads at h2.
         has(r.text, '<div class="md paste-doc"><h2>Part</h2>');
-        const other = (await svc.createText(anon, { title: 'Release', content: '# Something else\n\ntext', language: 'markdown' })).slug;
-        has((await t.get(`/p/${other}`)).text, '<div class="md paste-doc"><h2>Something else</h2>');
+        const otherP = await svc.createText(anon, { title: 'Release', content: '# Something else\n\ntext', language: 'markdown' });
+        has((await t.get(`/p/${otherP.paste.canonical_slug}`)).text, '<div class="md paste-doc"><h2>Something else</h2>');
         has(r.text, '<td class="al-r">2</td>');
         has(r.text, '<li>x<ul><li>y</li></ul></li>');
         has(r.text, '<details class="paste-source">');
         has(r.text, '<div class="code-wrap wrap" data-code tabindex="0" role="region" aria-label="Markdown source">');
         assert.ok(!r.text.includes('<script>alert(1)</script>'), 'raw HTML stays text');
-        const code = await t.get(`/p/${js}`);
+        const code = await t.get(`/p/${jsUrl}`);
         assert.ok(!code.text.includes('paste-doc') && code.text.includes('<div class="code-wrap" data-code'), 'code: no document, no default wrap');
     });
 
     await check('a link that picked up trailing punctuation (**, a full stop, a bracket) redirects to the paste', async () => {
         for (const [path, to] of [
-            [`/p/${js}**`, `/p/${js}`],
-            [`/p/${js}.`, `/p/${js}`],
-            [`/p/${js})`, `/p/${js}`],
-            [`/p/${js}%2A%2A`, `/p/${js}`],
-            [`/p/${js}),/raw?dl=1`, `/p/${js}/raw?dl=1`],
-            [`/p/${js}./download`, `/p/${js}/download`],
+            [`/p/${jsUrl}**`, `/p/${jsUrl}`],
+            [`/p/${jsUrl}.`, `/p/${jsUrl}`],
+            [`/p/${jsUrl})`, `/p/${jsUrl}`],
+            [`/p/${jsUrl}%2A%2A`, `/p/${jsUrl}`],
+            [`/p/${jsUrl}),/raw?dl=1`, `/p/${jsUrl}/raw?dl=1`],
+            [`/p/${jsUrl}./download`, `/p/${jsUrl}/download`],
         ]) {
             const r = await t.get(path);
             assert.strictEqual(r.status, 301, path);
@@ -127,15 +131,16 @@ const { boot, check, done } = require('./helpers/app');
         }
         // Nothing left to point at, or junk in the middle: still "Paste not found".
         assert.strictEqual((await t.get('/p/**')).status, 404);
-        assert.strictEqual((await t.get(`/p/${js.slice(0, 4)}*${js.slice(4)}`)).status, 404);
-        assert.strictEqual((await t.get(`/p/${js}`)).status, 200);
+        // The slug part is decoration: a corrupt middle still resolves by the id at the end.
+        assert.deepStrictEqual([(await t.get(`/p/${jsUrl.slice(0, 4)}*${jsUrl.slice(4)}`)).status, (await t.get(`/p/${jsUrl.slice(0, 4)}*${jsUrl.slice(4)}`)).headers.get('location')], [301, `/p/${jsUrl}`]);
+        assert.strictEqual((await t.get(`/p/${jsUrl}`)).status, 200);
     });
 
     await check('/my lists the signed-in person\'s pastes, private and unlisted included', async () => {
         const mine = await t.get('/my', { cookies: [`ov_token=${token}`] });
         assert.strictEqual(mine.status, 200);
-        for (const slug of [js, py, unl, priv]) has(mine.text, `href="/p/${slug}"`);
-        assert.ok(!mine.text.includes(nginx));
+        for (const slug of [jsUrl, pyUrl, unl, priv]) has(mine.text, `href="/p/${slug}"`);
+        assert.ok(!mine.text.includes(nginxUrl));
     });
 
     await check('no-JS form creates in the store as the signed-in subject; anonymous posts share the 20/10min budget', async () => {

@@ -15,6 +15,8 @@ const kit = require('openvibe-shared/kit');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 const { renderMarkdown } = require('./markdown');
 const { pickBlock, foldBlock } = require('./short');
+const { canonicalSlug } = require('../pastes/url');
+const pastePathSlug = (p) => (p && (p.canonical_slug || canonicalSlug(p))) || '';
 
 // Languages read as prose: their lines wrap by default (the Wrap button still toggles), so a phone shows the whole text.
 const PROSE = new Set(['markdown', 'plaintext', 'text']);
@@ -35,7 +37,7 @@ function mediaW(u, w) {
     return /^https:\/\/openvibe\.media\/o\/med_[0-9A-Za-z]+$/.test(String(u || '')) ? `${u}?w=${w}` : u;
 }
 /** A screenshot's address: Community's checked proxy, never the Media object's own URL. */
-function screenshotSrc(p) { return `/p/${encodeURIComponent(p.slug)}/screenshot`; }
+function screenshotSrc(p) { return `/p/${encodeURIComponent(pastePathSlug(p))}/screenshot`; }
 /** A card-sized screenshot through the same proxy: Media's ladder has 320 and 640, webp by URL. */
 function screenshotVariant(p, w) { return `${screenshotSrc(p)}?w=${w}&fmt=webp`; }
 /** A card screenshot: two widths, the card's shape in width/height (no shift), lazy unless it is the LCP. */
@@ -124,7 +126,7 @@ function pasteCard(p, { eager = false } = {}) {
             : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
     const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${locked ? '<i class="fa-solid fa-lock" title="Locked"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
     return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}${locked ? ' card-is-locked' : ''}">
-  <a class="card-link" href="/p/${esc(p.slug)}">
+  <a class="card-link" href="/p/${esc(pastePathSlug(p))}">
     ${preview}
     <h3 class="card-title">${flags}${esc(p.title || (locked ? 'A locked paste' : 'Untitled'))}</h3>
   </a>
@@ -187,7 +189,7 @@ function pasteKitCard(p, { eager = false } = {}) {
     const isShot = p.type === 'screenshot';
     const image = isShot && !p.is_nsfw ? screenshotVariant(p, 640) : '';
     const card = kit.card({
-        href: `/p/${p.slug}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
+        href: `/p/${pastePathSlug(p)}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
         badge: p.is_nsfw ? 'NSFW' : p.origin === 'ai' ? 'AI' : p.pinned ? 'Pinned' : '',
         corner: isShot ? '' : languageLabel(p.language || 'text'),
         preview: !isShot && !p.is_nsfw ? String(p.content || '') : '',
@@ -321,7 +323,7 @@ ${homeFaq()}
         active: 'home',
         jsonLd: [
             ld.websiteLd(),
-            ...(latest && latest.length ? [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Latest pastes', url: `${config.baseUrl}/pastes`, itemListElement: latest.slice(0, 12).map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.title || 'Untitled', url: `${config.baseUrl}/p/${p.slug}` })) }] : []),
+            ...(latest && latest.length ? [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Latest pastes', url: `${config.baseUrl}/pastes`, itemListElement: latest.slice(0, 12).map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.title || 'Untitled', url: `${config.baseUrl}/p/${pastePathSlug(p)}` })) }] : []),
             { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: HOME_FAQ.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })) },
         ],
         // The kit's controls (kit.css) and its cards and rails (room.css, after it); kit-web.js comes with community.js.
@@ -419,6 +421,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     // A locked paste (Locker design 2026-11-06, the pilot): Community holds an envelope and never the plaintext. The
     // title is here only if its owner chose to show it; the page opens the envelope in the browser.
     const locked = !!p.locked;
+    const pageSlug = p.canonical_slug || canonicalSlug(p);
     const title = p.title || (locked ? 'A locked paste' : isShot ? 'Screenshot' : 'Untitled paste');
     const description = pasteDescription(p);
     // The screenshot is Community's own address: the proxy checks canView, never the Media object's URL.
@@ -476,8 +479,8 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>` : `<div class="actions">
     ${!isShot ? `<button type="button" class="btn btn-sm btn-primary" data-copy-content="${esc(p.slug)}"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copy</button>` : ''}
-    ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(p.slug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(p.slug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
-    <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
+    ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(pageSlug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(pageSlug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
+    <a class="btn btn-sm" href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
     <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
     ${!restricted && p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/forum/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
@@ -505,7 +508,7 @@ ${offer}
     ${actions}
   </header>
   ${bodyBlock}
-  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.ovlk"><i class="fa-solid fa-lock" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
+  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.ovlk"><i class="fa-solid fa-lock" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
   <footer class="paste-foot">
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
@@ -513,7 +516,7 @@ ${offer}
 ${p.burn_after_read ? '' : `<section class="section" id="comments">
   ${locked ? '<p class="muted small">Comments are not locked: anyone who can open this paste can read them, and so can OpenVibe.</p>' : ''}
   <div class="section-head"><h2>Comments${comments && comments.thread.comment_count ? ` <span class="muted small">${num(comments.thread.comment_count)}</span>` : ''}</h2></div>
-  ${require('./comments').commentPanel({ page: comments, user, base: `/p/${p.slug}`, action: `/p/${p.slug}/comments`, after: commentsAfter, sort: commentSort })}
+  ${require('./comments').commentPanel({ page: comments, user, base: `/p/${pageSlug}`, action: `/p/${pageSlug}/comments`, after: commentsAfter, sort: commentSort })}
 </section>`}
 ${!locked && related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
@@ -526,7 +529,7 @@ ${!locked && related && related.length ? `<section class="section" id="related">
 window.addEventListener('DOMContentLoaded', function () {
   var box = document.getElementById('paste-locked');
   if (!box || !window.OVLocker) return;
-  OVLocker.open(box, { url: ${JSON.stringify(`/p/${p.slug}/raw`)}, link: location.href, title: ${JSON.stringify(p.title_shown ? title : '')}, onOpen: function (bytes) {
+  OVLocker.open(box, { url: ${JSON.stringify(`/p/${pageSlug}/raw`)}, link: location.href, title: ${JSON.stringify(p.title_shown ? title : '')}, onOpen: function (bytes) {
     var text = new TextDecoder().decode(bytes), doc = null;
     try { doc = JSON.parse(text); } catch (e) { doc = null; }
     var shown = doc && typeof doc.content === 'string' ? doc.content : text;
@@ -571,7 +574,7 @@ window.addEventListener('DOMContentLoaded', function () {
     return renderPage({
         title: metaTitle,
         description: metaDescription,
-        canonicalPath: `/p/${p.slug}`,
+        canonicalPath: `/p/${pageSlug}`,
         agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
         // A paste is link-shared content: reached by the link its author shares, not found by
         // search. Google's 2026-10-26 UGC guidance says to noindex those by default; the browse
@@ -588,7 +591,7 @@ window.addEventListener('DOMContentLoaded', function () {
         footerVariant: 'compact',
         jsonLd: lockedMeta ? [] : [
             ld.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
-            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${p.slug}` }]),
+            ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${pageSlug}` }]),
         ],
         body,
     });

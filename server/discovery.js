@@ -75,7 +75,7 @@ async function llmsFullSections() {
     const pastes = (await catalog.latest(30)).filter((p) => !Number(p.is_nsfw) && !Number(p.burn_after_read) && p.type !== 'screenshot');
     const full = await Promise.all(pastes.map((p) => source.publicForDiscovery(p.slug)));
     sections.push({ title: 'Latest pastes', pages: full.filter(Boolean).map((p) => ({
-        title: p.title || 'Untitled', url: abs(`/p/${p.slug}`), text: String(p.content || ''),
+        title: p.title || 'Untitled', url: abs(`/p/${require('./pastes/url').canonicalSlug(p)}`), text: String(p.content || ''),
     })) });
     // Sharing (design 2026-11-06): the four audiences, the transfer, and the curls an agent uses.
     sections.push({ title: 'Sharing a paste', pages: [{ title: 'Sharing a paste', url: '/docs/sharing',
@@ -114,7 +114,7 @@ async function sitemapRows() {
 /** The latest pastes for /feed.xml. */
 async function pasteFeedItems() {
     return (await catalog.latest(30)).filter((p) => !Number(p.is_nsfw)).map((p) => {
-        const url = abs(`/p/${p.slug}`);
+        const url = abs(`/p/${require('./pastes/url').canonicalSlug(p)}`);
         const description = p.type === 'screenshot' ? 'A screenshot shared on OpenVibe.Community.' : clean(p.content || '', 300);
         return { title: p.title || 'Untitled', link: url, guid: url, description, content: description,
             author: p.display_name || p.username || 'Anonymous', published: isoDate(p.created_at), updated: isoDate(p.updated_at || p.created_at) };
