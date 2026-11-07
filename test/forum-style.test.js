@@ -37,15 +37,15 @@ const { boot, check, done } = require('./helpers/app');
         r = await call('/api/v1/spaces/general/threads/welcome-thread/posts', { method: 'POST', cookie: samJwt, json: { body: 'hi from sam' } });
         assert.strictEqual(r.status, 201);
         assert.strictEqual((await call('/api/v1/spaces/general/threads/welcome-thread/votes', { method: 'POST', cookie: samJwt, json: { value: 1 } })).json().code, 'space.votes_off');
-        await call('/s/general/t/welcome-thread', { cookie: samJwt });
-        await call('/s/general/t/welcome-thread', { cookie: samJwt });
-        await call('/s/general/t/welcome-thread', { cookie: alexJwt });
+        await call('/forum/general/welcome-thread', { cookie: samJwt });
+        await call('/forum/general/welcome-thread', { cookie: samJwt });
+        await call('/forum/general/welcome-thread', { cookie: alexJwt });
         const list = (await call('/api/v1/spaces/general/threads')).json();
         assert.strictEqual(list.sort, 'active', 'forum boards list the newest reply first');
         const row = list.threads[0];
         assert.strictEqual(row.views, 2, 'one view per viewer per half hour');
         assert.strictEqual(row.last_post.author.username, 'sam');
-        const page = (await call('/s/general')).text;
+        const page = (await call('/forum/general')).text;
         assert.ok(page.includes('class="board-table topic-table"') && page.includes('data-label="Views"') && /Started by <span data-ov-subject="usr_[0-9A-HJKMNP-TV-Z]{26}">Alex<\/span>/.test(page), 'the starter\'s name is marked for what they wear');
         assert.ok(!page.includes('class="thread-score"'), 'no score column');
     });
@@ -53,7 +53,7 @@ const { boot, check, done } = require('./helpers/app');
     await check('the postbit avatar asks Media for the width it draws (the 64 px picture: 160)', async () => {
         const obj = 'https://openvibe.media/o/med_01M644DY8BFX4H7MTRKPGG052R';
         await t.db.prepare('UPDATE subject_projection SET avatar_url = ? WHERE subject_id = ?').run(obj, alex.subject_id);
-        const html = (await call('/s/general/t/welcome-thread')).text;
+        const html = (await call('/forum/general/welcome-thread')).text;
         assert.ok(html.includes(`<img class="postbit-avatar" src="${obj}?w=160"`), 'the 64 px postbit avatar asks for 160');
         await t.db.prepare('UPDATE subject_projection SET avatar_url = NULL WHERE subject_id = ?').run(alex.subject_id);
     });
@@ -63,7 +63,7 @@ const { boot, check, done } = require('./helpers/app');
         const general = r.groups[0].spaces.find((s) => s.slug === 'general');
         assert.strictEqual(general.thread_count, 1); assert.strictEqual(general.post_count, 2);
         assert.strictEqual(general.last_post.thread.title, 'Welcome thread'); assert.strictEqual(general.last_post.author.username, 'sam');
-        const html = (await call('/s')).text;
+        const html = (await call('/forum')).text;
         assert.ok(html.includes('id="g-openvibe"') && html.includes('id="g-community"') && html.includes('Off-topic') && html.includes('badge-style">Classic') && html.includes('badge-style">Feed'));
     });
 
@@ -85,9 +85,9 @@ const { boot, check, done } = require('./helpers/app');
         assert.deepStrictEqual(page.posts[0].reactions.map((x) => [x.key, x.count, x.raters]), [['winner', 1, ['Boss']]]);
         assert.deepStrictEqual(page.posts[0].author_stats.ratings.map((x) => [x.key, x.count]), [['winner', 1]]);
         assert.strictEqual(page.posts[0].can_react, true); assert.strictEqual(page.posts[1].can_react, false, 'sam cannot rate their own reply');
-        const html = (await call('/s/general/t/welcome-thread', { cookie: samJwt })).text;
+        const html = (await call('/forum/general/welcome-thread', { cookie: samJwt })).text;
         assert.ok(html.includes('class="postbit') && html.includes('postbit-author') && html.includes('<dt>Posts</dt>') && html.includes('Rate</summary>') && html.includes('🏆'));
-        r = await call('/s/general/t/welcome-thread/react', { method: 'POST', cookie: samJwt, form: { post: String(post.id), reaction: 'funny' } });
+        r = await call('/forum/general/welcome-thread/react', { method: 'POST', cookie: samJwt, form: { post: String(post.id), reaction: 'funny' } });
         assert.strictEqual(r.status, 303); assert.ok(r.headers.get('location').endsWith(`#post-${post.id}`));
         await t.db.prepare("UPDATE spaces SET reactions = 0 WHERE slug = 'general'").run();
         assert.strictEqual((await rate(samJwt, 'agree')).json().code, 'space.reactions_off');
@@ -97,7 +97,7 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('quote: ?quote= fills the reply box with the quoted post', async () => {
         const post = (await call('/api/v1/spaces/general/threads/welcome-thread')).json().posts[1];
-        const html = (await call(`/s/general/t/welcome-thread?quote=${post.id}`, { cookie: alexJwt })).text;
+        const html = (await call(`/forum/general/welcome-thread?quote=${post.id}`, { cookie: alexJwt })).text;
         assert.ok(html.includes('**@sam** wrote:\n&gt; hi from sam'), 'the quote is in the reply box');
     });
 
@@ -108,7 +108,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.deepStrictEqual(r.json().post.pastes.map((p) => [p.slug, p.lines]), [['snip1', 2], ['snip2', 2]]);
         for (const bad of ['secret1', 'burn1']) assert.strictEqual((await call('/api/v1/spaces/general/threads/welcome-thread/posts', { method: 'POST', cookie: samJwt, json: { body: 'x', pastes: [bad] } })).json().code, 'pastes.not_shareable');
         assert.strictEqual((await call('/api/v1/spaces/general/threads/welcome-thread/posts', { method: 'POST', cookie: samJwt, json: { body: 'x', pastes: ['nope-nope'] } })).status, 404);
-        const html = (await call('/s/general/t/welcome-thread')).text;
+        const html = (await call('/forum/general/welcome-thread')).text;
         assert.ok(html.includes('class="paste-embed"') && html.includes('href="/p/snip1"') && html.includes('hljs'));
         await t.db.prepare("UPDATE pastes SET visibility = 'private' WHERE slug = 'snip2'").run();
         const after = (await call('/api/v1/spaces/general/threads/welcome-thread')).json().posts.find((p) => p.body_markdown === 'look at these');
@@ -117,10 +117,10 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('"Discuss in a space" from a paste: the picker, then a new topic with the paste attached', async () => {
         const paste = (await call('/p/snip1')).text;
-        assert.ok(paste.includes('/s/discuss?paste=snip1'));
-        const picker = (await call('/s/discuss?paste=snip1', { cookie: alexJwt })).text;
-        assert.ok(picker.includes('/s/general/new?paste=snip1') && !picker.includes('/s/roadmap/new'));
-        const form = (await call('/s/general/new?paste=snip1', { cookie: alexJwt })).text;
+        assert.ok(paste.includes('/forum/discuss?paste=snip1'));
+        const picker = (await call('/forum/discuss?paste=snip1', { cookie: alexJwt })).text;
+        assert.ok(picker.includes('/forum/general/new?paste=snip1') && !picker.includes('/forum/roadmap/new'));
+        const form = (await call('/forum/general/new?paste=snip1', { cookie: alexJwt })).text;
         assert.ok(form.includes('name="pastes"') && form.includes('value="snip1"') && form.includes('value="Snippet"'));
     });
 
@@ -130,13 +130,13 @@ const { boot, check, done } = require('./helpers/app');
         const cp = r.json().thread;
         assert.strictEqual(cp.space, 'showcase'); assert.strictEqual(cp.crosspost_of, topic.id);
         const there = (await call(`/api/v1/spaces/showcase/threads/${cp.slug}`)).json();
-        assert.strictEqual(there.crosspost.from.url, '/s/general/t/welcome-thread');
+        assert.strictEqual(there.crosspost.from.url, '/forum/general/welcome-thread');
         assert.ok(there.posts[0].body_markdown.startsWith('Crossposted from **General**'));
         const here = (await call('/api/v1/spaces/general/threads/welcome-thread', { cookie: samJwt })).json();
         assert.deepStrictEqual(here.crosspost.to.map((x) => x.space), ['Showcase']);
         assert.ok(here.crosspost.targets.some((x) => x.slug === 'showcase') && !here.crosspost.targets.some((x) => x.slug === 'roadmap' || x.slug === 'general'));
         assert.strictEqual((await call('/api/v1/spaces/general/threads/welcome-thread/crosspost', { method: 'POST', cookie: samJwt, json: { to: 'roadmap' } })).status, 403);
-        const html = (await call('/s/general/t/welcome-thread', { cookie: samJwt })).text;
+        const html = (await call('/forum/general/welcome-thread', { cookie: samJwt })).text;
         assert.ok(html.includes('Also in') && html.includes('Crosspost</summary>'));
     });
 
@@ -145,20 +145,22 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(r.status, 403);
         r = await call('/api/v1/spaces/showcase/settings', { method: 'PUT', cookie: modJwt, json: { style: 'forum', votes: false } });
         assert.strictEqual(r.status, 200, r.text); assert.strictEqual(r.json().space.style, 'forum'); assert.strictEqual(r.json().space.votes, false);
-        assert.ok((await call('/s/showcase')).text.includes('topic-table'));
-        r = await call('/s/showcase/settings', { method: 'POST', cookie: modJwt, form: { name: 'Showcase', style: 'feed', votes: '1', reactions: '1', group: 'community' } });
+        assert.ok((await call('/forum/showcase')).text.includes('topic-table'));
+        r = await call('/forum/showcase/settings', { method: 'POST', cookie: modJwt, form: { name: 'Showcase', style: 'feed', votes: '1', reactions: '1', group: 'community' } });
         assert.strictEqual(r.status, 303);
-        assert.ok((await call('/s/showcase')).text.includes('class="thread-list"'));
-        assert.strictEqual((await call('/s/new-space', { cookie: alexJwt })).status, 403);
-        r = await call('/s/new-space', { method: 'POST', cookie: modJwt, form: { name: 'Music', slug: 'music', description: 'Songs', style: 'forum', reactions: '1', group: 'community' } });
-        assert.strictEqual(r.status, 303); assert.strictEqual(r.headers.get('location'), '/s/music');
+        assert.ok((await call('/forum/showcase')).text.includes('class="thread-list"'));
+        assert.strictEqual((await call('/forum/new', { cookie: alexJwt })).status, 403);
+        r = await call('/forum/new', { method: 'POST', cookie: modJwt, form: { name: 'Music', slug: 'music', description: 'Songs', style: 'forum', reactions: '1', group: 'community' } });
+        assert.strictEqual(r.status, 303); assert.strictEqual(r.headers.get('location'), '/forum/music');
         const music = (await call('/api/v1/spaces')).json().spaces.find((s) => s.slug === 'music');
         assert.deepStrictEqual([music.style, music.votes, music.reactions, music.group.slug], ['forum', false, true, 'community']);
         r = await call('/api/v1/spaces/music/settings', { method: 'PUT', cookie: modJwt, json: { parent: 'off-topic' } });
         assert.strictEqual(r.status, 200, r.text);
         const idx = (await call('/api/v1/spaces')).json();
         assert.ok(idx.groups.find((g) => g.slug === 'community').spaces.find((s) => s.slug === 'off-topic').children.some((c) => c.slug === 'music'), 'a child board sits under its parent');
-        assert.strictEqual((await call('/api/v1/spaces', { method: 'POST', cookie: modJwt, json: { slug: 'discuss', name: 'Nope' } })).status, 400, 'reserved address');
+        for (const slug of ['new', 'discuss', 'search', 'about', 'new-space', 'feed.xml']) {
+            assert.strictEqual((await call('/api/v1/spaces', { method: 'POST', cookie: modJwt, json: { slug, name: 'Nope' } })).status, 400, `${slug} is a reserved address`);
+        }
     });
 
     await done(t);

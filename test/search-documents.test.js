@@ -38,7 +38,7 @@ const { createSearchDocuments } = require('../server/search/documents');
         const ev = (await index())[0]; ok(ev);
         assert.deepStrictEqual(ev.subject, { type: 'thread', id: String(thread.id), revision: 1 });
         assert.strictEqual(ev.visibility, 'internal'); assert.strictEqual(ev.priority, 'low');
-        assert.strictEqual(ev.payload.canonical_url, `${base}/s/general/t/${thread.slug}`);
+        assert.strictEqual(ev.payload.canonical_url, `${base}/forum/general/${thread.slug}`);
         assert.strictEqual(ev.payload.summary, 'First post with a link');
         assert.ok(ev.payload.body.includes('a reply body'));
         assert.strictEqual(ev.payload.facets.space, 'general'); assert.strictEqual(ev.payload.facets.replies, 1);

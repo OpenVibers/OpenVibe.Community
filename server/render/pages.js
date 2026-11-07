@@ -137,7 +137,7 @@ function cardGrid(pastes, empty = 'Nothing here yet.') {
 // like an app"): what Community is and the two things to do first, the numbers as one strip, the newest pastes and the
 // moments from streams as rails of the shared kit's cards (openvibe-shared kit.rail + kit.card, room.css) with See all
 // and the kinds as quick filters, the forum's places as a launcher (showcase.apps), the roadmap and Pulse as short lists,
-// and the parts read once (the API) folded. The full lists live on /pastes, /s, /s/roadmap and /pulse.
+// and the parts read once (the API) folded. The full lists live on /pastes, /forum, /forum/roadmap and /pulse.
 const TERMINAL = `$ curl -F 'content=<build.log' \\
     https://openvibe.community/api/pastes
 { "slug": "amber-fox-42",
@@ -218,18 +218,18 @@ function forumShelf(spaces) {
     return showcase.apps({
         id: 'forum', title: 'The forum',
         items: spaces.slice(0, 8).map((sp) => ({
-            icon: SPACE_ICON[sp.slug] || 'ov:chat', name: sp.name, href: `/s/${sp.slug}`,
+            icon: SPACE_ICON[sp.slug] || 'ov:chat', name: sp.name, href: `/forum/${sp.slug}`,
             text: `${sp.description ? `${ld.clean(sp.description, 90)} · ` : ''}${num(sp.thread_count)} ${Number(sp.thread_count) === 1 ? 'thread' : 'threads'}`,
         })),
-        more: { href: '/s', label: 'All forums' },
+        more: { href: '/forum', label: 'All forums' },
     });
 }
 
 const whenOf = (v) => (v ? kit.when(v) : { text: '', iso: '' });
 function roadmapShelf(items) {
     if (!items || !items.length) return '';
-    return `<section class="cm-sec" id="roadmap" aria-labelledby="h-roadmap">${shelfHead('h-roadmap', 'On the roadmap', { href: '/s/roadmap', label: 'The whole roadmap' })}
-${kit.list(items.slice(0, 5).map((t) => kit.row({ href: `/s/roadmap/t/${t.slug}`, title: t.title, subHtml: kit.badge(STATUS_WORDS[t.status] || 'Open', STATUS_TONE[t.status] || ''), meta: whenOf(t.last_activity_at).text, metaIso: whenOf(t.last_activity_at).iso })))}</section>`;
+    return `<section class="cm-sec" id="roadmap" aria-labelledby="h-roadmap">${shelfHead('h-roadmap', 'On the roadmap', { href: '/forum/roadmap', label: 'The whole roadmap' })}
+${kit.list(items.slice(0, 5).map((t) => kit.row({ href: `/forum/roadmap/${t.slug}`, title: t.title, subHtml: kit.badge(STATUS_WORDS[t.status] || 'Open', STATUS_TONE[t.status] || ''), meta: whenOf(t.last_activity_at).text, metaIso: whenOf(t.last_activity_at).iso })))}</section>`;
 }
 
 function pulseShelf(items) {
@@ -465,7 +465,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     <a class="btn btn-sm" href="/p/${esc(p.slug)}/download" download="${esc(p.slug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
     <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
-    ${!restricted && p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/s/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
+    ${!restricted && p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/forum/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
 

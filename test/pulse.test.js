@@ -62,10 +62,10 @@ const { boot, check, done } = require('./helpers/app');
     await check('threads and replies in public spaces enter; members spaces never; deletes remove', async () => {
         const { thread } = await forum.createThread(asAlex, 'general', { title: 'Pulse thread', body: 'hello' });
         const it = await bySource('thread', thread.id);
-        assert.deepStrictEqual([it.title, it.url, it.actor_subject, it.origin], ['Pulse thread', 'https://openvibe.community/s/general/t/pulse-thread', alex.subject_id, 'user']);
+        assert.deepStrictEqual([it.title, it.url, it.actor_subject, it.origin], ['Pulse thread', 'https://openvibe.community/forum/general/pulse-thread', alex.subject_id, 'user']);
         const { post } = await forum.reply(asAlex, 'general', 'pulse-thread', { body: 'a reply' });
         assert.strictEqual((await bySource('post', post.id)).title, 'Re: Pulse thread');
-        assert.strictEqual((await bySource('post', post.id)).url, `https://openvibe.community/s/general/t/pulse-thread#post-${post.id}`);
+        assert.strictEqual((await bySource('post', post.id)).url, `https://openvibe.community/forum/general/pulse-thread#post-${post.id}`);
         await t.db.prepare("INSERT INTO spaces (slug, name, visibility) VALUES ('insiders', 'Insiders', 'members')").run();
         const hidden = await forum.createThread(asAlex, 'insiders', { title: 'Members only', body: 'x' });
         assert.strictEqual(await bySource('thread', hidden.thread.id), undefined);

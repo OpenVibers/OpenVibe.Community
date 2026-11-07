@@ -47,9 +47,9 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         assert.strictEqual(reply.status, 201, reply.text);
         let r = await call(`/api/v1/spaces/general/threads/${locked.slug}/state`, { method: 'PUT', cookie: bossJwt, json: { locked: true, rule: 'spam', reason: '  Repeated   links  ' } });
         assert.strictEqual(r.status, 200, r.text);
-        r = await form(`/s/general/t/${locked.slug}/state`, bossJwt, { pinned: '1', rule: 'off-topic', reason: `  Pinned   for ${'x'.repeat(300)}  ` });
+        r = await form(`/forum/general/${locked.slug}/state`, bossJwt, { pinned: '1', rule: 'off-topic', reason: `  Pinned   for ${'x'.repeat(300)}  ` });
         assert.strictEqual(r.status, 303, r.text);
-        r = await form(`/s/general/t/${locked.slug}/post/${reply.json().post.id}/delete`, bossJwt, { rule: 'personal information', reason: 'Names someone' });
+        r = await form(`/forum/general/${locked.slug}/post/${reply.json().post.id}/delete`, bossJwt, { rule: 'personal information', reason: 'Names someone' });
         assert.strictEqual(r.status, 303, r.text);
         feedback = await thread('feedback', 'A request whose status changes');
         r = await call(`/api/v1/spaces/feedback/threads/${feedback.slug}/status`, { method: 'PUT', cookie: bossJwt, json: { status: 'planned', rule: 'duplicate', reason: 'Already planned elsewhere' } });
@@ -80,7 +80,7 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         let r = await call(`/api/v1/spaces/general/threads/${locked.slug}/state`, { method: 'PUT', cookie: bossJwt, json: { locked: false, rule: 'not-a-rule' } });
         assert.strictEqual(r.status, 400, r.text);
         assert.strictEqual(r.json().code, 'moderation.invalid_rule');
-        r = await form(`/s/general/t/${locked.slug}/state`, bossJwt, { locked: '1', rule: 'not-a-rule' });
+        r = await form(`/forum/general/${locked.slug}/state`, bossJwt, { locked: '1', rule: 'not-a-rule' });
         assert.strictEqual(r.status, 400, r.text);
         has(r.text, 'The rule is one of spam');
         assert.strictEqual((await rows()).length, before, 'a refused rule writes no row');
@@ -90,7 +90,7 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
     });
 
     await check('the log page and JSON API show what happened, and the space page links it', async () => {
-        const page = await t.get('/s/general/log');
+        const page = await t.get('/forum/general/log');
         assert.strictEqual(page.status, 200, page.text);
         has(page.text, '<h1>Moderation log</h1>');
         has(page.text, 'A thread that will be moderated');
@@ -103,12 +103,12 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         assert.deepStrictEqual(json.json().entries.map((e) => e.action), ['delete', 'pin', 'lock']);
         assert.strictEqual(json.json().space.slug, 'general');
         assert.ok(!json.text.includes(boss.subject_id));
-        const feedbackLog = await t.get('/s/feedback/log');
+        const feedbackLog = await t.get('/forum/feedback/log');
         assert.strictEqual(feedbackLog.status, 200);
         has(feedbackLog.text, 'A request whose status changes');
         has(feedbackLog.text, 'Status changed');
-        const space = await t.get('/s/general');
-        has(space.text, 'href="/s/general/log"');
+        const space = await t.get('/forum/general');
+        has(space.text, 'href="/forum/general/log"');
         has(space.text, 'Moderation log');
         has(space.text, '<link rel="alternate" type="application/rss+xml"');
     });
@@ -116,10 +116,10 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
     await check('a thread feed is its newest posts, advertised in the thread head and linked on the page', async () => {
         const reply = await call(`/api/v1/spaces/feedback/threads/${feedback.slug}/posts`, { method: 'POST', cookie: alexJwt, json: { body: 'A feed reply with **markup**' } });
         assert.strictEqual(reply.status, 201, reply.text);
-        const page = await t.get(`/s/feedback/t/${feedback.slug}`);
-        has(page.text, `<link rel="alternate" type="application/rss+xml" title="OpenVibe.Community — A request whose status changes" href="/s/feedback/t/${feedback.slug}/feed.xml">`);
+        const page = await t.get(`/forum/feedback/${feedback.slug}`);
+        has(page.text, `<link rel="alternate" type="application/rss+xml" title="OpenVibe.Community — A request whose status changes" href="/forum/feedback/${feedback.slug}/feed.xml">`);
         has(page.text, 'Follow this thread by RSS');
-        const feed = await t.get(`/s/feedback/t/${feedback.slug}/feed.xml`);
+        const feed = await t.get(`/forum/feedback/${feedback.slug}/feed.xml`);
         assert.strictEqual(feed.status, 200, feed.text);
         assert.match(feed.headers.get('content-type'), /application\/rss\+xml/);
         assert.match(feed.headers.get('cache-control'), /^public/, 'a public thread\'s feed may be cached');
@@ -129,9 +129,9 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         const items = feed.text.split('<item>').slice(1);
         has(items[0], 'A feed reply with markup', 'the newest post is the first item');
         has(items[1], 'A request whose status changes');
-        const space = await t.get('/s/feedback');
+        const space = await t.get('/forum/feedback');
         has(space.text, '<link rel="alternate" type="application/rss+xml"');
-        has(space.text, '/s/feedback/feed.xml');
+        has(space.text, '/forum/feedback/feed.xml');
     });
 
     await check('a private space\'s log is not public; its members and staff read it', async () => {
@@ -140,11 +140,11 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         assert.strictEqual(insider.status, 201, insider.text);
         assert.strictEqual((await call(`/api/v1/spaces/insiders/threads/${insider.json().thread.slug}/state`, { method: 'PUT', cookie: bossJwt, json: { locked: true, rule: 'harassment' } })).status, 200);
         assert.strictEqual((await call('/api/v1/spaces/insiders/moderation-log')).status, 401, 'signed out: no JSON log');
-        const anon = await t.get('/s/insiders/log');
+        const anon = await t.get('/forum/insiders/log');
         assert.notStrictEqual(anon.status, 200, 'signed out: no page');
-        assert.strictEqual((await t.get('/s/insiders/log', { cookies: [`ov_token=${alexJwt}`] })).status, 200, 'a signed-in member reads it');
+        assert.strictEqual((await t.get('/forum/insiders/log', { cookies: [`ov_token=${alexJwt}`] })).status, 200, 'a signed-in member reads it');
         assert.strictEqual((await call('/api/v1/spaces/insiders/moderation-log', { cookie: alexJwt })).status, 200);
-        const feedUrl = `/s/insiders/t/${insider.json().thread.slug}/feed.xml`;
+        const feedUrl = `/forum/insiders/${insider.json().thread.slug}/feed.xml`;
         assert.notStrictEqual((await t.get(feedUrl)).status, 200, 'signed out: no feed of a members thread');
         const own = await t.get(feedUrl, { cookies: [`ov_token=${alexJwt}`] });
         assert.strictEqual(own.status, 200, own.text);
@@ -157,7 +157,7 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         const log = await rows();
         assert.strictEqual(log.at(-1).action, 'delete');
         assert.strictEqual(log.at(-1).rule, 'illegal content');
-        const page = await t.get('/s/general/log');
+        const page = await t.get('/forum/general/log');
         assert.strictEqual(page.status, 200);
         has(page.text, 'a removed thread');
         has(page.text, 'Removed by a moderator');
@@ -171,13 +171,13 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         const thread2 = await thread('general', 'A thread with moderation controls');
         const reply = await call(`/api/v1/spaces/general/threads/${thread2.slug}/posts`, { method: 'POST', cookie: alexJwt, json: { body: 'A reply with its own delete form' } });
         assert.strictEqual(reply.status, 201, reply.text);
-        const page = await t.get(`/s/general/t/${thread2.slug}`, { cookies: [`ov_token=${bossJwt}`] });
+        const page = await t.get(`/forum/general/${thread2.slug}`, { cookies: [`ov_token=${bossJwt}`] });
         assert.strictEqual(page.status, 200);
         has(page.text, 'Rule applied…');
         has(page.text, 'name="reason"');
         has(page.text, 'maxlength="280"');
-        has(page.text, `<form class="mod-form" method="post" action="/s/general/t/${thread2.slug}/state">`);
-        has(page.text, `action="/s/general/t/${thread2.slug}/post/${reply.json().post.id}/delete"`);
+        has(page.text, `<form class="mod-form" method="post" action="/forum/general/${thread2.slug}/state">`);
+        has(page.text, `action="/forum/general/${thread2.slug}/post/${reply.json().post.id}/delete"`);
         has(page.text, 'Delete post');
     });
 

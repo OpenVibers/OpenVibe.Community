@@ -92,7 +92,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(page.viewer.can_moderate, false);
         assert.strictEqual(page.viewer.can_delete, false);
         assert.strictEqual(page.posts[0].can_edit, false);
-        assert.strictEqual((await form(`/s/showcase/t/${slug}/state`, alex, { locked: '1' })).status, 403, 'the no-JS form too');
+        assert.strictEqual((await form(`/forum/showcase/${slug}/state`, alex, { locked: '1' })).status, 403, 'the no-JS form too');
         assert.strictEqual((await call(`/api/v1/spaces/showcase/threads/${slug}`, { who: sam })).json().thread.locked, false);
     });
 
@@ -113,24 +113,24 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual((await call('/api/v1/spaces/general/categories/help', { method: 'PUT', who: alex, json: { name: 'Help' } })).status, 200);
         assert.strictEqual((await call('/api/v1/spaces/general/categories/help', { method: 'DELETE', who: alex })).status, 200);
         const before = (await call('/api/v1/spaces/general')).json().space.group;
-        r = await form('/s/general/settings', alex, { name: 'General', description: 'From the form', style: 'forum', reactions: '1', group: '' });
+        r = await form('/forum/general/settings', alex, { name: 'General', description: 'From the form', style: 'forum', reactions: '1', group: '' });
         assert.strictEqual(r.status, 303, r.text);
         assert.deepStrictEqual((await call('/api/v1/spaces/general')).json().space.group, before, 'the form leaves the group alone');
     });
 
     await check('(e) a space moderator cannot create a space or change the board index', async () => {
         assert.strictEqual((await call('/api/v1/spaces', { method: 'POST', who: alex, json: { slug: 'alex-space', name: 'Alex space' } })).status, 403);
-        assert.strictEqual((await form('/s/new-space', alex, { slug: 'alex-space', name: 'Alex space' })).status, 403);
+        assert.strictEqual((await form('/forum/new', alex, { slug: 'alex-space', name: 'Alex space' })).status, 403);
         assert.strictEqual((await call('/api/v1/space-groups/alex-group', { method: 'PUT', who: alex, json: { name: 'Alex group' } })).status, 403);
         assert.strictEqual((await call('/api/v1/spaces/alex-space')).status, 404);
     });
 
     await check('no-JS forms add and remove; a moderator removes another (or themselves)', async () => {
-        let r = await form('/s/general/moderators', alex, { subject: sam.subject_id });
+        let r = await form('/forum/general/moderators', alex, { subject: sam.subject_id });
         assert.strictEqual(r.status, 303, r.text);
         assert.ok((await mods('general')).includes(sam.subject_id));
-        assert.strictEqual((await form('/s/showcase/moderators', alex, { subject: sam.subject_id })).status, 403);
-        r = await form('/s/general/moderators/remove', carol, { subject: sam.subject_id });
+        assert.strictEqual((await form('/forum/showcase/moderators', alex, { subject: sam.subject_id })).status, 403);
+        r = await form('/forum/general/moderators/remove', carol, { subject: sam.subject_id });
         assert.strictEqual(r.status, 303, r.text);
         assert.strictEqual((await call(`/api/v1/spaces/general/moderators/${sam.subject_id}`, { method: 'DELETE', who: sam })).status, 403, 'no longer one');
         r = await call(`/api/v1/spaces/general/moderators/${carol.subject_id}`, { method: 'DELETE', who: carol });
@@ -139,31 +139,31 @@ const { boot, check, done } = require('./helpers/app');
     });
 
     await check('the space page gives its moderators a Moderators box (add by @username, remove, step down) in both styles; nobody else sees it', async () => {
-        let r = await form('/s/general/moderators', alex, { subject: '@Sam' });
+        let r = await form('/forum/general/moderators', alex, { subject: '@Sam' });
         assert.strictEqual(r.status, 303, r.text);
-        assert.match(String(r.headers.get('location')), /^\/s\/general#moderators$/);
+        assert.match(String(r.headers.get('location')), /^\/forum\/general#moderators$/);
         assert.ok((await mods('general')).includes(sam.subject_id), 'added by @username, in any case');
-        r = await form('/s/general/moderators', alex, { subject: '@nobody-here' });
+        r = await form('/forum/general/moderators', alex, { subject: '@nobody-here' });
         assert.strictEqual(r.status, 303, r.text);
-        assert.match(String(r.headers.get('location')), /^\/s\/general\?mod_error=.+#moderators$/, 'an unknown name comes back as a notice');
-        assert.match(String((await form('/s/general/moderators', alex, { subject: 'not a name!' })).headers.get('location')), /mod_error=/);
+        assert.match(String(r.headers.get('location')), /^\/forum\/general\?mod_error=.+#moderators$/, 'an unknown name comes back as a notice');
+        assert.match(String((await form('/forum/general/moderators', alex, { subject: 'not a name!' })).headers.get('location')), /mod_error=/);
         assert.strictEqual((await call('/api/v1/spaces/general/moderators/%40sam', { method: 'PUT', who: alex })).status, 200, 'the API takes @username too');
         for (const style of ['forum', 'feed']) {
-            assert.strictEqual((await form('/s/general/settings', alex, { name: 'General', description: 'From the form', style, reactions: '1', group: '' })).status, 303);
-            const page = await call(`/s/general?mod_error=${encodeURIComponent('No OpenVibe account is called @nobody-here')}`, { who: alex });
+            assert.strictEqual((await form('/forum/general/settings', alex, { name: 'General', description: 'From the form', style, reactions: '1', group: '' })).status, 303);
+            const page = await call(`/forum/general?mod_error=${encodeURIComponent('No OpenVibe account is called @nobody-here')}`, { who: alex });
             assert.strictEqual(page.status, 200, page.text);
             assert.ok(page.text.includes('<details class="space-settings" id="moderators" open>'), `${style}: the box, open on a refusal`);
             assert.ok(page.text.includes('No OpenVibe account is called @nobody-here'), `${style}: the refusal shows`);
-            assert.ok(page.text.includes('action="/s/general/moderators"'), `${style}: the add form`);
+            assert.ok(page.text.includes('action="/forum/general/moderators"'), `${style}: the add form`);
             assert.ok(page.text.includes(`name="subject" value="${sam.subject_id}"`), `${style}: sam is listed with a remove form`);
             assert.ok(page.text.includes('>Step down</button>'), `${style}: alex can step down`);
             assert.ok(page.text.includes('aria-label="Remove @sam as a moderator"'), `${style}: the remove button names the person`);
             for (const who of [bob, undefined]) {
-                const other = await call('/s/general', { who });
+                const other = await call('/forum/general', { who });
                 assert.ok(!other.text.includes('id="moderators"') && !other.text.includes('/moderators"'), `${style}: not for ${who ? 'a non-moderator' : 'a visitor'}`);
             }
         }
-        r = await form('/s/general/moderators/remove', alex, { subject: sam.subject_id });
+        r = await form('/forum/general/moderators/remove', alex, { subject: sam.subject_id });
         assert.strictEqual(r.status, 303, r.text);
         assert.deepStrictEqual(await mods('general'), [alex.subject_id]);
     });

@@ -143,15 +143,15 @@ Pages (server-rendered HTML):
 | `GET /p/:slug/download` | The text as an attachment (`slug.ext`); screenshots bounce to the image |
 | `GET /new`, `POST /new` | Create (signed-in or anonymous). `?fork=slug` prefills. The POST is the no-JS fallback; with JS the form talks to `/api/pastes` |
 | `GET /my` | The signed-in user's pastes (public, unlisted and private); anonymous → sign-in |
-| `GET /s` | The Forum (board index); `GET /forum[/…]` answers 301 → `/s[/…]` |
-| `GET /s/:space` | Threads — `?sort=hot\|new\|top`, `?page=`, and the small RSS link beside its title |
-| `GET /s/:space/t/:slug` | A thread with its posts (`?page=`), reply / vote / moderation forms, and "Follow this thread by RSS" |
-| `GET /s/:space/log` | The space's public moderation log (newest 100): when, what, action, rule, reason, and the actor's role only |
-| `GET /s/:space/t/:slug/feed.xml` | RSS of the thread's newest 50 posts, under the thread's own visibility |
-| `GET /s/:space/new`, `POST /s/:space/new` | Start a thread (signed in) |
-| `POST /s/:space/t/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete); moderator forms take an optional `rule` and `reason` |
-| `POST /s/:space/t/:slug/status` | The no-JS status form (moderators), with the same optional `rule` and `reason` |
-| `POST /s/:space/t/:slug/post/:id/delete` | A moderator removes one post, with the same optional `rule` and `reason` |
+| `GET /forum` | The Forum (board index); `GET /forum[/…]` answers 301 → `/forum[/…]` |
+| `GET /forum/:space` | Threads — `?sort=hot\|new\|top`, `?page=`, and the small RSS link beside its title |
+| `GET /forum/:space/:slug` | A thread with its posts (`?page=`), reply / vote / moderation forms, and "Follow this thread by RSS" |
+| `GET /forum/:space/log` | The space's public moderation log (newest 100): when, what, action, rule, reason, and the actor's role only |
+| `GET /forum/:space/:slug/feed.xml` | RSS of the thread's newest 50 posts, under the thread's own visibility |
+| `GET /forum/:space/new`, `POST /forum/:space/new` | Start a thread (signed in) |
+| `POST /forum/:space/:slug/reply\|vote\|state\|delete` | The no-JS forms (reply, vote, pin/lock, delete); moderator forms take an optional `rule` and `reason` |
+| `POST /forum/:space/:slug/status` | The no-JS status form (moderators), with the same optional `rule` and `reason` |
+| `POST /forum/:space/:slug/post/:id/delete` | A moderator removes one post, with the same optional `rule` and `reason` |
 | `GET /pulse` | Public activity across the network — `?origin=user\|ai\|system`, `?after=` |
 | `GET /submissions`, `POST /submissions` | Accepted submissions — `?kind=clip\|art\|idea\|report`, `?mine=1` (your own, any status), `?after=`; signed-in people submit with the no-JS form |
 | `GET /submissions/:slug` | One submission — accepted: anyone (canonical, Open Graph); pending, rejected, withdrawn: its author and moderators only (`noindex`), 404 for anyone else |
@@ -180,8 +180,8 @@ API and machine endpoints:
 | `POST /auth/refresh` | Rotate via refresh token |
 | `GET /robots.txt`, `GET /sitemap.xml`, `GET /feed.xml` | SEO + RSS of the latest pastes |
 | `GET /llms.txt`, `GET /llms-full.txt` | The site map for language models, and the latest public threads and text pastes in full |
-| `GET /s/feed.xml`, `GET /s/:space/feed.xml` | RSS of the latest threads (public spaces) |
-| `GET /s/:space/t/:slug/feed.xml` | RSS of a thread's newest 50 posts (the thread's own visibility) |
+| `GET /forum/feed.xml`, `GET /forum/:space/feed.xml` | RSS of the latest threads (public spaces) |
+| `GET /forum/:space/:slug/feed.xml` | RSS of a thread's newest 50 posts (the thread's own visibility) |
 
 **Readiness and metrics (Track O).** `GET /api/ready` (openvibe-shared/ready) answers 503 only
 when the required `db` check fails (a real round trip that names the store, postgresql or pglite, and a migrated schema). `network_jwks` (the
@@ -346,7 +346,7 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   refused). Thread pages carry canonical, Open Graph `article`, `DiscussionForumPosting`
   JSON-LD (author, dates, counters, the replies on the page as `Comment`s) and breadcrumbs;
   members/staff spaces are `noindex,nofollow` and never in the sitemap or feeds. The sitemap
-  lists `/s`, `/pulse`, public spaces and the latest 1000 threads; `/s/*/new` is disallowed in
+  lists `/forum`, `/pulse`, public spaces and the latest 1000 threads; `/forum/*/new` is disallowed in
   robots.txt.
 - **Sorting**: `hot` (default), `new`, `top`; pinned threads lead every sort. Hot is the
   deterministic `ov_hot(score, age_hours) = (score + 1) / (age_hours + 2) ^ 1.5`
@@ -375,12 +375,12 @@ member for now), `staff` (moderators only; looks missing to everyone else).
   `docs/cutover-community-0005-space-moderators.md`.
 
 - **Two styles, one system.** Each space is a **forum** or a **feed**. A forum reads like vBulletin or SMF:
-  - the board index at `/s` lists every space under its group, with topics, posts and the last post;
+  - the board index at `/forum` lists every space under its group, with topics, posts and the last post;
   - a board is a topic table (Replies, Views, Last post) with sticky topics first and replies bumping a topic;
   - a topic shows each post beside its author's panel: picture, posts, since when, the ratings they get most.
   Quote fills the reply box. A feed is subreddit-like: votes and hot/new/top. Moderators switch per space:
   the style, up/down votes and ratings. They also set the group, a parent (one level of child boards),
-  the name and description, and create spaces (`/s/new-space`).
+  the name and description, and create spaces (`/forum/new`).
   Both styles share threads, ratings, images, pastes and crossposts: a thread can be crossposted to another
   space, and both link to each other.
 - **Ratings** (after Facepunch), one per person per post, never your own:
@@ -431,7 +431,7 @@ API (`/api/v1/spaces`, `/api/v1/posts`, problem+json errors):
 | `DELETE /spaces/:space/chat-room` | The space's owner or staff (moderator services too): detach it (idempotent) |
 | `PUT /posts/:id` `{ body }` · `DELETE /posts/:id` `{ rule?, reason? }` · `GET /posts/:id/versions` | Author or moderator |
 | `GET /spaces/:space/moderators` | The space's own moderators `{ space, moderators: [{ subject, username, display_name, added_by, added_at }] }` (whoever can read the space) |
-| `PUT`/`DELETE /spaces/:space/moderators/:subject` | The space's moderators or staff: add (blocks refuse, 403 `community.blocked`) or remove one (idempotent). `:subject` is a Network user subject (`usr_…`) or an `@username`, resolved through the Network (404 `moderator.unknown_user` when nobody holds it). The space page shows its moderators a Moderators box (list, remove or step down, add by @username); its no-JS forms are `POST /s/:space/moderators` and `POST /s/:space/moderators/remove` `{ subject }`, and a refusal comes back as a notice in the box |
+| `PUT`/`DELETE /spaces/:space/moderators/:subject` | The space's moderators or staff: add (blocks refuse, 403 `community.blocked`) or remove one (idempotent). `:subject` is a Network user subject (`usr_…`) or an `@username`, resolved through the Network (404 `moderator.unknown_user` when nobody holds it). The space page shows its moderators a Moderators box (list, remove or step down, add by @username); its no-JS forms are `POST /forum/:space/moderators` and `POST /forum/:space/moderators/remove` `{ subject }`, and a refusal comes back as a notice in the box |
 
 ### A space's chat room (OpenVibe.Chat)
 
@@ -665,9 +665,9 @@ Discovery is written by `openvibe-shared/seo`; Community only supplies the data
 `WebSite` on the home page, `Article`/`ImageObject` with author and `datePublished` on paste
 pages, `DiscussionForumPosting` on threads, `BreadcrumbList` everywhere.
 Unlisted/private pastes, search result pages and members/staff spaces are `noindex`. The
-sitemap lists home, `/pastes`, the latest public pastes, `/s`, `/pulse`, public spaces and
+sitemap lists home, `/pastes`, the latest public pastes, `/forum`, `/pulse`, public spaces and
 their latest threads (rebuilt at most hourly). `/robots.txt` welcomes search and AI crawlers
-and keeps them out of `/api/`, `/auth/`, `/my`, `/new`, `/s/*/new` and `?sso=` URLs;
+and keeps them out of `/api/`, `/auth/`, `/my`, `/new`, `/forum/*/new` and `?sso=` URLs;
 `/llms.txt` maps the site and `/llms-full.txt` carries the latest public threads and text pastes
 in full (no NSFW, no burn-after-read, nothing members-only).
 

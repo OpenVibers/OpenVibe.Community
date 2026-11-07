@@ -115,22 +115,22 @@ const { syncRoadmap, syncFromFile } = require('../server/forum/roadmap');
     });
 
     await check('pages: chips, badges, staff forms; no New thread button on the roadmap for people', async () => {
-        let r = await call('/s/feedback?category=ideas', { cookie: alexJwt });
+        let r = await call('/forum/feedback?category=ideas', { cookie: alexJwt });
         assert.strictEqual(r.status, 200);
         const html = r.text;
         assert.ok(html.includes('aria-label="Categories"') && html.includes('aria-label="Status"') && html.includes('New request'));
         assert.ok(/<meta name="robots" content="noindex,follow"/.test(html), 'filtered lists are not indexed');
-        r = await call('/s/roadmap', { cookie: alexJwt });
+        r = await call('/forum/roadmap', { cookie: alexJwt });
         assert.ok(!r.text.includes('New roadmap item') && r.text.includes('Staff add roadmap items'));
         assert.ok(r.text.includes('badge-status status-in_progress'));
-        r = await call('/s/roadmap/new', { cookie: alexJwt });
+        r = await call('/forum/roadmap/new', { cookie: alexJwt });
         assert.strictEqual(r.status, 403);
-        r = await call(`/s/feedback/t/${req.slug}`, { cookie: modJwt });
+        r = await call(`/forum/feedback/${req.slug}`, { cookie: modJwt });
         assert.ok(r.text.includes('Set status') && r.text.includes('Set category'));
-        r = await call(`/s/feedback/t/${req.slug}/status`, { method: 'POST', cookie: modJwt, form: { status: 'done' } });
+        r = await call(`/forum/feedback/${req.slug}/status`, { method: 'POST', cookie: modJwt, form: { status: 'done' } });
         assert.strictEqual(r.status, 303);
         assert.strictEqual((await call(`/api/v1/spaces/feedback/threads/${req.slug}`)).json().thread.status, 'done');
-        r = await call('/s/feedback/new', { cookie: alexJwt });
+        r = await call('/forum/feedback/new', { cookie: alexJwt });
         assert.ok(r.text.includes('name="category"') && r.text.includes('Search first'));
     });
 

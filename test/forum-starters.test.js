@@ -42,9 +42,9 @@ const { syncStarters, syncFromFile, FILE } = require('../server/forum/starters')
 
     await check('the page renders the guide with its links (no raw HTML)', async () => {
         const th = (await call('/api/v1/spaces/feedback/threads')).json().threads.find((x) => x.title === 'How feedback works');
-        const r = await call(`/s/feedback/t/${th.slug}`);
+        const r = await call(`/forum/feedback/${th.slug}`);
         assert.strictEqual(r.status, 200);
-        assert.ok(r.text.includes('href="/s/roadmap"'), 'same-site link');
+        assert.ok(r.text.includes('href="/forum/roadmap"'), 'same-site link');
         assert.ok(r.text.includes('<strong>One idea or one bug per post.</strong>'));
     });
 

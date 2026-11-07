@@ -47,7 +47,7 @@ const forumStore = require('../server/forum/store');
         first = r.json().thread;
         assert.strictEqual(first.slug, 'hello-world');
         assert.strictEqual(first.title, 'Hello, World!');
-        assert.strictEqual(first.url, '/s/general/t/hello-world');
+        assert.strictEqual(first.url, '/forum/general/hello-world');
         assert.strictEqual(first.author.subject, alex.subject_id);
         const op = r.json().post;
         assert.strictEqual(op.is_opening, true);
@@ -58,6 +58,17 @@ const forumStore = require('../server/forum/store');
         assert.strictEqual(elsewhere.json().thread.slug, 'hello-world', 'slugs are unique per space');
         assert.strictEqual(forumStore.slugify('Ünïcödé — ☃ !!'), 'unicode');
         assert.strictEqual(forumStore.slugify('☃☃☃'), 'thread');
+    });
+
+    await check('a title that makes one of the forum\'s own route words takes -2, so /forum/<space>/<slug> stays a thread', async () => {
+        for (const [title, slug] of [['New', 'new-2'], ['Log', 'log-2'], ['Settings', 'settings-2'], ['Members', 'members-2'], ['Chat room', 'chat-room-2'], ['Discuss', 'discuss-2']]) {
+            const r = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: alexJwt, json: { title, body: 'reserved word' } });
+            assert.strictEqual(r.status, 201, r.text);
+            assert.strictEqual(r.json().thread.slug, slug, title);
+            assert.strictEqual(r.json().thread.url, `/forum/general/${slug}`);
+        }
+        const page = await t.get('/forum/general/new-2');
+        assert.strictEqual(page.status, 200, 'the thread renders at its new address');
     });
 
     await check('create thread: validation and who may post', async () => {
@@ -86,7 +97,7 @@ const forumStore = require('../server/forum/store');
     await check('replies: reply_count and last activity move; locked threads refuse people, not moderators', async () => {
         const r1 = await call('/api/v1/spaces/general/threads/hello-world/posts', { method: 'POST', cookie: samJwt, json: { body: 'first reply' } });
         assert.strictEqual(r1.status, 201, r1.text);
-        assert.match(r1.json().url, /^\/s\/general\/t\/hello-world#post-\d+$/);
+        assert.match(r1.json().url, /^\/forum\/general\/hello-world#post-\d+$/);
         await call('/api/v1/spaces/general/threads/hello-world/posts', { method: 'POST', cookie: alexJwt, json: { body: 'second reply' } });
         const th = (await call('/api/v1/spaces/general/threads/hello-world')).json();
         assert.strictEqual(th.thread.reply_count, 2);

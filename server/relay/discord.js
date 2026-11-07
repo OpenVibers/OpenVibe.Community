@@ -198,7 +198,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         }
         return 'someone';
     }
-    const threadUrl = (thread, space) => `${base}/s/${space.slug}/t/${thread.slug}`;
+    const threadUrl = (thread, space) => `${base}/forum/${space.slug}/${thread.slug}`;
     async function postUrl(post, thread, space) {
         const position = (await db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id)).c;
         const page = Math.max(Math.ceil(position / POSTS_PER_PAGE), 1);
@@ -211,13 +211,13 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         const url = threadUrl(thread, space);
         return {
             username: 'OpenVibe.Community',
-            content: `New thread in **s/${escapeDiscord(space.slug)}** by ${escapeDiscord(await authorName(thread.author_subject, thread.origin))}: <${url}>`,
+            content: `New thread in **forum/${escapeDiscord(space.slug)}** by ${escapeDiscord(await authorName(thread.author_subject, thread.origin))}: <${url}>`,
             allowed_mentions: { parse: [] },
             embeds: [{
                 title: String(thread.title).slice(0, 256),
                 url,
                 description: markdownToText(opening ? opening.body_markdown : '', 300),
-                footer: { text: `OpenVibe.Community · s/${space.slug}` },
+                footer: { text: `OpenVibe.Community · forum/${space.slug}` },
                 timestamp: isoTime(thread.created_at) || undefined,
             }],
         };
@@ -229,13 +229,13 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
         const title = String(thread.title).slice(0, 200);
         return {
             username: 'OpenVibe.Community',
-            content: `${escapeDiscord(await authorName(post.author_subject, post.origin))} replied to **${escapeDiscord(title)}** in **s/${escapeDiscord(space.slug)}**: <${url}>`,
+            content: `${escapeDiscord(await authorName(post.author_subject, post.origin))} replied to **${escapeDiscord(title)}** in **forum/${escapeDiscord(space.slug)}**: <${url}>`,
             allowed_mentions: { parse: [] },
             embeds: [{
                 title: `Re: ${title}`.slice(0, 256),
                 url,
                 description: markdownToText(post.body_markdown, 500),
-                footer: { text: `OpenVibe.Community · s/${space.slug}` },
+                footer: { text: `OpenVibe.Community · forum/${space.slug}` },
                 timestamp: isoTime(post.created_at) || undefined,
             }],
         };
@@ -476,7 +476,7 @@ function createDiscordRelay({ db, config = {}, env = process.env, fetchImpl = gl
                 status: d.status, attempts: d.attempts, last_status: d.last_status, last_error: d.last_error,
                 next_attempt_at: d.status === 'pending' ? isoTime(d.next_attempt_at) : null, delivered_at: isoTime(d.delivered_at), created_at: isoTime(d.created_at), updated_at: isoTime(d.updated_at),
                 mapping: { id: d.mapping_id, webhook_url_ref: d.webhook_url_ref },
-                thread: { id: d.thread_id, title: d.thread_title, url: `/s/${d.space_slug}/t/${d.thread_slug}` },
+                thread: { id: d.thread_id, title: d.thread_title, url: `/forum/${d.space_slug}/${d.thread_slug}` },
                 post: d.post_id ? { id: d.post_id } : null,
             }));
     }

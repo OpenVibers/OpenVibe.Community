@@ -13,9 +13,10 @@
  *   GET /p/:slug/raw    raw text       /api/v1/pulse/*         Pulse (pulse/api.js)
  *   GET /p/:slug/screenshot → image    /api/v1/relay/*         Discord relay admin (relay/api.js)
  *   GET /p/:slug/download              GET /api/health, /api/ready, /release.json, /metrics (loopback)
- *   GET|POST /new       create         GET /robots.txt, /llms.txt, /llms-full.txt, /sitemap.xml, /feed.xml, /s/feed.xml
+ *   GET|POST /new       create         GET /robots.txt, /llms.txt, /llms-full.txt, /sitemap.xml, /feed.xml, /forum/feed.xml
  *   GET /my             signed-in user's pastes                /auth/login|callback|logout|me|refresh
- *   GET /s …            spaces, threads, posts (forum/routes.js)    POST /release-metrics (open tabs' update reports)
+ *   GET /forum …        spaces, threads, posts (forum/routes.js)    POST /release-metrics (open tabs' update reports)
+ *   GET /s …            301/308 to /forum (old forum links)
  *   GET /pulse          the network's public activity
  *   GET|POST /c/:accessId   one comment thread's own page (comments/routes.js)
  *   GET|POST /submissions …  submissions, their pages and the review queue (submissions/routes.js)

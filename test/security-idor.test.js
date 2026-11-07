@@ -169,7 +169,7 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
         await refused('gate it to sam\'s members', 'PUT', `${T}/members-only`, SAMS, { json: { owner: true } });
         await refused('gate it to alex\'s members', 'PUT', `${T}/members-only`, SAMS, { json: { owner: alex.subject_id } });
         for (const [suffix, form] of [['delete', {}], ['state', { pinned: '1', locked: '1' }], ['members-only', { on: '1' }], ['category', { category: '' }], ['status', { status: 'done' }]]) {
-            await refused(`form ${suffix}`, 'POST', `/s/general/t/${thread.thread.slug}/${suffix}`, ['sam'], { form });
+            await refused(`form ${suffix}`, 'POST', `/forum/general/${thread.thread.slug}/${suffix}`, ['sam'], { form });
         }
         // The right thread slug under the wrong space: not found, even for its author.
         await refused('delete it under another space', 'DELETE', `/api/v1/spaces/feedback/threads/${thread.thread.slug}`, ['alex', 'sam']);
@@ -203,11 +203,11 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
     await check('spaces: the owner of one space cannot manage another\'s chat room; sam cannot change space settings, categories, gating or the board', async () => {
         await refused('cora attaches a room to alex\'s space', 'PUT', '/api/v1/spaces/general/chat-room', ['cora', 'sam'], { json: { room: 'cora-room' } });
         await refused('cora detaches alex\'s room', 'DELETE', '/api/v1/spaces/general/chat-room', ['cora', 'sam']);
-        await refused('cora detaches it by form', 'POST', '/s/general/chat-room/detach', ['cora'], { form: {} });
-        await refused('cora attaches by form', 'POST', '/s/general/chat-room', ['cora'], { form: { room: 'cora-room' } });
+        await refused('cora detaches it by form', 'POST', '/forum/general/chat-room/detach', ['cora'], { form: {} });
+        await refused('cora attaches by form', 'POST', '/forum/general/chat-room', ['cora'], { form: { room: 'cora-room' } });
         assert.ok(!chatCalls.some(([, room]) => room === 'cora-room'), 'Chat was never asked for cora\'s room on alex\'s space');
         await refused('space settings', 'PUT', '/api/v1/spaces/general/settings', [...SAMS, 'cora'], { json: { name: 'Taken' } });
-        await refused('space settings by form', 'POST', '/s/general/settings', ['sam', 'alex'], { form: { name: 'Taken' } });
+        await refused('space settings by form', 'POST', '/forum/general/settings', ['sam', 'alex'], { form: { name: 'Taken' } });
         await refused('a category', 'PUT', '/api/v1/spaces/general/categories/taken', [...SAMS, 'alex'], { json: { name: 'Taken' } });
         await refused('gate the space', 'PUT', '/api/v1/spaces/general/members-only', [...SAMS, 'alex'], { json: { owner: sam.subject_id } });
         await refused('a board group', 'PUT', '/api/v1/space-groups/taken', SAMS, { json: { name: 'Taken' } });

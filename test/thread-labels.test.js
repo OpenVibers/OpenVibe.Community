@@ -44,22 +44,22 @@ const form = (pairs) => ({ method: 'POST', body: new URLSearchParams(pairs).toSt
         let boardUrl;
         let feedUrl;
         await check('the new-thread form has the picker, and a thread is posted with its labels', async () => {
-            const page = await t.get('/s/general/new', as(alexJwt));
+            const page = await t.get('/forum/general/new', as(alexJwt));
             assert.ok(page.text.includes('<legend>Content labels</legend>') && page.text.includes('name="labels_form"'), 'the picker');
             assert.ok(/<link rel="stylesheet" href="\/css\/labels\.css(\?v=[0-9a-f]+)?">/.test(page.text), 'its sheet');
-            let r = await t.get('/s/general/new', as(alexJwt, form([['title', 'Finale talk'], ['body', 'The last episode.'], ['labels_form', '1'], ['labels', 'spoilers'], ['labels', '18+']])));
+            let r = await t.get('/forum/general/new', as(alexJwt, form([['title', 'Finale talk'], ['body', 'The last episode.'], ['labels_form', '1'], ['labels', 'spoilers'], ['labels', '18+']])));
             assert.strictEqual(r.status, 303, r.text.slice(0, 300));
             boardUrl = new URL(r.headers.get('location'), 'https://x').pathname;
-            r = await t.get('/s/feedback/new', as(alexJwt, form([['title', 'Flashing intro'], ['body', 'The intro strobes.'], ['labels_form', '1'], ['labels', 'flashing']])));
+            r = await t.get('/forum/feedback/new', as(alexJwt, form([['title', 'Flashing intro'], ['body', 'The intro strobes.'], ['labels_form', '1'], ['labels', 'flashing']])));
             assert.strictEqual(r.status, 303, r.text.slice(0, 300));
             feedUrl = new URL(r.headers.get('location'), 'https://x').pathname;
-            r = await t.get('/s/general/new', as(alexJwt, form([['title', 'Bad label'], ['body', 'x'], ['labels_form', '1'], ['labels', 'gore']])));
+            r = await t.get('/forum/general/new', as(alexJwt, form([['title', 'Bad label'], ['body', 'x'], ['labels_form', '1'], ['labels', 'gore']])));
             assert.strictEqual(r.status, 400, 'not a label');
             assert.ok(r.text.includes('Labels are from this list'), r.text.slice(0, 200));
         });
 
         await check('the board: the row is labelled, its title cell is what a blur covers, the chips under the title', async () => {
-            const r = await t.get('/s/general');
+            const r = await t.get('/forum/general');
             assert.ok(r.text.includes(` data-ov-labels="spoilers,18+" data-ov-labels-owner="${alex.subject_id}">`), 'the row');
             assert.ok(r.text.includes('<td class="topic-main" data-ov-labels-media>'), 'the cover goes on the title cell');
             assert.ok(r.text.includes('<li class="ovk-label" data-label="spoilers">Spoilers</li><li class="ovk-label ovk-label--adult" data-label="18+">18+</li>'), 'in words');
@@ -77,7 +77,7 @@ const form = (pairs) => ({ method: 'POST', body: new URLSearchParams(pairs).toSt
             assert.ok(r.text.includes('css/labels.css'), 'with its sheet');
             r = await t.get(feedUrl);
             assert.ok(r.text.includes(`<div class="posts" data-ov-labels="flashing" data-ov-labels-owner="${alex.subject_id}" data-ov-labels-opened>`), 'the feed style too');
-            r = await t.get('/s/feedback');
+            r = await t.get('/forum/feedback');
             assert.ok(/<li class="thread-row[^"]*" data-ov-labels="flashing" data-ov-labels-owner="/.test(r.text), 'and its list');
         });
 

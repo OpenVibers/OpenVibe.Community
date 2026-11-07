@@ -220,9 +220,9 @@ function formsOf(value) {
             }
         }
         for (const [who, p] of Object.entries(bad)) {
-            for (const path of ['/api/pastes', `/api/pastes/${priv.slug}`, '/api/v1/spaces', '/api/v1/relay/status', '/api/v1/pulse', '/auth/me', '/my', '/s', '/']) inspect(`GET ${path} as ${who}`, await send('GET', path, p));
+            for (const path of ['/api/pastes', `/api/pastes/${priv.slug}`, '/api/v1/spaces', '/api/v1/relay/status', '/api/v1/pulse', '/auth/me', '/my', '/forum', '/']) inspect(`GET ${path} as ${who}`, await send('GET', path, p));
         }
-        for (const path of ['/nope', '/api/nope', '/api/v1/nope', '/internal/nope', '/api/pastes/admin/nope', '/p/..%2f..%2fetc', '/s/general/t/nope/nope', '/c/nope', '/api/v1/comments/threads/1', '/api/v1/comments/1']) {
+        for (const path of ['/nope', '/api/nope', '/api/v1/nope', '/internal/nope', '/api/pastes/admin/nope', '/p/..%2f..%2fetc', '/forum/general/nope/nope', '/c/nope', '/api/v1/comments/threads/1', '/api/v1/comments/1']) {
             for (const [who, p] of Object.entries(personas)) inspect(`GET ${path} as ${who}`, await send('GET', path, p));
         }
         // Sign-in failures: a bad code, a missing state, a refused refresh token, a refused FedCM assertion.

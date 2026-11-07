@@ -113,7 +113,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         assert.strictEqual(page.attachments.enabled, true);
         r = await json(alexJwt, `/api/v1/spaces/general/threads/${thread.slug}/posts`, { body: 'again', attachments: [first.media_id] });
         assert.strictEqual(r.status, 400, 'already on a post');
-        const html = (await t.get(`/s/general/t/${thread.slug}`, { cookies: [`ov_token=${samJwt}`] })).text;
+        const html = (await t.get(`/forum/general/${thread.slug}`, { cookies: [`ov_token=${samJwt}`] })).text;
         assert.ok(html.includes(`src="${first.url}"`) && html.includes('enctype="multipart/form-data"') && html.includes('name="attachments"'));
     });
 
@@ -122,7 +122,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         fd.append('body', 'Two more');
         fd.append('attachments', new Blob([PNG], { type: 'image/png' }), 'a.png');
         fd.append('attachments', new Blob([PNG], { type: 'image/png' }), 'b.png');
-        const r = await t.get(`/s/general/t/${thread.slug}/reply`, { method: 'POST', body: fd, cookies: [`ov_token=${samJwt}`] });
+        const r = await t.get(`/forum/general/${thread.slug}/reply`, { method: 'POST', body: fd, cookies: [`ov_token=${samJwt}`] });
         assert.strictEqual(r.status, 303, r.text.slice(0, 300));
         const page = (await t.get(`/api/v1/spaces/general/threads/${thread.slug}`)).json();
         const reply = page.posts.find((p) => p.body_markdown === 'Two more');
@@ -132,7 +132,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         empty.append('body', '');
         empty.append('attachments', new Blob([PNG], { type: 'image/png' }), 'c.png');
         const before = objects.size;
-        await t.get(`/s/general/t/${thread.slug}/reply`, { method: 'POST', body: empty, cookies: [`ov_token=${samJwt}`] });
+        await t.get(`/forum/general/${thread.slug}/reply`, { method: 'POST', body: empty, cookies: [`ov_token=${samJwt}`] });
         assert.strictEqual(objects.size, before, 'an empty reply uploads nothing');
     });
 

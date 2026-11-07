@@ -1,4 +1,4 @@
-/* OpenVibe.Community: the moderation log page (/s/:space/log), linked by that page alone (renderPage pageCss) so the
+/* OpenVibe.Community: the moderation log page (/forum/:space/log), linked by that page alone (renderPage pageCss) so the
    other pages carry none of it. A table on a computer; on a phone each row is a card. */
 .mod-log th:first-child { width: 7.5em; }
 .mod-log th:nth-child(3) { width: 7em; }
