@@ -36,6 +36,13 @@ function mediaW(u, w) {
 }
 /** A screenshot's address: Community's checked proxy, never the Media object's own URL. */
 function screenshotSrc(p) { return `/p/${encodeURIComponent(p.slug)}/screenshot`; }
+/** A card-sized screenshot through the same proxy: Media's ladder has 320 and 640, webp by URL. */
+function screenshotVariant(p, w) { return `${screenshotSrc(p)}?w=${w}&fmt=webp`; }
+/** A card screenshot: two widths, the card's shape in width/height (no shift), lazy unless it is the LCP. */
+function screenshotImg(p, { eager = false, sizes = '(max-width: 620px) calc(100vw - 40px), 300px' } = {}) {
+    const srcset = [320, 640].map((w) => `${screenshotVariant(p, w)} ${w}w`).join(', ');
+    return `<img src="${esc(screenshotVariant(p, 640))}" srcset="${esc(srcset)}" sizes="${esc(sizes)}" width="640" height="360" alt="${esc(p.title || 'Screenshot')}"${eager ? ' fetchpriority="high"' : ' loading="lazy"'} decoding="async">`;
+}
 
 function timeAgo(v) {
     const iso = ld.isoDate(v);
@@ -107,13 +114,13 @@ function pagerHref(state, page) {
 }
 
 // ── Paste card (grid item) ───────────────────────────────────
-function pasteCard(p) {
+function pasteCard(p, { eager = false } = {}) {
     const isShot = p.type === 'screenshot';
     const locked = !!p.locked;
     const preview = locked
         ? `<div class="card-locked"><i class="fa-solid fa-lock" aria-hidden="true"></i> Locked — OpenVibe can’t read what’s inside</div>`
         : isShot
-            ? (p.screenshot_url ? `<div class="card-shot"><img src="${esc(screenshotSrc(p))}" alt="${esc(p.title || 'Screenshot')}" loading="lazy"></div>` : '')
+            ? (p.screenshot_url ? `<div class="card-shot">${screenshotImg(p, { eager })}</div>` : '')
             : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
     const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${locked ? '<i class="fa-solid fa-lock" title="Locked"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
     return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}${locked ? ' card-is-locked' : ''}">
@@ -129,7 +136,9 @@ function pasteCard(p) {
 }
 function cardGrid(pastes, empty = 'Nothing here yet.') {
     if (!pastes || !pastes.length) return `<p class="empty">${esc(empty)}</p>`;
-    return `<div class="grid">${pastes.map(pasteCard).join('\n')}</div>`;
+    // The first picture in the grid is the one above the fold: it loads at high priority, the rest stay lazy.
+    const firstShot = pastes.findIndex((p) => p.type === 'screenshot' && p.screenshot_url && !p.locked);
+    return `<div class="grid">${pastes.map((p, i) => pasteCard(p, { eager: i === firstShot })).join('\n')}</div>`;
 }
 
 // ── Home ─────────────────────────────────────────────────────
@@ -174,10 +183,10 @@ function homeStats(c = {}) {
  * says NSFW), else its first lines in the media (kit.card preview; the lists carry 300 characters) with its language in
  * the corner; who, views and when under the title.
  */
-function pasteKitCard(p) {
+function pasteKitCard(p, { eager = false } = {}) {
     const isShot = p.type === 'screenshot';
-    const image = isShot && !p.is_nsfw ? screenshotSrc(p) : '';
-    return kit.card({
+    const image = isShot && !p.is_nsfw ? screenshotVariant(p, 640) : '';
+    const card = kit.card({
         href: `/p/${p.slug}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
         badge: p.is_nsfw ? 'NSFW' : p.origin === 'ai' ? 'AI' : p.pinned ? 'Pinned' : '',
         corner: isShot ? '' : languageLabel(p.language || 'text'),
@@ -185,6 +194,9 @@ function pasteKitCard(p) {
         who: authorName(p), avatar: avatarUrl(p, 68) || '',
         count: [Number(p.views) || 0, Number(p.views) === 1 ? 'view' : 'views'], when: p.created_at || null,
     });
+    // kit.card's own picture is one plain <img> before the avatar; give it both card widths, the
+    // shape the card draws and the LCP hint. Its markup is pinned with the shared version.
+    return image ? card.replace(/<img\b[^>]*>/, screenshotImg(p, { eager, sizes: '(max-width: 620px) 80vw, 300px' })) : card;
 }
 
 /** A section's head in the rails' look (room.css): its heading and the one link to the whole list. */
@@ -201,7 +213,10 @@ function kindChips(languages) {
 }
 
 function latestShelf(latest, languages) {
-    const rail = kit.rail({ id: 'latest', title: 'Latest pastes', more: { href: '/pastes', label: 'See all' }, items: (latest || []).map(pasteKitCard) });
+    const list = latest || [];
+    // The newest screenshot in the first rail is the home's LCP picture on a phone: load it at high priority.
+    const firstShot = list.findIndex((p) => p.type === 'screenshot' && p.screenshot_url && !p.is_nsfw && !p.locked);
+    const rail = kit.rail({ id: 'latest', title: 'Latest pastes', more: { href: '/pastes', label: 'See all' }, items: list.map((p, i) => pasteKitCard(p, { eager: i === firstShot })) });
     const none = `<section id="latest" aria-labelledby="latest-h">${shelfHead('latest-h', 'Latest pastes', { href: '/pastes', label: 'See all' })}${kit.empty({ title: 'No pastes yet', text: 'Be the first: paste something and share the link.', action: { href: '/new', label: 'Start a paste' } })}</section>`;
     return `<div class="cm-sec">${rail || none}${languages && languages.length ? kindChips(languages) : ''}</div>`;
 }

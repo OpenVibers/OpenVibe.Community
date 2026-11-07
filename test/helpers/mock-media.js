@@ -21,11 +21,17 @@ function start({ publicPem, issuer }) {
         req.on('end', () => {
             const json = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
             if (req.method === 'GET' && req.url === '/healthz') return json(200, { ok: true, service: 'mock-media' });
-            // A public object's bytes (a private one is reached through /download, below).
-            const open = req.url.match(/^\/o\/(med_[0-9A-Z]+)$/);
+            // A public object's bytes (a private one is reached through /download, below). ?w=&fmt= asks
+            // for Media's resized variant: answer webp with the width in the body, as Media would.
+            const open = req.url.match(/^\/o\/(med_[0-9A-Z]+)(\?[^#]*)?$/);
             if (open && req.method === 'GET') {
                 const o = uploads.find((u) => u.key === open[1]);
                 if (!o) return json(404, { error: 'not found' });
+                const q = new URL(req.url, 'http://mock-media').searchParams;
+                if (q.get('w')) {
+                    res.writeHead(200, { 'Content-Type': 'image/webp' });
+                    return res.end(Buffer.concat([Buffer.from(`WEBP-${q.get('w')}-${q.get('fmt') || 'webp'}`), o.bytes]));
+                }
                 res.writeHead(200, { 'Content-Type': o.mime }); return res.end(o.bytes);
             }
             const del = req.url.match(/^\/api\/v2\/community\/objects\/(med_[0-9A-Z]+)$/);

@@ -354,6 +354,31 @@ const pastesApiModule = require('../server/pastes/api');
         assert.strictEqual(got.headers.get('cache-control'), 'public, max-age=31536000, immutable', 'a public screenshot is an immutable asset');
     });
 
+    await check('a card asks for a 320/640 webp variant through the same proxy, and the first above the fold is eager', async () => {
+        const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x00, 0x00]), Buffer.from('CARD-PIXELS'), Buffer.from([0xff, 0xd9])]);
+        const fd = new FormData();
+        fd.append('title', 'Card shot');
+        fd.append('audience', 'public');
+        fd.append('screenshot', new Blob([jpeg], { type: 'image/jpeg' }), 'c.jpg');
+        const made = await t.get('/api/pastes/screenshot', { method: 'POST', cookies: [`ov_token=${alexJwt}`], body: fd });
+        assert.strictEqual(made.status, 201, made.text);
+        const slug = made.json().slug;
+        const home = await call('/');
+        assert.strictEqual(home.status, 200);
+        assert.match(home.text, new RegExp(`srcset="[^"]*/p/${slug}/screenshot\\?w=320&amp;fmt=webp 320w, [^"]*/p/${slug}/screenshot\\?w=640&amp;fmt=webp 640w"`), 'both card widths');
+        assert.match(home.text, /sizes="[^"]*"/, 'sizes is set');
+        assert.match(home.text, /width="640" height="360"/, 'the card shape is declared');
+        assert.match(home.text, /fetchpriority="high"/, 'the first picture is not lazy');
+        const mine = await call('/my', { cookie: alexJwt });
+        assert.match(mine.text, new RegExp(`<img src="/p/${slug}/screenshot\\?w=640&amp;fmt=webp"`), 'a grid card uses the 640 picture');
+        const at320 = await call(`/p/${slug}/screenshot?w=320&fmt=webp`);
+        assert.strictEqual(at320.status, 200);
+        assert.strictEqual(at320.headers.get('content-type'), 'image/webp');
+        assert.strictEqual(at320.headers.get('cache-control'), 'public, max-age=31536000, immutable', 'a public card variant is immutable too');
+        assert.ok(at320.text.includes('WEBP-320-webp'), 'the proxy asked Media for the 320 webp variant');
+        assert.strictEqual((await call(`/p/${slug}/screenshot?w=1000&fmt=webp`)).status, 400, 'only the two card widths are accepted');
+    });
+
     await check('the move script re-hosts, deletes the old object, and retries a failed delete; --keep-old keeps it', async () => {
         const { createMediaObjects } = require('../server/media/objects');
         const { moveScreenshotsPrivate } = require('../scripts/move-screenshots-private');
