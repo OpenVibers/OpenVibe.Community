@@ -165,7 +165,7 @@ const { boot, check, done } = require('./helpers/app');
 
     await check('the feed links a paste, but no paste is in the sitemap (they are link-shared, noindex)', async () => {
         const feed = await t.get('/feed.xml');
-        has(feed.text, `/p/${js}`);
+        has(feed.text, `/p/${jsUrl}`);
         assert.ok(!feed.text.includes(priv));
         const map = await t.get('/sitemap.xml');
         assert.ok(!map.text.includes(`/p/${js}`) && !map.text.includes(`/p/${unl}`) && !map.text.includes(`/p/${priv}`));
