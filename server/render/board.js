@@ -15,6 +15,8 @@ const { markdownToText } = require('./markdown');
 const { timeTag, fmtDate, num, avatarUrl, mediaW, authorHtml, wearName } = require('./pages');
 const f = require('./forum');
 const labelsUi = require('./labels');
+const kit = require('openvibe-shared/kit');
+const config = require('../config');
 
 const STYLE_LABELS = { forum: 'Classic', feed: 'Feed' };   // the two styles, as the Forum page and the settings name them
 const monthYear = (iso) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : null; };
@@ -238,7 +240,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
       <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${f.statusBadge(thread)}${f.categoryBadge(thread, space)}</p>` : ''}
       ${labelsUi.chips(labels)}
-      <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
+      <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
     </div>
   </header>
   ${f.crosspostBlock(crosspost, base)}
@@ -262,6 +264,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
+        styles: ['kit.css'],
         ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : []),

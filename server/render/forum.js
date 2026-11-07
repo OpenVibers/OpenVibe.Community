@@ -13,6 +13,8 @@ const { markdownToText } = require('./markdown');
 const labelsUi = require('./labels');
 const { timeTag, fmtDate, num, authorHtml } = require('./pages');
 const { RULES: MODERATION_RULES } = require('../forum/moderation');
+const kit = require('openvibe-shared/kit');
+const config = require('../config');
 
 const SORT_LABELS = { hot: 'Hot', new: 'New', top: 'Top' };
 const STATUS_LABELS = { open: 'Open', planned: 'Planned', in_progress: 'In progress', done: 'Done', declined: 'Declined', paused: 'Paused' };
@@ -300,7 +302,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       ${labelsUi.chips(labels)}
       <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
-      <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a></p>
+      <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
     </div>
   </header>
   ${crosspostBlock(crosspost, base)}
@@ -323,6 +325,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
+        styles: ['kit.css'],
         ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : []),
