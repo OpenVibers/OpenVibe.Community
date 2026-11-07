@@ -1140,6 +1140,13 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         /** Public, open spaces (sitemap, feeds): members-only spaces are left out. */
         async publicSpaces() { return (await Promise.all((await store.listSpaces(db, ['public'])).filter((s) => !s.members_only_owner).map(async (s) => await shapeSpace(s)))); },
 
+        /** The newest threads in public, open spaces, with author names, for the network menu card's fallback. */
+        async newestPublic(limit = 12) {
+            const rows = await store.recentThreads(db, { visibilities: ['public'], limit });
+            const projections = await authors.projectionsFor(rows.map((r) => r.author_subject));
+            return rows.map((r) => ({ ...r, author: authors.author(r.author_subject, r.origin, projections) }));
+        },
+
         /** The six threads with the most live replies in the last seven days, for the network menu card. */
         async hotThisWeek(limit = 6) {
             const since = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString().replace('T', ' ').slice(0, 19);
