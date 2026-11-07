@@ -71,6 +71,16 @@ const cache = require('openvibe-shared/cache-policy');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SLUG_RE = /^[A-Za-z0-9_-]{1,80}$/;
+// A card asks the screenshot proxy for one of Media's two card widths (?w=320|640&fmt=webp). The
+// format is in the URL, never negotiated: a shared cache stores by URL and ignores Vary.
+const SHOT_CARD_WIDTHS = new Set([320, 640]);
+function screenshotVariant(query = {}) {
+    if (query.w === undefined && query.fmt === undefined) return null;
+    const w = Number(query.w);
+    const fmt = String(query.fmt || 'webp').toLowerCase();
+    if (!SHOT_CARD_WIDTHS.has(w) || fmt !== 'webp') return { error: 'w must be 320 or 640 and fmt webp' };
+    return { w, fmt };
+}
 const pasteRef = (slug) => ({ service: 'community', type: 'paste', id: String(slug) });
 const VERSION = require('../package.json').version;
 // The date /.well-known/security.txt must be refreshed by: one year on, a person re-reads and re-commits it.
@@ -188,18 +198,21 @@ async function createApp(opts = {}) {
             return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id, private: visibility === 'private' };
         },
         /** A paste's screenshot bytes, for the proxy (a private object through a signed download). */
-        async bytes(row) {
+        async bytes(row, variant = null) {
+            // A card's ?w=&fmt= rides on the same URL Media answered: public objects take it openly, a
+            // private one through the signature already in the URL (Media checks both before resizing).
+            const withVariant = (url) => (!variant ? url : `${url}${url.includes('?') ? '&' : '?'}w=${variant.w}&fmt=${variant.fmt}`);
             const ref = String(row.media_ref || '');
             const id = /^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(ref) ? ref : (String(row.screenshot_url || '').match(/\/o\/(med_[0-9A-HJKMNP-TV-Z]{26})/) || [])[1];
             if (id && mediaObjects.configured) {
                 try {
-                    const url = await mediaObjects.downloadUrl(id);
+                    const url = withVariant(await mediaObjects.downloadUrl(id));
                     const res = await (opts.fetchImpl || globalThis.fetch)(url, { signal: AbortSignal.timeout(30_000) });
                     if (res.ok) return { body: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'application/octet-stream' };
                 } catch { /* an unlisted object still answers its stored URL below */ }
             }
             if (!row.screenshot_url) return null;
-            const res = await (opts.fetchImpl || globalThis.fetch)(row.screenshot_url, { signal: AbortSignal.timeout(30_000) });
+            const res = await (opts.fetchImpl || globalThis.fetch)(withVariant(row.screenshot_url), { signal: AbortSignal.timeout(30_000) });
             if (!res.ok) return null;
             return { body: Buffer.from(await res.arrayBuffer()), type: res.headers.get('content-type') || 'application/octet-stream' };
         },
@@ -631,10 +644,12 @@ async function createApp(opts = {}) {
     // token. The Media object's own URL is never handed to a browser.
     app.get('/p/:slug/screenshot', withUser, async (req, res) => {
         if (!SLUG_RE.test(req.params.slug)) return notFound(res);
+        const variant = screenshotVariant(req.query);
+        if (variant && variant.error) return res.status(400).type('text/plain').set('X-Content-Type-Options', 'nosniff').send(variant.error);
         try {
             await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug);
             const row = await db.prepare('SELECT media_ref, screenshot_url, visibility, burn_after_read, locked FROM pastes WHERE slug = ? AND deleted_at IS NULL').get(req.params.slug);
-            const got = row ? await app.locals.pasteMedia.bytes(row) : null;
+            const got = row ? await app.locals.pasteMedia.bytes(row, variant) : null;
             if (!got) return notFound(res);
             // A public paste's screenshot never changes under this URL, so it is cached like any other
             // content-addressed asset: the home page shows six of them and each is several hundred KB,
