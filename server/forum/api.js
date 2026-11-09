@@ -48,7 +48,7 @@
 const express = require('express');
 const multer = require('multer');
 const contracts = require('openvibe-contracts');
-const { run, serviceCap, serviceAnyCap, jsonBody } = require('../http/v1');
+const { run, serviceCap, serviceAnyCap, jsonBody, fail } = require('../http/v1');
 
 const POST = 'community.post.create';
 const MOD = 'community.comment.moderate';
@@ -116,13 +116,42 @@ function createSpacesApi({ forum, viewers, limits }) {
     return router;
 }
 
-function createPostsApi({ forum, viewers, limits }) {
+function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '' }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
     const writeOrMod = serviceAnyCap([POST, MOD]);
     // Per-actor limits (server/actor-limits.js), as on /api/v1/spaces.
     router.use(limits.reads('community.forum.read'));
+
+    // POST /api/v1/posts — a status post (a thread in the Status space) with up to four pictures, which is in the
+    // Feed at once. Pictures are Media objects the person owns ({ media_id, alt }); the forum service checks that
+    // and remembers the alt text. Same rules as POST /api/v1/me/status: people only, text required.
+    router.post('/', limits('community.post.create', { minute: 6, hour: 30 }), jsonBody, run(async (req) => {
+        const v = req.viewer;
+        if (!v || v.kind !== 'user' || !v.subject) fail(401, 'post.sign_in_required', 'Sign in to post');
+        const body = req.body || {};
+        if (Object.keys(body).some((k) => !['text', 'pictures'].includes(k))) fail(400, 'post.invalid', 'Only text and pictures are accepted');
+        const text = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!text) fail(400, 'post.invalid', 'Write something first');
+        if (text.length > 2000) fail(400, 'post.invalid', 'Text is at most 2000 characters');
+        const pictures = body.pictures == null ? [] : body.pictures;
+        if (!Array.isArray(pictures) || pictures.length > 4) fail(400, 'post.invalid_pictures', 'pictures is an array of at most four { media_id, alt }');
+        for (const p of pictures) {
+            if (!p || typeof p.media_id !== 'string' || typeof p.alt !== 'string') fail(400, 'post.invalid_pictures', 'Every picture is { media_id, alt }');
+        }
+        const title = `Status: ${text.replace(/https?:\/\/[^\s<>]+/gi, '').trim().slice(0, 110) || 'Shared a picture'}`;
+        const { thread, post } = await forum.createThread(v, 'status', { title, body: text, pictures: pictures.map((p) => ({ media_id: p.media_id, alt: p.alt })) });
+        if (pulse) {
+            await pulse.forgetLocal('thread', thread.id);
+            const first = (post.attachments || [])[0];
+            await pulse.statusCreated(thread, text, v.subject, first && first.url);
+        }
+        return { id: thread.id, post_id: post.id, text,
+            url: `${String(baseUrl).replace(/\/$/, '')}/forum/status/${thread.slug}`,
+            pictures: (post.attachments || []).map((a) => ({ media_id: a.media_id, alt: a.alt || null, url: a.url })),
+            created_at: thread.created_at };
+    }, 201));
 
     router.put('/:id', writeOrMod, limits('community.post.edit', { minute: 30, hour: 300 }), jsonBody, run(async (req) => await forum.editPost(req.viewer, req.params.id, req.body || {})));
     router.post('/:id/reactions', serviceCap(POST), limits('community.post.react', { minute: 120, hour: 1200 }), jsonBody, run(async (req) => await forum.react(req.viewer, req.params.id, req.body || {})));

@@ -269,7 +269,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         };
     }
 
-    const shapeAttachment = (a) => ({ media_id: a.media_id, url: a.url, filename: a.filename || null, mime: a.mime, size_bytes: a.size_bytes });
+    const shapeAttachment = (a) => ({ media_id: a.media_id, url: a.url, filename: a.filename || null, alt: a.alt || null, mime: a.mime, size_bytes: a.size_bytes });
     /** post id → [attachment], in order. */
     async function attachmentsOf(postIds) {
         const out = new Map();
@@ -288,6 +288,50 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         const rows = (await Promise.all(list.map(async (id) => (MED_ID.test(id) ? await db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(id) : null))));
         if (rows.some((r) => !r || r.owner_subject !== w.author || r.post_id != null)) fail(400, 'attachments.invalid', 'Attach images you uploaded for this post');
         return rows;
+    }
+    /**
+     * The pictures a post names: [{ media_id, alt }], alt required, at most four. An upload made through
+     * /api/v1/spaces/:space/attachments is already an attachments row; a direct Media upload (the SDK's
+     * posts.create path) is checked with Media's object API, where the person owns the image, and remembered
+     * here with the alt text. → rows ready for claimable()
+     */
+    async function preparePictures(w, list) {
+        if (list === undefined || list === null) return [];
+        const pictures = Array.isArray(list) ? list : [list];
+        if (pictures.length > ATTACH_MAX) fail(400, 'pictures.too_many', `At most ${ATTACH_MAX} images per post`);
+        if (!w.author && pictures.length) fail(403, 'attachments.person_only', 'Only people attach images');
+        const out = [];
+        for (const p of pictures) {
+            const mediaId = String((p && p.media_id) || '');
+            const alt = String((p && p.alt) == null ? '' : p.alt).replace(/\s+/g, ' ').trim();
+            if (!MED_ID.test(mediaId)) fail(400, 'pictures.invalid', 'Every picture needs a Media media_id');
+            if (!alt) fail(400, 'pictures.alt_required', 'Every picture needs alt text');
+            if (alt.length > 300) fail(400, 'pictures.alt_too_long', 'Alt text is at most 300 characters');
+            let row = await db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(mediaId);
+            if (row) {
+                if (row.owner_subject !== w.author || row.post_id != null) fail(400, 'pictures.invalid', 'Use pictures you uploaded for this post');
+            } else {
+                if (!media || !media.configured || typeof media.object !== 'function') fail(503, 'attachments.unavailable', 'Images cannot be attached right now');
+                let obj;
+                try { obj = await media.object(mediaId); } catch (err) {
+                    console.warn('[Forum] picture lookup failed:', err.message);
+                    fail(err.status === 404 ? 400 : 502, 'pictures.invalid', 'That picture could not be read from Media');
+                }
+                if (!obj || !obj.owner || obj.owner.subject !== w.author || obj.lifecycle_status !== 'ready'
+                    || !/^image\//i.test(String(obj.mime_type || ''))) {
+                    fail(400, 'pictures.invalid', 'Use pictures you uploaded to Media for this post');
+                }
+                const url = /^https:\/\//.test(String(obj.public_url || '')) ? obj.public_url : `${String(config.mediaUrl || '').replace(/\/$/, '')}/o/${mediaId}`;
+                await db.prepare(`INSERT INTO attachments (media_id, owner_subject, filename, mime, size_bytes, url, alt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(media_id) DO NOTHING`)
+                    .run(mediaId, w.author, String((obj.metadata && obj.metadata.filename) || 'image').slice(0, 120), String(obj.mime_type), Number(obj.size_bytes) || 0, url, alt);
+                row = await db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(mediaId);
+                if (!row || row.owner_subject !== w.author || row.post_id != null) fail(400, 'pictures.invalid', 'Use pictures you uploaded for this post');
+            }
+            if ((row.alt || '') !== alt) await db.prepare('UPDATE attachments SET alt = ? WHERE media_id = ?').run(alt, mediaId);
+            out.push({ ...row, alt });
+        }
+        return out;
     }
     async function claimPastes(refs) {
         const slugs = parsePasteRefs(refs);
@@ -943,7 +987,9 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const labels = body.labels === undefined || body.labels === null ? null : contentLabels.parseLabels(body.labels);
             if (body.labels !== undefined && body.labels !== null && labels === null) fail(400, 'thread.labels_invalid', `Labels are from this list: ${contentLabels.LABELS.join(', ')}`);
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
-            const images = await claimable(w, body.attachments);
+            const pictureRows = await preparePictures(w, body.pictures);
+            const listed = Array.isArray(body.attachments) ? body.attachments : (body.attachments == null ? [] : [body.attachments]);
+            const images = await claimable(w, [...listed, ...pictureRows.map((x) => x.media_id)]);
             const pasteRows = await claimPastes(body.pastes);
             if (w.key) {
                 threadLimiter.check(w.key, title);
@@ -954,7 +1000,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             threadLimiter.record(w.key, title);
             await attach(images, post.id);
             await attachPastes(pasteRows, post.id);
-            if (pulse) await hook(async () => await pulse.threadCreated(thread, space));
+            if (pulse) await hook(async () => await pulse.threadCreated(thread, space, { text, picture: images[0] && images[0].url }));
             if (relay) await hook(async () => await relay.enqueueThread(thread, space));
             const projections = await authors.projectionsFor([thread.author_subject, thread.members_only_owner]);
             pingThread(space, thread, { withSpace: true });
@@ -971,14 +1017,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             // Platform blocks: nobody replies in a thread whose author blocked them.
             await blocks.refuseIfBlocked(db, [thread.author_subject], w.author, 'reply in this thread');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
-            const images = await claimable(w, body.attachments);
+            const pictureRows = await preparePictures(w, body.pictures);
+            const listed = Array.isArray(body.attachments) ? body.attachments : (body.attachments == null ? [] : [body.attachments]);
+            const images = await claimable(w, [...listed, ...pictureRows.map((x) => x.media_id)]);
             const pasteRows = await claimPastes(body.pastes);
             postLimiter.check(w.key, text);
             const post = await store.addPost(db, { thread_id: thread.id, author_subject: w.author, origin: w.origin, body_markdown: text });
             postLimiter.record(w.key, text);
             await attach(images, post.id);
             await attachPastes(pasteRows, post.id);
-            if (pulse) await hook(async () => await pulse.postCreated(post, thread, space));
+            if (pulse) await hook(async () => await pulse.postCreated(post, thread, space, { picture: images[0] && images[0].url }));
             if (relay) await hook(async () => await relay.enqueuePost(post, thread, space));
             const projections = await authors.projectionsFor([post.author_subject]);
             // Where the new post lands: its page in the thread (posts are numbered in id order).

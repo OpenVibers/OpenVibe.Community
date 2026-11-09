@@ -37,7 +37,7 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged', 'network.account.export_requested', 'network.account.deleted']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged', 'network.account.export_requested', 'network.account.deleted']);
 const GAME_NAMESPACE = 'games.progress.summary';
 const GAME_MILESTONE = 5;
 const GAME_URL = 'https://openvibe.games/';
@@ -61,7 +61,7 @@ function itemFor(event) {
         const title = clean(p.title, 120);
         return { source_service: 'live', source_type: 'stream', source_id: subjectId, title: title ? `${name} went live: ${title}` : `${name} went live`, url, actor_subject: subjectOf(ch.subject), origin: 'user', occurred_at: p.started_at || at };
     }
-    const kinds = { 'blog.post.published': ['blog', 'post'], 'wiki.page.published': ['wiki', 'page'], 'news.story.published': ['news', 'story'] };
+    const kinds = { 'blog.post.published': ['blog', 'post'], 'wiki.page.published': ['wiki', 'page'], 'wiki.page.updated': ['wiki', 'page'], 'news.story.published': ['news', 'story'] };
     const k = kinds[event.event_type];
     if (!k) return 'ignored:type';
     if (event.source !== k[0]) return 'ignored:source';
@@ -74,7 +74,21 @@ function itemFor(event) {
         : k[0] === 'wiki' ? `Wiki: ${clean(p.space, 40)} / ${clean(p.slug, 60)}`
             : `News: ${clean(p.topic, 60) || 'a new story'}`;
     const actor = event.actor && event.actor.type === 'user' ? subjectOf(event.actor) : null;
-    return { source_service: k[0], source_type: k[1], source_id: subjectId, title, url, actor_subject: actor, origin: actor ? 'user' : 'system', occurred_at: at };
+    // An edited page moves to the top: the feed says "new and updated Wiki articles", not only first publications.
+    return { source_service: k[0], source_type: k[1], source_id: subjectId, title, url, actor_subject: actor, origin: actor ? 'user' : 'system', occurred_at: at,
+        ...(event.event_type === 'wiki.page.updated' ? { touch: true } : {}) };
+}
+
+/** A public chat room message → { slug, name, at } or an 'ignored:*' reason. */
+function chatMessageOf(event) {
+    if (event.source !== 'chat') return 'ignored:source';
+    if (event.visibility !== 'public') return 'ignored:not_public';
+    const p = event.payload && typeof event.payload === 'object' ? event.payload : {};
+    const slug = clean(p.room && p.room.slug, 64);
+    if (!slug) return 'ignored:payload';
+    const at = Date.parse(String(p.created_at || event.occurred_at || event.timestamp || ''));
+    if (!Number.isFinite(at)) return 'ignored:payload';
+    return { slug, name: clean(p.room && p.room.name, 80), at };
 }
 
 /** network.module.updated → { subject, level, at } for a games.progress.summary write, or an 'ignored:*' reason. */
@@ -107,6 +121,25 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
     // Receipts (community_event_inbox) are in migrations/0001_initial.sql.
     const inbox = createPgInbox(db, { table: 'community_event_inbox', now });
     const stats = { received: 0, applied: 0, duplicates: 0, ignored: 0, refused: 0, failed: 0, last_at: null };
+    // A public room's messages are counted per UTC hour; at five the hour becomes one Chat card, refreshed every
+    // five messages after that. This is in memory on purpose: a restart only starts counting the current hour again.
+    const chatHours = new Map();
+    const CHAT_BUSY_MESSAGES = 5;
+    async function applyChatMessage(c) {
+        const hour = new Date(c.at).toISOString().slice(0, 13);
+        const key = `${c.slug}:${hour}`;
+        const n = (chatHours.get(key) || 0) + 1;
+        chatHours.set(key, n);
+        if (chatHours.size > 5000) chatHours.delete(chatHours.keys().next().value);
+        if (n < CHAT_BUSY_MESSAGES || (n !== CHAT_BUSY_MESSAGES && n % 5 !== 0)) return 'chat:counted';
+        const out = await store.upsertItem(db, {
+            source_service: 'chat', source_type: 'hour', source_id: key,
+            title: `#${c.slug}: ${n} messages this hour`,
+            url: `https://openvibe.chat/rooms/${encodeURIComponent(c.slug)}`,
+            actor_subject: null, origin: 'system', occurred_at: `${hour}:00:00Z`, text: '',
+        });
+        return out.created ? 'pulse:created' : 'pulse:updated';
+    }
     const router = express.Router();
     router.post('/', express.raw({ type: () => true, limit: '256kb' }), async (req, res) => {
         const ctx = http.requestContext(req.headers);
@@ -186,6 +219,19 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
                 return problem(500, 'community.event_failed', 'processing failed; it will be retried');
             }
         }
+        if (event.event_type === 'chat.room.message.created') {
+            const c = chatMessageOf(event);
+            if (typeof c === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: c }); }
+            try {
+                const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await applyChatMessage(c) }));
+                if (r.duplicate) stats.duplicates++; else stats.applied++;
+                return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+            } catch (err) {
+                stats.failed++;
+                log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
+                return problem(500, 'community.event_failed', 'processing failed; it will be retried');
+            }
+        }
         const item = itemFor(event);
         if (typeof item === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: item }); }
         try {
@@ -238,4 +284,4 @@ function startSubscriptions({ config, port, secret, eventsUrl = process.env.EVEN
     return { topics: TOPICS, endpoint, stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; } };
 }
 
-module.exports = { createPulseConsumer, startSubscriptions, itemFor, gameProgressOf, TOPICS, GAME_MILESTONE };
+module.exports = { createPulseConsumer, startSubscriptions, itemFor, chatMessageOf, gameProgressOf, TOPICS, GAME_MILESTONE };

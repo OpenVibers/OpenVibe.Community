@@ -46,6 +46,18 @@ function start({ publicPem, issuer }) {
                 deletes.push(del[1]);
                 return json(200, { id: del[1], lifecycle_status: 'deleted' });
             }
+            // GET /api/v2/community/objects/:id — the metadata Community reads to check a picture the person uploaded.
+            const meta = req.url.match(/^\/api\/v2\/community\/objects\/(med_[0-9A-Z]+)(?:\?.*)?$/);
+            if (meta && req.method === 'GET') {
+                const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
+                if (!v.ok) return json(401, { code: v.code, error: v.reason });
+                if (!(v.claims.cap || []).includes('media.object.read')) return json(403, { code: 'capability.denied', error: 'not granted' });
+                const o = uploads.find((u) => u.key === meta[1]);
+                if (!o) return json(404, { code: 'media.object.not_found' });
+                return json(200, { id: o.key, owner: { subject: o.owner || null, app: null }, lifecycle_status: 'ready',
+                    mime_type: o.mime, size_bytes: (o.bytes || Buffer.alloc(0)).length, public_url: `http://127.0.0.1:${server.address().port}/o/${o.key}`,
+                    metadata: { filename: o.name } });
+            }
             const v2 = req.url.match(/^\/api\/v2\/community\/objects(?:\/(med_[0-9A-Z]+)\/(content|complete|download))?(?:\?.*)?$/);
             if (!v2 && (req.method !== 'POST' || req.url !== '/api/v1/community/files')) return json(404, { error: 'not found' });
             const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
