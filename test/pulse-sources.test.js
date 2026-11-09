@@ -85,5 +85,17 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.strictEqual(r.item.text || '', '');
     });
 
+    await check('times are one spelling, so a day reads in order whatever wrote it (ISO from Events, a space locally)', async () => {
+        const store = require('../server/pulse/store');
+        const db = t.app.locals.db;
+        const base = { source_service: 'today', source_type: 'event', url: 'https://openvibe.today/e/x', origin: 'system' };
+        await store.upsertItem(db, { ...base, source_id: 'order_iso', title: 'Event: Morning (ISO)', occurred_at: '2030-01-02T08:00:00.000Z' });
+        await store.upsertItem(db, { ...base, source_id: 'order_space', title: 'Event: Evening (space)', occurred_at: '2030-01-02 20:00:00' });
+        const rows = await db.prepare("SELECT source_id, occurred_at FROM pulse_items WHERE source_id LIKE 'order_%' ORDER BY occurred_at DESC").all();
+        assert.deepStrictEqual(rows.map((r) => r.source_id), ['order_space', 'order_iso'], 'the evening one is newer');
+        assert.ok(rows.every((r) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(r.occurred_at)), rows.map((r) => r.occurred_at).join(', '));
+        assert.strictEqual(store.pulseTime('2030-01-02T08:00:00+02:00'), '2030-01-02 06:00:00', 'an offset is read, not dropped');
+    });
+
     await done(t);
 })();
