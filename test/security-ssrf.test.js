@@ -35,6 +35,7 @@ const INVENTORY = {
     'server/pastes/review.js': [2, 'OpenVibe.Vision /api/v1/review (OV_VISION_URL, fixed path) with a service token; only the paste\'s Media URL is sent'],
     'server/observability.js': [1, '/api/ready probes of the configured Media health URL'],
     'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
+    'server/pulse/feed.js': [1, 'Network /api/frame at the configured networkUrl (trending cards), no user input in the URL'],
     'server/pulse/service.js': [1, 'Network /api/v1/me/follows at the configured networkInternalUrl, with the viewer token and a bounded cursor'],
     'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],
     'server/relay/discord.js': [1, 'a Discord webhook URL read from an environment variable the owner allowlisted; mappings name the variable, never a URL'],
