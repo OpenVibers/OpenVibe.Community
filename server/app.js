@@ -391,17 +391,17 @@ async function createApp(opts = {}) {
             + `# Agent manifest: ${config.baseUrl}/.well-known/agent.json\n`));
     const { sections: llmsSections, optional: llmsOptional } = discovery.llmsSections();
     app.get('/llms.txt', (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
-        .send(seo.llmsTxt({ name: SITE_NAME, summary: discovery.SUMMARY, details: discovery.CONTENT_LABELS, markdown: true, base: config.baseUrl, sections: llmsSections, optional: llmsOptional })));
+        .send(seo.llmsTxt({ name: SITE_NAME, summary: discovery.SUMMARY, details: `${discovery.CONTENT_LABELS}\n\n${discovery.API_ROUTES}`, markdown: true, base: config.baseUrl, sections: llmsSections, optional: llmsOptional })));
     app.get('/llms-full.txt', wrap(async (_req, res) => res.type('text/plain').set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
         .send(seo.llmsFull({ site: SITE_NAME, summary: discovery.SUMMARY, base: config.baseUrl, sections: await discovery.llmsFullSections(), maxBytes: 512 * 1024 }))));
-    // The sharing page people and agents are sent to (llms.txt's "Sharing a paste"): Markdown, one source.
-    app.get('/docs/sharing', (_req, res) => res.type('text/plain; charset=utf-8')
+    // The sharing page people and agents are sent to (llms.txt's "Sharing a paste"): Markdown, one source. The .md
+    // address is the twin llms.txt links; the page itself keeps answering text/plain for a browser.
+    const docPage = (file) => (req, res) => res.type(req.path.endsWith('.md') ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8')
         .set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
-        .send(require('fs').readFileSync(path.join(__dirname, '..', 'docs', 'sharing.md'), 'utf8')));
+        .send(require('fs').readFileSync(path.join(__dirname, '..', 'docs', file), 'utf8'));
+    app.get(['/docs/sharing', '/docs/sharing.md'], docPage('sharing.md'));
     // Locked pastes (Locker design 2026-11-06): the format, the three locks and the agent path, one source.
-    app.get('/docs/locked-pastes', (_req, res) => res.type('text/plain; charset=utf-8')
-        .set('Cache-Control', cache.htmlHeaders({ maxAge: 3600 }))
-        .send(require('fs').readFileSync(path.join(__dirname, '..', 'docs', 'locked-pastes.md'), 'utf8')));
+    app.get(['/docs/locked-pastes', '/docs/locked-pastes.md'], docPage('locked-pastes.md'));
     app.get('/sitemap.xml', async (_req, res) => {
         let rows;
         try { rows = await discovery.sitemapRows(); } catch { return res.status(503).end(); }

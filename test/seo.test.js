@@ -88,6 +88,19 @@ const { boot, check, done } = require('./helpers/app');
         }
     });
 
+    await check('llms.txt writes templated API paths as code, and the docs twins answer Markdown with their headings', async () => {
+        const r = await t.get('/llms.txt');
+        assert.ok(!/\]\([^)]*\{slug\}/.test(r.text), 'no link carries a {slug}: an agent must not fetch the literal address');
+        assert.ok(r.text.includes('`PUT /api/v1/paste/{slug}/share`'), 'the share route is code');
+        assert.ok(r.text.includes('`POST /api/v1/paste/{slug}/share/transfer/{accept,decline,cancel}`'), 'the transfer route is code');
+        for (const [path, heading] of [['/docs/sharing.md', '# Sharing a paste'], ['/docs/locked-pastes.md', '# Locked pastes on OpenVibe Community (Locker)']]) {
+            const twin = await t.get(path);
+            assert.strictEqual(twin.status, 200, `${path} answers 200`);
+            assert.match(twin.headers.get('content-type'), /^text\/markdown/, `${path} is Markdown`);
+            assert.ok(twin.text.includes(heading), `${path} names the page heading`);
+        }
+    });
+
     await check('sitemap.xml lists the pages meant for search and never a link-shared paste (SEO-29)', async () => {
         const r = await t.get('/sitemap.xml');
         assert.strictEqual(r.status, 200);
