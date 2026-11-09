@@ -71,7 +71,8 @@ function itemFor(event) {
     // blog.post.published names its blog as { id, handle } (contracts payload v1); a plain string is still read.
     const blogName = clean(p.blog && typeof p.blog === 'object' ? p.blog.handle : p.blog, 60);
     const title = k[0] === 'blog' ? (blogName ? `New post on the ${blogName} blog` : 'New post on an OpenVibe blog')
-        : k[0] === 'wiki' ? `Wiki: ${clean(p.space, 40)} / ${clean(p.slug, 60)}`
+        // A wiki page by its title when the event carries one (contracts 0.366.0), else by where it lives.
+        : k[0] === 'wiki' ? (clean(p.title, 160) || `Wiki: ${clean(p.space, 40)} / ${clean(p.slug, 60)}`)
             : `News: ${clean(p.topic, 60) || 'a new story'}`;
     const actor = event.actor && event.actor.type === 'user' ? subjectOf(event.actor) : null;
     // An edited page moves to the top: the feed says "new and updated Wiki articles", not only first publications.
