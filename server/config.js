@@ -67,7 +67,7 @@ module.exports = {
 
     // Browser origins allowed to call the embeddable APIs (/api/v1/comments, /api/v1/pulse)
     // with a Bearer Network JWT. No cookies cross origins.
-    apiCorsOrigins: (process.env.API_CORS_ORIGINS || 'https://openvibe.live,https://openvibe.media,https://openvibe.network,https://openvibe.tools,https://openvibe.games')
+    apiCorsOrigins: (process.env.API_CORS_ORIGINS || 'https://openvibe.live,https://openvibe.media,https://openvibe.network,https://openvibe.tools,https://openvibe.games,https://openvibe.pics')
         .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean),
 
     // OpenVibe.VIP — members-only spaces and threads (forum/service.js). Every answer comes from

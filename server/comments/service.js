@@ -57,6 +57,7 @@ const BROWSER_REF_TYPES = {
     wiki: ['page'],
     blog: ['post'],
     reviews: ['entity'],
+    pics: ['picture'],
 };
 /** Threads that take comments from people only — no anonymous comments (Live's rule for VODs and clips). */
 const SIGNED_IN_ONLY = {
@@ -68,7 +69,7 @@ const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 const PAGE = 30;
 const REPLY_PAGE = 20;
 
-function createCommentService({ db, network = null, limits = {}, canViewPaste = null } = {}) {
+function createCommentService({ db, network = null, limits = {}, canViewPaste = null, fetchImpl = globalThis.fetch } = {}) {
     const authors = createAuthors({ db, network });
     const commentLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 5, noun: 'comments', ...(limits.comments || {}) });
     const voteLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'votes', ...(limits.votes || {}) });
@@ -154,10 +155,21 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         return !(p.visibility === 'private' && !(v && (v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject))));
     }
     /** Whether the viewer may see the entity a thread belongs to (only Community's pastes can be checked here). */
-    const entityVisible = async (v, t) => !(t.ref_service === 'community' && t.ref_type === 'paste') || await pasteVisibleTo(v, t.ref_id);
+    async function publicPicture(id) {
+        if (!/^pic_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(id))) return false;
+        try {
+            const response = await fetchImpl(`https://openvibe.pics/api/v1/pictures/${encodeURIComponent(id)}`, { redirect: 'error', signal: AbortSignal.timeout(3000), headers: { Accept: 'application/json' } });
+            if (!response.ok) return false;
+            const picture = await response.json();
+            return picture.id === id && picture.listed === true && picture.state === 'active' && typeof picture.views === 'number';
+        } catch { return false; }
+    }
+    const entityVisible = async (v, t) => t.ref_service === 'pics' && t.ref_type === 'picture' ? publicPicture(t.ref_id)
+        : !(t.ref_service === 'community' && t.ref_type === 'paste') || await pasteVisibleTo(v, t.ref_id);
 
     /** Community's own entities must exist (and be visible to the viewer) before anyone opens a thread on them. */
     async function checkCommunityRef(ref, v) {
+        if (ref.service === 'pics' && ref.type === 'picture' && !await publicPicture(ref.id)) fail(404, 'ref.not_found', 'No such public picture');
         if (ref.service !== 'community') return;
         if (ref.type === 'paste') {
             if (!await pasteVisibleTo(v, ref.id)) fail(404, 'ref.not_found', 'No such paste');
