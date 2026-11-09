@@ -103,7 +103,7 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     let shown = await shows(REPEAT);
     assert.strictEqual(shown.length, 1, 'one item, not one per session');
     assert.strictEqual(shown[0].source_id, '9001', 'the item keeps its id (and source)');
-    assert.strictEqual(shown[0].occurred_at, new Date(T + 20 * 60_000).toISOString(), 'its time is the later start');
+    assert.strictEqual(shown[0].occurred_at, require('../server/pulse/store').pulseTime(new Date(T + 20 * 60_000).toISOString()), 'its time is the later start (stored in the one spelling)');
 
     r = await post(liveAt(9003, T + 30 * 60_000, 'New show'));
     assert.strictEqual(r.json.outcome, 'pulse:created');
@@ -148,6 +148,11 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     const wikiRows = await db.prepare("SELECT * FROM pulse_items WHERE source_service = 'wiki' AND source_id = 'pg_3'").all();
     assert.strictEqual(wikiRows.length, 1, 'one row per page');
     assert.notStrictEqual(wikiRows[0].occurred_at, oldAt, 'an edit moves it up');
+    // With a title (contracts 0.366.0) the item is named by it, not by where it lives.
+    r = await post(evt({ event_type: 'wiki.page.published', source: 'wiki', subject: { type: 'page', id: 'pg_titled' },
+        payload: { canonical_url: 'https://openvibe.wiki/w/help/titled', publication_state: 'published', visibility: 'public', space: 'help', slug: 'titled', title: 'How to go live from a phone', indexability: { decision: 'index', reasons: [] } } }));
+    const titled = await db.prepare("SELECT title FROM pulse_items WHERE source_service = 'wiki' AND source_id = 'pg_titled'").get();
+    assert.strictEqual(titled && titled.title, 'How to go live from a phone', JSON.stringify(r.json));
     assert.strictEqual(wikiRows[0].source_type, 'page');
 
     // Chat: a public room's fifth message in an hour becomes one summary card, refreshed only every five after that.

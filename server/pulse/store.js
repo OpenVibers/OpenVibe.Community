@@ -14,8 +14,27 @@
  */
 const LIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * One spelling for a Pulse time: "YYYY-MM-DD HH:MM:SS" in UTC (sqlTime's). The feed orders by this text, and an ISO
+ * time ("…T…Z") sorts above every same-day time written with a space, so a day's quest badges and Community's own posts
+ * fell below that day's events (11-09). Anything Date can read is accepted; nothing readable keeps what was given.
+ */
+function pulseTime(v) {
+    if (v == null || v === '') return v;
+    const s = String(v);
+    const t = Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s);
+    return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 19) : s;
+}
+
+/** A Pulse time in milliseconds, the space spelling read as UTC (Date.parse would read it as local time). */
+function ms(v) {
+    const s = String(v == null ? '' : v);
+    return Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s);
+}
+
 /** A live.stream.started item: one row per broadcast, not per reconnect. → { item, created } */
 async function upsertLiveItem(db, it) {
+    it = { ...it, occurred_at: pulseTime(it.occurred_at) };
     const find = db.prepare('SELECT * FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?');
     return await db.tx(async () => {
         const key = [it.source_service, it.source_type, String(it.source_id)];
@@ -24,7 +43,7 @@ async function upsertLiveItem(db, it) {
             await db.prepare('UPDATE pulse_items SET title = ?, url = ? WHERE source_service = ? AND source_type = ? AND source_id = ?').run(it.title, it.url, ...key);
             return { item: await find.get(...key), created: false };
         }
-        const at = Date.parse(String(it.occurred_at || ''));
+        const at = ms(it.occurred_at);
         const actor = it.actor_subject || null;
         if (Number.isFinite(at)) {
             // The same person (or channel URL) and title within six hours of this start is the same
@@ -39,7 +58,7 @@ async function upsertLiveItem(db, it) {
                         ORDER BY occurred_at DESC, id DESC`).all(it.title, it.url);
             let prior = null, priorAt = -Infinity;
             for (const c of candidates) {
-                const t = Date.parse(c.occurred_at);
+                const t = ms(c.occurred_at);
                 if (Number.isFinite(t) && t <= at && at - t <= LIVE_WINDOW_MS && t > priorAt) { prior = c; priorAt = t; }
             }
             if (prior) {
@@ -55,6 +74,7 @@ async function upsertLiveItem(db, it) {
 
 /** → { item, created } */
 async function upsertItem(db, it) {
+    it = { ...it, occurred_at: pulseTime(it.occurred_at) };
     const find = db.prepare('SELECT * FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?');
     return await db.tx(async () => {
         const key = [it.source_service, it.source_type, String(it.source_id)];
@@ -128,4 +148,4 @@ async function listItems(db, { origin = null, before = null, limit = 30, followe
     return { rows, hasMore };
 }
 
-module.exports = { upsertItem, upsertLiveItem, removeItem, listItems };
+module.exports = { pulseTime, upsertItem, upsertLiveItem, removeItem, listItems };

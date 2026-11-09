@@ -9,7 +9,7 @@
   "domain": "openvibe.community",
   "contracts": "openvibe-contracts v0.352.0",
   "sdk": "openvibe-sdk v0.94.0",
-  "shared": "openvibe-shared v4.163.0",
+  "shared": "openvibe-shared v4.167.0",
   "capabilities": [
     "community.paste.create",
     "community.paste.write",
