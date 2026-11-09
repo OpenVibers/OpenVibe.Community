@@ -16,6 +16,11 @@ const SITEMAP_TTL_MS = 60 * 60 * 1000;
 const ROBOTS_DISALLOW = ['/api/', '/auth/', '/my', '/new', '/forum/*/new', '/*?sso='];
 const SUMMARY = 'The discussion side of the OpenVibe network: pastes (text and screenshots), forums with threads, and the Pulse feed of what is happening across the network.';
 const CONTENT_LABELS = 'Pastes made by the OpenVibe AI (moments caught from live streams) carry origin "ai" and are labelled as AI-generated; everything else was written by people.';
+// A path with a variable is a route to call, not a page to fetch. It is written as code, never as a Markdown link,
+// so an agent (or a link checker doing a GET) does not ask the server for the literal {slug} address.
+const API_ROUTES = 'API routes with a variable in the path are code, not pages to fetch:\n'
+    + '- `PUT /api/v1/paste/{slug}/share` with {"audience":"people","members":[{"name":"@maticus","role":"viewer"}]}\n'
+    + '- `POST /api/v1/paste/{slug}/share/transfer/{accept,decline,cancel}` with {"transfer_id":"<uuid>"} as the recipient (accept, decline) or the owner (cancel)';
 
 // The forum service (server/forum/service.js), when the app has one: threads join the sitemap,
 // the feeds and /llms-full.txt.
@@ -35,15 +40,12 @@ function llmsSections() {
             ] },
             // The API is a primary entry for an agent, not something to skip.
             { title: 'API', links: [{ title: 'OpenAPI 3.1 document', url: `${u}/openapi.json`, note: 'every /api route, with its fields' }] },
-            // Sharing (design 2026-11-06): one audience and a transfer, from the page or from an agent.
+            // Sharing (design 2026-11-06): one audience and a transfer, from the page or from an agent. The two
+            // routes with a {slug} are code in the llms.txt details, not links (API_ROUTES).
             { title: 'Sharing a paste', links: [
                 { title: 'Who can open a paste', url: `${u}/docs/sharing`, note: 'Everyone, anyone with the link, specific people (@names), only me; transfer ownership to a person' },
-                { title: 'Share one paste with a bearer token', url: `${u}/api/v1/paste/{slug}/share`,
-                    note: `PUT with {"audience":"people","members":[{"name":"@maticus","role":"viewer"}]}; curl -X PUT -H 'Authorization: Bearer $TOKEN' -H 'Content-Type: application/json' ${u}/api/v1/paste/<slug>/share -d '{"audience":"people","members":[{"name":"@maticus"}]}'` },
                 { title: 'Make a paste only two people can open, and offer it, in one call', url: `${u}/api/pastes`,
                     note: `curl -X POST -H 'Authorization: Bearer $TOKEN' -H 'Content-Type: application/json' ${u}/api/pastes -d '{"content":"the notes","audience":"people","members":["@maticus"],"transfer_to":"@maticus","keep_access":false}'` },
-                { title: 'Accept, decline or cancel a transfer', url: `${u}/api/v1/paste/{slug}/share/transfer/{accept,decline,cancel}`,
-                    note: `POST {"transfer_id":"<uuid>"} as the recipient (accept/decline) or the owner (cancel)` },
             ] },
             // Locked pastes (Locker design 2026-11-06): sealed in the browser, never readable by us.
             { title: 'Locked pastes', links: [
@@ -145,4 +147,4 @@ function postFeedItems(space, thread, posts) {
 
 function resetCaches() { _sitemap = null; _sitemapAt = 0; }
 
-module.exports = { ROBOTS_DISALLOW, SUMMARY, CONTENT_LABELS, llmsSections, llmsFullSections, sitemapRows, pasteFeedItems, threadFeedItems, postFeedItems, useForum, resetCaches };
+module.exports = { ROBOTS_DISALLOW, SUMMARY, CONTENT_LABELS, API_ROUTES, llmsSections, llmsFullSections, sitemapRows, pasteFeedItems, threadFeedItems, postFeedItems, useForum, resetCaches };
