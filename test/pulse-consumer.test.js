@@ -103,7 +103,7 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     let shown = await shows(REPEAT);
     assert.strictEqual(shown.length, 1, 'one item, not one per session');
     assert.strictEqual(shown[0].source_id, '9001', 'the item keeps its id (and source)');
-    assert.strictEqual(shown[0].occurred_at, new Date(T + 20 * 60_000).toISOString(), 'its time is the later start');
+    assert.strictEqual(shown[0].occurred_at, require('../server/pulse/store').pulseTime(new Date(T + 20 * 60_000).toISOString()), 'its time is the later start (stored in the one spelling)');
 
     r = await post(liveAt(9003, T + 30 * 60_000, 'New show'));
     assert.strictEqual(r.json.outcome, 'pulse:created');
