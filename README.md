@@ -1,6 +1,10 @@
+![OpenVibe.Community](https://openvibe.community/shared/social/community.jpg)
+
 # OpenVibe.Community
 
-**https://openvibe.community — the people of OpenVibe.**
+**The OpenVibe community home** — [openvibe.community](https://openvibe.community). The roadmap, feedback, pastes and Pulse, from the people who build and use the network.
+
+Part of the [OpenVibe network](https://openvibe.network); [help](https://openvibe.help) and the [developer API](https://openvibe.services).
 
 ## Purpose
 
