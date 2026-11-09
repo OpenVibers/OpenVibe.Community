@@ -120,10 +120,16 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
             body: JSON.stringify({ ref: { service: 'live', type: 'stream', id }, title: `${who} went live: a stream`, url: `https://openvibe.live/@${who}` }) });
         assert.strictEqual((await mk('s1', 'ada')).status, 201);
         assert.strictEqual((await mk('s2', 'bo')).status, 201);
-        const j = (await t.get('/api/v1/feed?kind=live&limit=40')).json();
+        const j = (await t.get('/api/v1/feed?site=live&limit=40')).json();
         const by = Object.fromEntries(j.items.map((x) => [x.url, [x.kind, x.live_now]]));
         assert.deepStrictEqual(by['https://openvibe.live/@ada'], ['live', true], 'ada is on the live list');
         assert.deepStrictEqual(by['https://openvibe.live/@bo'], ['stream', false], 'bo went live earlier: a stream that happened, never LIVE');
+        for (const kind of ['live', 'stream']) {
+            const filtered = (await t.get(`/api/v1/feed?kind=${kind}&limit=40`)).json();
+            assert.ok(filtered.items.length > 0, `${kind} has a card`);
+            assert.ok(filtered.items.every((x) => x.kind === kind), `${kind} filters the displayed kind`);
+        }
+
     });
 
     await check('a kind filters the stream, a site filters the stream, q searches title and text', async () => {
@@ -162,6 +168,39 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(wall.headers.get('access-control-allow-origin'), '*', 'the wall too');
         const write = await t.get('/api/v1/pulse/items', { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' } });
         assert.ok(!write.headers.get('access-control-allow-origin'), 'a write from elsewhere gets no CORS');
+    });
+
+    await check('small pages retain every Pulse item, including the final partially read page', async () => {
+        const all = (await t.get('/api/v1/feed?limit=40')).json().items.filter((x) => x.id.startsWith('p:'));
+        for (const limit of [1, 4]) {
+            const seen = []; let cursor = ''; const cursors = new Set();
+            do {
+                const r = await t.get(`/api/v1/feed?limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+                assert.strictEqual(r.status, 200, r.text);
+                const page = r.json();
+                assert.ok(page.items.length <= limit, 'trending counts toward the page limit');
+                seen.push(...page.items.filter((x) => x.id.startsWith('p:')).map((x) => x.id));
+                cursor = page.next_cursor;
+                if (cursor) { assert.ok(!cursors.has(cursor), 'cursor advances'); cursors.add(cursor); }
+                assert.ok(cursors.size < 40, 'pagination terminates');
+            } while (cursor);
+            assert.deepStrictEqual(seen, all.map((x) => x.id), `limit=${limit}: no missing or repeated rows`);
+        }
+    });
+
+    await check('filtered pages keep scanning after an empty bounded page', async () => {
+        // More than the eight 40-row scans in one call, ahead of the existing Wiki fixture.
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, origin, visibility, occurred_at)
+            SELECT 'feed-scan-test', 'event', n::text, 'Unrelated event', 'https://openvibe.today/', 'system', 'public', ?
+            FROM generate_series(1, 321) n`).run(at(1));
+        try {
+            const first = (await t.get('/api/v1/feed?site=wiki&limit=1')).json();
+            assert.deepStrictEqual(first.items, []);
+            assert.ok(first.next_cursor, 'empty bounded scan is not the end');
+            const next = (await t.get(`/api/v1/feed?site=wiki&limit=1&cursor=${encodeURIComponent(first.next_cursor)}`)).json();
+            assert.strictEqual(next.items.length, 1);
+            assert.strictEqual(next.items[0].site, 'wiki');
+        } finally { await db.prepare("DELETE FROM pulse_items WHERE source_service = 'feed-scan-test'").run(); }
     });
 
     // ── POST /api/v1/posts with pictures: the Feed shows it at once ──

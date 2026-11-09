@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep every Pulse row when paging the Feed, include trending cards within `limit`, and apply live/stream filters after resolving current live status.
+
 - **The wide Feed** (owner, 11-09: "one huge feed of everything, all the data, SDK and API enabled"). Pulse now carries
   every kind the menu's Feed draws — `wiki` (new and updated articles), `quest` (a finished quest's badge), `chat` (a
   busy public room hour), `event` (Today's calendar) and `member` (a day's new Network accounts, "5 people joined

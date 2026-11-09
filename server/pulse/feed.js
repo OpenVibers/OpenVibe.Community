@@ -20,7 +20,7 @@
  */
 const express = require('express');
 const contracts = require('openvibe-contracts');
-const { run, fail, isoTime } = require('../http/v1');
+const { run, fail, isoTime, sqlTime, encodeCursor } = require('../http/v1');
 
 const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'];
 const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
@@ -178,43 +178,52 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         if (following && (!req.viewer || req.viewer.kind !== 'user' || !req.viewer.token)) fail(401, 'feed.sign_in_required', 'Sign in to see the people you follow');
         const followed = following ? new Set(await pulse.followedFor(req.viewer)) : null;
 
+        const live = await liveNow();
+        // Copy cached trending cards before marking them: a channel can go live again during the cache TTL.
+        const extras = !req.query.cursor && !q && !following
+            ? (await trending()).map((c) => ({ ...c })) : [];
+        mark(extras, live);
+        const t = extras.filter((c) => (!kind || c.kind === kind) && (!site || c.site === site));
+        // Reserve at most one in four slots for trending, keeping the requested limit for the whole response.
+        const pulseWant = want - Math.min(t.length, Math.floor(want / 4));
         const picked = [];
         let cursor = req.query.cursor ? String(req.query.cursor) : '';
         let next = null;
         // A kind, site or word filters Pulse's pages until the page is full (at most eight pages read per call).
-        for (let pages = 0; pages < MAX_PAGE_READS && picked.length < want; pages++) {
+        for (let pages = 0; pages < MAX_PAGE_READS && picked.length < pulseWant; pages++) {
             const page = await pulse.list({ after: cursor || undefined, limit: 40 }, req.viewer);
-            for (const i of page.items || []) {
+            const rows = page.items || [];
+            next = page.next_cursor || null;
+            for (let index = 0; index < rows.length; index++) {
+                const i = rows[index];
                 const actorSubject = i.actor_subject || (i.actor && i.actor.subject) || null;
                 if (followed && !(actorSubject && followed.has(actorSubject))) continue;
                 const c = card(i);
+                mark([c], live);
                 if (kind && c.kind !== kind) continue;
                 if (site && c.site !== site) continue;
                 if (q && !(c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q))) continue;
                 picked.push({ row: i, card: c });
-                if (picked.length >= want) break;
+                if (picked.length >= pulseWant) {
+                    // Resume after the last consumed row, including when Pulse's final page was only partly read.
+                    if (index < rows.length - 1) next = encodeCursor([sqlTime(i.occurred_at), i.id]);
+                    break;
+                }
             }
-            next = page.next_cursor || null;
             if (!next) break;
             cursor = next;
         }
         const counts = await countsFor(db, picked.map((p) => p.row));
         for (const p of picked) p.card.counts = counts.get(`${typeOf(p.row)}:${idOf(p.row)}`) || {};
 
-        // The first page carries the network's trending pictures and videos, one after every three items.
-        if (!req.query.cursor && !q && !following) {
-            const t = (await trending()).filter((x) => (!kind || x.kind === kind) && (!site || x.site === site));
-            if (t.length) {
-                const woven = [];
-                let k = 0;
-                picked.forEach((p, n) => { woven.push(p.card); if ((n + 1) % 3 === 0 && k < t.length) woven.push(t[k++]); });
-                while (woven.length < want && k < t.length) woven.push(t[k++]);
-                mark(woven, await liveNow());
-                return { items: woven, next_cursor: next };
-            }
-        }
-        const items = picked.map((p) => p.card);
-        mark(items, await liveNow());
+        // The first page carries trending pictures and videos, one after every three Pulse items.
+        const items = [];
+        let k = 0;
+        picked.forEach((p, n) => {
+            items.push(p.card);
+            if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) items.push(t[k++]);
+        });
+        while (items.length < want && k < t.length) items.push(t[k++]);
         return { items, next_cursor: next };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
