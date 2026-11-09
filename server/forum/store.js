@@ -21,7 +21,7 @@ async function listSpaces(db, visibilities) {
                               (SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id WHERE t.space_id = s.id AND t.deleted_at IS NULL AND p.deleted_at IS NULL) AS post_count,
                               (SELECT MAX(t.last_activity_at) FROM threads t WHERE t.space_id = s.id AND t.deleted_at IS NULL) AS last_activity_at
                        FROM spaces s LEFT JOIN space_groups g ON g.id = s.group_id LEFT JOIN spaces ps ON ps.id = s.parent_id
-                       WHERE s.visibility IN (${visibilities.map(() => '?').join(', ')})
+                       WHERE s.visibility IN (${visibilities.map(() => '?').join(', ')}) AND s.slug <> 'status'
                        ORDER BY g.position IS NULL, g.position, s.position, s.id ASC`).all(...visibilities);
 }
 
