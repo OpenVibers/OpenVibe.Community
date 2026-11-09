@@ -15,7 +15,8 @@ const FRAME = { cards: [
     ] },
     { site: 'news', title: 'Top stories', items: [{ title: 'Not a kind the feed shows', url: 'https://openvibe.news/a', image: { src: 'https://openvibe.media/t/n.webp' } }] },
 ] };
-const feedFetch = async (url) => ({ ok: /\/api\/frame/.test(String(url)), json: async () => FRAME });
+const LIVE = { streams: [{ username: 'ada' }] };
+const feedFetch = async (url) => ({ ok: /\/api\/(frame|streams)/.test(String(url)), json: async () => (/\/api\/streams/.test(String(url)) ? LIVE : FRAME) });
 
 (async () => {
     const t = await boot({ authority: 'community', pasteLimits: { cooldownSeconds: 0 }, appOpts: { feedFetch } });
@@ -51,6 +52,17 @@ const feedFetch = async (url) => ({ ok: /\/api\/frame/.test(String(url)), json: 
         assert.deepStrictEqual(tr.map((x) => x.title), ['A trending video'], 'only the https one with a picture');
         assert.strictEqual(tr[0].kind, 'video');
         assert.strictEqual(tr[0].media.thumb, 'https://openvibe.media/t/1.webp');
+    });
+
+    await check('LIVE only for a channel that is live now', async () => {
+        const mk = (id, who) => t.get('/api/v1/pulse/items', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${svc}`, 'x-ov-subject': alex.subject_id },
+            body: JSON.stringify({ ref: { service: 'live', type: 'stream', id }, title: `${who} went live: a stream`, url: `https://openvibe.live/@${who}` }) });
+        assert.strictEqual((await mk('s1', 'ada')).status, 201);
+        assert.strictEqual((await mk('s2', 'bo')).status, 201);
+        const j = (await t.get('/api/v1/feed?kind=live')).json();
+        const by = Object.fromEntries(j.items.map((x) => [x.url, x.live_now]));
+        assert.strictEqual(by['https://openvibe.live/@ada'], true, 'ada is on the live list');
+        assert.strictEqual(by['https://openvibe.live/@bo'], false, 'bo went live earlier and is not live now');
     });
 
     await check('a kind filters the stream', async () => {

@@ -8,7 +8,7 @@
  *
  *   GET /?kind=live|clip|video|pic|post|meme|game|update&cursor=<opaque>&limit=   anyone (the signed-in person too)
  *   → { items: [{ id, kind, url, title, text, at, site, site_name, actor: { name, avatar } | null,
- *                 media: { thumb, ratio, length } | null, counts: {} }], next_cursor }
+ *                 media: { thumb, ratio, length } | null, counts: {}, live_now? }], next_cursor }   live_now: on Live's live list now
  *
  * Text only (the client draws every field as text); https links only; nothing from Frame without a picture and a title.
  */
@@ -80,12 +80,31 @@ function createTrending({ networkUrl, fetchImpl }) {
     };
 }
 
-function createFeedApi({ pulse, viewers, limits, networkUrl = 'https://openvibe.network', fetchImpl = globalThis.fetch }) {
+/** Who is live on Live right now (GET /api/streams, cached a minute): a "went live" card says LIVE only for them. */
+function createLiveNow({ liveUrl, fetchImpl }) {
+    let cache = new Set(); let at = 0;
+    return async function liveNow() {
+        if (Date.now() - at < 60_000) return cache;
+        at = Date.now();
+        try {
+            const r = await fetchImpl(`${liveUrl}/api/streams`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(3000) });
+            const j = r.ok ? await r.json() : null;
+            cache = new Set(((j && j.streams) || []).map((x) => String((x && x.username) || '').toLowerCase()).filter(Boolean));
+        } catch { /* keep the last answer */ }
+        return cache;
+    };
+}
+const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvibe\.live$/.test(u.hostname) ? (/^\/@?([A-Za-z0-9_.-]{1,40})\/?$/.exec(u.pathname) || [])[1] || '' : ''; } catch { return ''; } };
+
+function createFeedApi({ pulse, viewers, limits, networkUrl = 'https://openvibe.network', liveUrl = 'https://openvibe.live', fetchImpl = globalThis.fetch }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
     router.use(limits.reads('community.feed.read'));
     const trending = createTrending({ networkUrl, fetchImpl });
+    const liveNow = createLiveNow({ liveUrl, fetchImpl });
+    // A "went live" item is live now only while that channel is on Live's live list.
+    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') c.live_now = live.has(channelOf(c.url).toLowerCase()); });
 
     router.get('/', run(async (req) => {
         const kind = KINDS.includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
@@ -109,13 +128,15 @@ function createFeedApi({ pulse, viewers, limits, networkUrl = 'https://openvibe.
                 let k = 0;
                 items.forEach((x, n) => { woven.push(x); if ((n + 1) % 3 === 0 && k < t.length) woven.push(t[k++]); });
                 while (woven.length < want && k < t.length) woven.push(t[k++]);
+                mark(woven, await liveNow());
                 return { items: woven, next_cursor: next };
             }
         }
+        mark(items, await liveNow());
         return { items, next_cursor: next };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card };
+module.exports = { createFeedApi, kindOf, card, channelOf };
