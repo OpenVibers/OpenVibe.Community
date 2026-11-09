@@ -285,6 +285,19 @@ route('post', '/api/v1/comments/threads/{id}/comments', {
     } }),
     responses: { 201: json('The comment', { type: 'object', properties: { comment: ref('Comment') } }), ...errors() },
 });
+route('post', '/api/v1/comments/threads/{id}/section-reactions', {
+    operationId: 'reactToSection', summary: 'Say whether a section of a post was good', tags: ['comments'], security: PERSON, parameters: [path('id', str())],
+    description: 'community.comment.create. One row per person and section: 1 (good), -1 (not good), 0 takes it back. The counts are recomputed from the rows.',
+    requestBody: body({ type: 'object', required: ['section_id', 'value'], properties: {
+        section_id: str({ maxLength: 64 }), value: { type: 'integer', enum: [1, -1, 0] },
+    } }),
+    responses: { 200: json('The section\'s counts', { type: 'object', properties: { section_id: str(), value: { type: 'integer' }, upvotes: { type: 'integer' }, downvotes: { type: 'integer' } } }), ...errors() },
+});
+route('get', '/api/v1/comments/threads/{id}/section-reactions', {
+    operationId: 'sectionReactions', summary: 'The counts of every section of a post, and mine', tags: ['comments'], parameters: [path('id', str())],
+    description: 'community.comment.read. Anyone may read the counts; a signed-in reader also gets their own reaction per section.',
+    responses: { 200: json('Counts by section', { type: 'object' }), ...errors() },
+});
 route('put', '/api/v1/comments/threads/{id}/visibility', {
     operationId: 'setThreadVisibility', summary: 'Hide or lock a thread (moderators)', tags: ['comments'], security: PERSON, parameters: [path('id', str())],
     description: 'community.comment.moderate.',
