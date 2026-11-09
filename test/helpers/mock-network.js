@@ -24,6 +24,7 @@ function start({ clientSecret = 'shh' } = {}) {
     const keyCalls = []; // GET /api/v1/people/:subject/keys: who asked, with which token (the Locker's directory)
     const lockerKeys = {}; // subject id → { subject, ecdh_public, signing_public, fingerprint }
     const issued = [];      // every client-credentials access token handed out (security-secrets.test.js looks for them)
+    const follows = new Map(); // follower subject → [{ target_type, target_id }]
     let issuer = 'http://network.test';
 
     // Network accounts: { network_user_id, subject_id, username, display_name, avatar_url }, plus
@@ -66,6 +67,19 @@ function start({ clientSecret = 'shh' } = {}) {
                 return json(200, { access_token: sign(user), refresh_token: 'refresh-2', token_type: 'Bearer', expires_in: 86400, user, preferences: { theme: 'vibe' } });
             }
             if (req.url === '/oauth/revoke') return json(200, { ok: true });
+            // GET /api/v1/me/follows?type=&cursor=&limit= — what the caller follows (the Feed's following filter).
+            if (req.url.startsWith('/api/v1/me/follows') && req.method === 'GET') {
+                let sub = null;
+                try { sub = jwt.verify(String(req.headers.authorization || '').slice(7), publicPem, { algorithms: ['RS256'], issuer }).sub; } catch { /* anonymous */ }
+                if (!sub) return json(401, { code: 'auth.required', error: 'sign in' });
+                const q = new URL(req.url, 'http://x').searchParams;
+                const type = q.get('type');
+                // A person token may name its Network id in `sub` (a legacy id): follow the subject it resolves to.
+                const person = directory.users.find((u) => String(u.network_user_id) === String(sub) || u.subject_id === String(sub));
+                const items = (follows.get(person ? person.subject_id : String(sub)) || []).filter((f) => !type || f.target_type === type)
+                    .map((f) => ({ ...f, active: true, created_at: new Date().toISOString() }));
+                return json(200, { items, next_cursor: null });
+            }
             // The Locker key directory: a PERSON route (Network server/locker/keys.js), never a service token.
             const keyPath = /^\/api\/v1\/people\/([^/]+)\/keys$/.exec(req.url);
             if (keyPath && req.method === 'GET') {
@@ -139,6 +153,11 @@ function start({ clientSecret = 'shh' } = {}) {
         issuer = url;
         resolve({
             url, grants, issued, resolveCalls, pushes, keyCalls, directory, addUser, sign, signService, publicPem,
+            addFollow: (follower, targetType, targetId) => {
+                const list = follows.get(follower) || [];
+                if (!list.some((f) => f.target_type === targetType && f.target_id === targetId)) list.push({ target_type: targetType, target_id: targetId });
+                follows.set(follower, list);
+            },
             setKeys: (subjectId, keys) => { lockerKeys[subjectId] = keys; },
             close: () => new Promise((r) => server.close(r)),
         });

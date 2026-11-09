@@ -135,6 +135,42 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     const feed = await store.listItems(db, { limit: 100 });
     assert.deepStrictEqual(feed.rows.filter((x) => x.title === PRE).map((x) => x.source_id), ['pre3', 'pre2'], 'one line per six-hour window, at the newest time');
     assert.strictEqual((await db.prepare('SELECT COUNT(*)::int AS n FROM pulse_items WHERE title = ?').get(PRE)).n, 3, 'the rows themselves stay');
+
+    // Wiki: a published page, then an edit (wiki.page.updated) — one item that moves to the newer time.
+    const wiki = (type, over = {}) => evt({ event_type: type, source: 'wiki', subject: { type: 'page', id: 'pg_3' },
+        payload: { canonical_url: 'https://openvibe.wiki/w/help/edited', publication_state: 'published', visibility: 'public', space: 'help', slug: 'edited', indexability: { decision: 'index', reasons: [] } }, ...over });
+    r = await post(wiki('wiki.page.published'));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    const oldAt = (await db.prepare("SELECT occurred_at FROM pulse_items WHERE source_service = 'wiki' AND source_id = 'pg_3'").get()).occurred_at;
+    const later = new Date(Date.now() + 1000).toISOString();
+    r = await post(wiki('wiki.page.updated', { timestamp: later }));
+    assert.strictEqual(r.json.outcome, 'pulse:updated');
+    const wikiRows = await db.prepare("SELECT * FROM pulse_items WHERE source_service = 'wiki' AND source_id = 'pg_3'").all();
+    assert.strictEqual(wikiRows.length, 1, 'one row per page');
+    assert.notStrictEqual(wikiRows[0].occurred_at, oldAt, 'an edit moves it up');
+    assert.strictEqual(wikiRows[0].source_type, 'page');
+
+    // Chat: a public room's fifth message in an hour becomes one summary card, refreshed only every five after that.
+    const chat = (n) => evt({ event_type: 'chat.room.message.created', source: 'chat', visibility: 'public', subject: { type: 'chat_room_message', id: String(n) }, actor: { type: 'user', id: USR },
+        payload: { message_id: n, room: { slug: 'general', name: 'General' }, user_subject: USR, username: 'goosely', display_name: 'Goosely', text: `hello ${n}`, created_at: '2026-06-03T10:05:00.000Z' } });
+    for (let n = 1; n <= 4; n++) assert.strictEqual((await post(chat(n))).json.outcome, 'chat:counted');
+    assert.strictEqual((await db.prepare("SELECT COUNT(*)::int AS n FROM pulse_items WHERE source_service = 'chat'").get()).n, 0);
+    const fifth = chat(5);
+    r = await post(fifth);
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    const created = (await db.prepare("SELECT * FROM pulse_items WHERE source_service = 'chat'").all())[0];
+    assert.strictEqual(created.title, '#general: 5 messages this hour');
+    assert.strictEqual(created.url, 'https://openvibe.chat/rooms/general');
+    assert.strictEqual(created.origin, 'system');
+    assert.strictEqual(created.actor_subject, null);
+    r = await post(fifth);
+    assert.strictEqual(r.json.duplicate, true, 'a redelivery is not a sixth message');
+    await post(chat(6));
+    assert.strictEqual((await db.prepare("SELECT COUNT(*)::int AS n FROM pulse_items WHERE source_service = 'chat'").get()).n, 1);
+    assert.strictEqual((await db.prepare("SELECT title FROM pulse_items WHERE source_service = 'chat'").get()).title, '#general: 5 messages this hour', 'no write every message');
+    await post(chat(7)); await post(chat(8)); await post(chat(9)); await post(chat(10));
+    assert.strictEqual((await db.prepare("SELECT title FROM pulse_items WHERE source_service = 'chat'").get()).title, '#general: 10 messages this hour');
+
     srv.close();
     console.log('pulse consumer: all checks passed');
     process.exit(0);
