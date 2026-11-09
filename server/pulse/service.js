@@ -229,7 +229,10 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             const projections = await authors.projectionsFor(rows.map((r) => r.actor_subject));
             const last = rows[rows.length - 1];
             return { items: rows.map((r) => shape(r, projections)), next_cursor: hasMore && last
-                ? encodeCursor(mine ? [hour, last.feed_priority, last.occurred_at, last.id] : [last.occurred_at, last.id]) : null };
+                ? encodeCursor(mine ? [hour, last.feed_priority, last.occurred_at, last.id] : [last.occurred_at, last.id]) : null,
+                // What this reader may do here: the menu's Feed shows its composer only when this says so (openvibe-shared
+                // ov-home.js), so it never offers a post the status route would refuse.
+                ...(viewer && viewer.kind === 'user' && viewer.subject ? { viewer: { can_post: true } } : {}) };
         },
     };
 }

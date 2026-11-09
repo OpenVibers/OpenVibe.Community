@@ -84,6 +84,8 @@ const { boot, check, done } = require('./helpers/app');
         const viewer = { kind: 'user', subject: person.subject_id, token: 'user-token' };
         const first = await pulse.list({ for: 'me', limit: 1 }, viewer);
         assert.equal(first.items[0].source.id, 'older-followed');
+        assert.deepEqual(first.viewer, { can_post: true }, 'a signed-in reader is told they can post (the menu shows its composer)');
+        assert.equal((await pulse.list({ limit: 1 }, null)).viewer, undefined, 'a guest is not');
         const second = await pulse.list({ for: 'me', limit: 1, cursor: first.next_cursor }, viewer);
         assert.notEqual(second.items[0].id, first.items[0].id);
         await assert.rejects(pulse.list({ for: 'me', cursor: Buffer.from(JSON.stringify(['bad', 1, 'time', 2])).toString('base64url') }, viewer));
