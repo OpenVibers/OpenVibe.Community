@@ -58,10 +58,12 @@ async function upsertItem(db, it) {
     const find = db.prepare('SELECT * FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?');
     return await db.tx(async () => {
         const key = [it.source_service, it.source_type, String(it.source_id)];
-        if (await find.get(...key)) {
+        const had = await find.get(...key);
+        if (had) {
             // An update refreshes the card's words and picture. Only a source that says `touch` may move its
             // time forward (a Wiki page edited again, a busy chat hour still filling): provenance is otherwise
-            // what the first record said.
+            // what the first record said. A source that sends no text (undefined) keeps the text already there.
+            if (it.text === undefined) it = { ...it, text: had.text };
             if (it.touch) {
                 await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, app_name = ?, text = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
                     .run(it.title, it.url, it.picture_url || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), it.occurred_at, ...key);

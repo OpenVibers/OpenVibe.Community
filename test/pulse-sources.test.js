@@ -74,5 +74,16 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.strictEqual(calls.length, before, 'reading the Feed made no external call');
     });
 
+    await check('a re-record that sends no text keeps the card\'s text; one that sends text replaces it', async () => {
+        const store = require('../server/pulse/store');
+        const key = { source_service: 'today', source_type: 'event', source_id: 'tev_keep', url: 'https://openvibe.today/e/tev_keep', origin: 'system', occurred_at: '2026-11-09T10:00:00Z' };
+        await store.upsertItem(t.app.locals.db, { ...key, title: 'Event: Keep', text: 'Bring snacks' });
+        let r = await store.upsertItem(t.app.locals.db, { ...key, title: 'Event: Keep (moved)' });
+        assert.strictEqual(r.item.text, 'Bring snacks');
+        assert.strictEqual(r.item.title, 'Event: Keep (moved)');
+        r = await store.upsertItem(t.app.locals.db, { ...key, title: 'Event: Keep', text: '' });
+        assert.strictEqual(r.item.text || '', '');
+    });
+
     await done(t);
 })();
