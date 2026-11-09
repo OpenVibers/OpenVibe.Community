@@ -316,6 +316,18 @@ route('post', '/api/v1/comments/{commentId}/votes', {
     responses: { 200: json('The comment and its score'), ...errors() },
 });
 
+// ── /api/v1/feed — the menu's Feed on every site (server/pulse/feed.js) ──────────────────────
+route('get', '/api/v1/feed', {
+    operationId: 'listFeed', summary: 'One stream of everything public on the network, as cards by kind', tags: ['pulse'], security: ANONYMOUS,
+    description: 'Pulse items as cards (live, clip, video, pic, post, meme, game, update), newest first, with the network\'s trending pictures and videos woven into the first page.',
+    parameters: [
+        query('kind', { type: 'string', enum: ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update'] }),
+        query('cursor', str(), 'The next_cursor from the previous page'), query('limit', { type: 'integer', minimum: 1, maximum: 40 })],
+    responses: { 200: json('Cards and the cursor for the next page', { type: 'object', properties: { items: arrayOf({ type: 'object', properties: {
+        id: str(), kind: str(), url: str(), title: str(), text: str(), at: nullable('string'), site: str(), site_name: str(), label: str(),
+        actor: { type: ['object', 'null'] }, media: { type: ['object', 'null'] }, counts: { type: 'object' } } }), next_cursor: nullable('string') } }), ...errors([429]) },
+});
+
 // ── /api/v1/pulse — the network's public activity (server/pulse/api.js) ──────────────────────
 route('get', '/api/v1/pulse', {
     operationId: 'listPulse', summary: 'What the network is doing; followed people first in the last hour for me', tags: ['pulse'], security: ANONYMOUS, parameters: [

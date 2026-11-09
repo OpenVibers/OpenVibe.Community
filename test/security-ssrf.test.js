@@ -35,7 +35,7 @@ const INVENTORY = {
     'server/pastes/review.js': [2, 'OpenVibe.Vision /api/v1/review (OV_VISION_URL, fixed path) with a service token; only the paste\'s Media URL is sent'],
     'server/observability.js': [1, '/api/ready probes of the configured Media health URL'],
     'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
-    'server/pulse/feed.js': [1, 'Network /api/frame?v=2 (config.networkUrl, a fixed path) for the trending cards, cached five minutes'],
+    'server/pulse/feed.js': [2, 'Network /api/frame at networkUrl (trending cards) and Live /api/streams at liveUrl (who is live now); no user input in either URL'],
     'server/pulse/service.js': [1, 'Network /api/v1/me/follows at the configured networkInternalUrl, with the viewer token and a bounded cursor'],
     'server/pulse/sources.js': [2, 'Today /api/v1/events, Network /api/v1/stats and Quest /api/v1/profiles/<usr_>/badges at the configured internal base URLs (OV_TODAY_INTERNAL_URL, OV_NETWORK_INTERNAL_URL, OV_QUEST_INTERNAL_URL), fixed paths; the subject must be usr_'],
     'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],

@@ -10,11 +10,12 @@
  *   GET /?kind=live|clip|video|pic|post|meme|game|update|wiki|quest|chat|event|member
  *        &site=<source service>&q=<title or text>&following=1&cursor=<opaque>&limit=
  *   → { items: [{ id, kind, url, title, text, at, site, site_name, actor: { name, avatar } | null,
- *                 media: { thumb, ratio, length } | null, counts: { views?, likes?, comments? } }], next_cursor }
+ *                 media: { thumb, ratio, length } | null, counts: { views?, likes?, comments? }, live_now? }], next_cursor }
  *
  * Text only (the client draws every field as text); https links only; nothing from Frame without a picture and a title.
  * following=1 is the signed-in person's Network follows; q searches the card's title and text; counts are Community's
- * own views, likes and comments where it knows them, and {} elsewhere. Never one service call per request: the other
+ * own views, likes and comments where it knows them, and {} elsewhere. A live card carries live_now: whether that channel
+ * is on Live's live list now. Never one service call per request: the other
  * sites' activity is already in Pulse (server/pulse/sources.js and server/pulse/consumer.js).
  */
 const express = require('express');
@@ -142,12 +143,31 @@ function createTrending({ networkUrl, fetchImpl }) {
     };
 }
 
-function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openvibe.network', fetchImpl = globalThis.fetch }) {
+/** Who is live on Live right now (GET /api/streams, cached a minute): a "went live" card says LIVE only for them. */
+function createLiveNow({ liveUrl, fetchImpl }) {
+    let cache = new Set(); let at = 0;
+    return async function liveNow() {
+        if (Date.now() - at < 60_000) return cache;
+        at = Date.now();
+        try {
+            const r = await fetchImpl(`${liveUrl}/api/streams`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(3000) });
+            const j = r.ok ? await r.json() : null;
+            cache = new Set(((j && j.streams) || []).map((x) => String((x && x.username) || '').toLowerCase()).filter(Boolean));
+        } catch { /* keep the last answer */ }
+        return cache;
+    };
+}
+const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvibe\.live$/.test(u.hostname) ? (/^\/@?([A-Za-z0-9_.-]{1,40})\/?$/.exec(u.pathname) || [])[1] || '' : ''; } catch { return ''; } };
+
+function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openvibe.network', liveUrl = 'https://openvibe.live', fetchImpl = globalThis.fetch }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
     router.use(limits.reads('community.feed.read'));
     const trending = createTrending({ networkUrl, fetchImpl });
+    const liveNow = createLiveNow({ liveUrl, fetchImpl });
+    // A "went live" item is live now only while that channel is on Live's live list.
+    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') c.live_now = live.has(channelOf(c.url).toLowerCase()); });
 
     router.get('/', run(async (req) => {
         const kind = KINDS.includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
@@ -189,13 +209,16 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
                 let k = 0;
                 picked.forEach((p, n) => { woven.push(p.card); if ((n + 1) % 3 === 0 && k < t.length) woven.push(t[k++]); });
                 while (woven.length < want && k < t.length) woven.push(t[k++]);
+                mark(woven, await liveNow());
                 return { items: woven, next_cursor: next };
             }
         }
-        return { items: picked.map((p) => p.card), next_cursor: next };
+        const items = picked.map((p) => p.card);
+        mark(items, await liveNow());
+        return { items, next_cursor: next };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf };
