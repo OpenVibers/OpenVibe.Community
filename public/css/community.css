@@ -128,7 +128,8 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .hljs-strong { font-weight: 700; }
 
 /* Forms */
-.paste-form { display: flex; flex-direction: column; gap: 14px; max-width: 900px; }
+.paste-form { display: flex; flex-direction: column; gap: 14px; max-width: 860px; }
+.paste-form [hidden] { display: none !important; }
 .field { display: flex; flex-direction: column; gap: 5px; flex: 1; }
 .field > span { font-size: .8rem; color: var(--text-secondary); font-weight: 600; }
 .field input[type="text"], .field select, .field textarea, .field input[type="file"] { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; font: inherit; width: 100%; }
@@ -144,6 +145,61 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .form-status.error { color: var(--danger-text, var(--danger)); }
 .alert { border-radius: 9px; padding: 10px 14px; border: 1px solid var(--border); background: var(--bg-card); }
 .alert-error { border-color: var(--danger); color: var(--danger-text, var(--danger)); }
+
+/* ── New paste (the owner, 11-09: minimalist, modern, app-like): a titled code box, one row of choices, the
+   options as switch rows, and a Create button pinned above the app bar on a phone. ── */
+.pf-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 6px; }
+.pf-head h1 { margin: 0; }
+.pf-who { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; box-sizing: border-box; padding: 4px 14px 4px 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text-primary); text-decoration: none; }
+.pf-who:hover { border-color: var(--accent); text-decoration: none; }
+.pf-who .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: none; }
+.pf-who-text { display: grid; gap: 0; line-height: 1.2; }
+.pf-who-text small { color: var(--text-secondary); font-size: .7rem; font-weight: 600; }
+.pf-who-text strong { font-size: .88rem; }
+.pf-anon { margin: 0; }
+.pf-modes { align-self: flex-start; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); }
+.pf-modes .tab { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 6px 14px; border: 0; border-radius: 999px; }
+.pf-modes .tab .ovk-i { width: 15px; height: 15px; }
+.pf-modes .tab.active { color: var(--text-primary); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.pf-title input { font-size: 1.05rem; font-weight: 650; padding: 11px 14px; }
+.pf-row { display: flex; align-items: flex-start; gap: 16px; }
+.pf-lang { flex: 0 1 260px; }
+.pf-vis { flex: 1 1 340px; min-width: 0; }
+.pf-vis .pf-label { font-size: .8rem; color: var(--text-secondary); font-weight: 600; }
+.pf-vis-mean { margin: 6px 0 0; min-height: 1.2em; color: var(--text-secondary); font-size: .8rem; }
+.pf-vis-mean > span { display: none; }
+.pf-vis:has(input[value="public"]:checked) [data-vis-for="public"],
+.pf-vis:has(input[value="unlisted"]:checked) [data-vis-for="unlisted"],
+.pf-vis:has(input[value="private"]:checked) [data-vis-for="private"] { display: block; }
+.pf-audience { flex: 1 1 340px; }
+.pf-pane { display: grid; gap: 10px; }
+.codebox { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.codebox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .16); }
+.codebox.is-drop { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .22); }
+.codebox-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 38px; padding: 4px 10px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+.codebox-drop { color: var(--text-secondary); font-size: .76rem; }
+.pf-file { background: none; border: 0; padding: 0; color: var(--accent-light); font: inherit; text-decoration: underline; cursor: pointer; }
+.codebox-lang { flex: none; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary); font-size: .7rem; font-weight: 600; line-height: 1.4; letter-spacing: .02em; }
+.codebox-body { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+.codebox-gutter { overflow: hidden; padding: 14px 9px 14px 12px; border-right: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); font: 13px/1.55 var(--mono); text-align: right; user-select: none; }
+.codebox-gutter > div { white-space: pre; }
+.codebox textarea { display: block; width: 100%; margin: 0; padding: 14px 16px; border: 0; border-radius: 0; background: transparent; color: var(--text-primary); font: 13px/1.55 var(--mono); min-height: 0; resize: none; overflow: auto; tab-size: 4; }
+.codebox textarea:focus { outline: 0; box-shadow: none; }
+.pf-options { margin: 4px 0 0; }
+.pf-options[hidden], .pf-options [hidden] { display: none !important; }
+.pf-options .lock-it-body { margin: 0 14px 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); }
+.pf-actions { display: grid; gap: 8px; }
+.pf-create { justify-self: start; }
+.pf-actions .form-status:empty { min-height: 0; }
+.pf-rules { margin: 0; color: var(--text-secondary); font-size: .76rem; }
+.pf-rules a { color: var(--text-secondary); }
+@media (max-width: 700px) {
+  .pf-row { flex-direction: column; gap: 12px; }
+  .pf-lang, .pf-vis, .pf-audience { flex: 1 1 auto; width: 100%; }
+  .pf-create { width: 100%; justify-self: stretch; }
+  .pf-actions { position: sticky; bottom: calc(var(--ovnav-appbar-h, 0px) + 8px); z-index: 30; margin-top: 2px; padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--bg-primary); border-top: 1px solid var(--border); }
+  html.ov-kb-open .pf-actions { position: static; padding-bottom: 0; background: none; border-top: 0; }
+}
 
 /* Spaces, threads, posts, Pulse */
 .space-list, .thread-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -458,17 +514,10 @@ button.rx:hover { border-color: var(--accent); }
 .thread-head .ovk-labels { margin: 2px 0 6px; }
 
 /* ── Locked pastes (Locker, design 2026-11-06): the create form's Lock it, the locked card, the opened text ── */
-.lock-it { margin: 14px 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input); display: grid; gap: 10px; }
-.lock-it[hidden], .lock-it [hidden] { display: none !important; }   /* the section and its choices are JS-only */
 .paste-form .field[hidden] { display: none !important; }
 .lock-audience { margin: 0; padding: 9px 12px; border: 1px dashed var(--border); border-radius: 9px; color: var(--text-primary); background: none; font-size: .95rem; }
 .lock-audience[hidden] { display: none !important; }
-.lock-it-switch { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 4px 8px; font-size: .95rem; }
-.lock-it-switch .muted { grid-column: 1 / -1; }
-.lock-it-switch strong { white-space: nowrap; }
-.lock-it-switch strong { color: var(--text-primary); }
-.lock-it-switch i { color: var(--accent-light); }
-.lock-it-body { display: grid; gap: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
+.lock-it-body { display: grid; gap: 12px; }
 .lock-it-body p { margin: 0; }
 .lock-kinds { display: grid; gap: 8px; }
 .lock-kind { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }

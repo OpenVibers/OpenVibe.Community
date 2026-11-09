@@ -601,71 +601,99 @@ window.addEventListener('DOMContentLoaded', function () {
 function newPage({ user, values = {}, error = null, fork = null }) {
     const v = { title: '', language: 'auto', content: '', visibility: 'public', ...values };
     if (fork) { v.title = v.title || `Fork of ${fork.title || 'paste'}`; v.content = v.content || fork.content || ''; v.language = fork.language || v.language; }
+    // Signed out, Private and Lock it do not exist; a failed post can still come back asking for one.
+    const visibility = !user && v.visibility === 'private' ? 'public' : v.visibility;
     const langOpts = LANGUAGES.map(([id, label]) => `<option value="${id}"${id === v.language ? ' selected' : ''}>${esc(label)}</option>`).join('');
+    const visItems = [
+        { value: 'public', label: 'Public', icon: 'globe' },
+        { value: 'unlisted', label: 'Unlisted', icon: 'link' },
+        ...(user ? [{ value: 'private', label: 'Private', icon: 'lock' }] : []),
+    ];
+    const visMeanings = [
+        ['public', 'Listed on Pastes and in search — anyone can find it.'],
+        ['unlisted', 'Only people with the link can open it.'],
+        ...(user ? [['private', 'Only you can open it.']] : []),
+    ];
+    const lines = Math.max(12, String(v.content || '').split('\n').length);
+    const gutter = Array.from({ length: lines }, (_, i) => i + 1).join('\n');
+    const whoPic = user ? avatarUrl(user, 72) : null;
+    const who = user
+        ? `<a class="pf-who" href="/my" title="My pastes">${whoPic ? `<img class="avatar" src="${esc(whoPic)}" alt="" width="28" height="28" loading="lazy">` : ''}<span class="pf-who-text"><small>Posting as</small><strong>${esc(user.display_name || user.username)}</strong></span></a>`
+        : `<p class="pf-anon muted small">Posting anonymously. <a href="/auth/login?next=%2Fnew">Sign in</a> to keep your pastes together.</p>`;
+    const lock = user ? `<div data-lock-it hidden>
+      ${kit.switchRow({ name: 'lock_it', icon: 'lock', title: 'Lock it', line: 'OpenVibe can’t read what’s inside' })}
+      <div class="lock-it-body" data-lock-body hidden>
+        <p class="muted small">Choose how people open it. Your browser seals the content before it leaves this page; the key never reaches OpenVibe.</p>
+        <div class="lock-kinds" role="radiogroup" aria-label="How to lock it">
+          <label class="lock-kind"><input type="radio" name="lock_kind" value="people" checked>
+            <span><strong>For the people on the list</strong><small>Only you and the people you name can open it, each with their own keys. It switches the audience to Specific people.</small></span></label>
+          <label class="lock-kind"><input type="radio" name="lock_kind" value="password">
+            <span><strong>With a password</strong><small>Anyone you give the password to can open it. If the password is lost, nobody can open it, including OpenVibe.</small></span></label>
+          <label class="lock-kind"><input type="radio" name="lock_kind" value="link">
+            <span><strong>With the link</strong><small>The key travels in the link, after the #, which browsers never send to OpenVibe. Anyone with the whole link can open it.</small></span></label>
+        </div>
+        <div data-lock-for="people">
+          <label class="field"><span>People</span>
+            <input type="text" name="lock_people" placeholder="@maticus, @quinn" autocomplete="off" spellcheck="false">
+          </label>
+          <p class="muted small">Their OpenVibe names. Each needs a Locker: they make one the first time they open a locked item.</p>
+        </div>
+        <label class="field" data-lock-for="password" hidden><span>Password</span>
+          <input type="password" name="lock_password" autocomplete="new-password" spellcheck="false">
+        </label>
+        <label class="check"><input type="checkbox" name="show_title" value="1"> Show the title to people who can open it</label>
+        <p class="muted small">Lose the password, or your locker passphrase and recovery kit, and nobody can open this, including OpenVibe. There is no reset.</p>
+      </div>
+    </div>` : '';
     const body = `
-<header class="page-head">
+<header class="page-head pf-head">
   <h1>New paste</h1>
-  <p class="muted">${user ? `Posting as <strong>${esc(user.display_name || user.username)}</strong> — your pastes collect under <a href="/my">My pastes</a>.` : `Posting anonymously. <a href="/auth/login?next=%2Fnew">Sign in</a> to keep your pastes together and delete them later.`}</p>
+  ${who}
 </header>
 ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
 <form class="paste-form" method="post" action="/new" data-new-paste data-lock-network="${esc(config.networkUrl)}"${user ? ` data-subject="${esc(user.subject_id || '')}"` : ''}>
-  <div class="tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="text" role="tab" aria-selected="true"><i class="fa-solid fa-code" aria-hidden="true"></i> Text or code</button>
-    <button type="button" class="tab" data-tab="image" role="tab" aria-selected="false" hidden><i class="fa-solid fa-image" aria-hidden="true"></i> Screenshot</button>
+  <div class="tabs pf-modes" role="tablist" aria-label="What to paste">
+    <button type="button" class="tab active" data-tab="text" role="tab" aria-selected="true">${kit.icon('code')} Text or code</button>
+    <button type="button" class="tab" data-tab="image" role="tab" aria-selected="false" hidden>${kit.icon('image')} Screenshot</button>
   </div>
-  <label class="field"><span>Title</span><input type="text" name="title" maxlength="200" value="${esc(v.title)}" placeholder="Untitled"></label>
-  <div class="field-row">
-    <label class="field"><span>Language</span><select name="language">${langOpts}</select></label>
-    <label class="field" data-vis-field><span>Visibility</span><select name="visibility">
-      <option value="public"${v.visibility === 'public' ? ' selected' : ''}>Public — listed and searchable</option>
-      <option value="unlisted"${v.visibility === 'unlisted' ? ' selected' : ''}>Unlisted — link only</option>
-      ${user ? `<option value="private"${v.visibility === 'private' ? ' selected' : ''}>Private — only you</option>` : ''}
-    </select></label>
-    ${user ? `<div class="field" data-lock-audience hidden><span>Who can open it</span><p class="lock-audience" data-lock-audience-text></p></div>` : ''}
+  <label class="field pf-title"><span>Title</span><input type="text" name="title" maxlength="200" value="${esc(v.title)}" placeholder="Untitled" autocomplete="off"></label>
+  <div class="pf-row">
+    <label class="field pf-lang"><span>Language</span><select name="language" data-lang-select>${langOpts}</select></label>
+    <div class="field pf-vis" data-vis-field>
+      <span class="pf-label" id="pf-vis-label">Visibility</span>
+      ${kit.segmented({ name: 'visibility', value: visibility, ariaLabel: 'Visibility', items: visItems })}
+      <p class="pf-vis-mean" data-vis-meaning>${visMeanings.map(([id, text]) => `<span data-vis-for="${id}">${esc(text)}</span>`).join('')}</p>
+    </div>
+    ${user ? `<div class="field pf-audience" data-lock-audience hidden><span>Who can open it</span><p class="lock-audience" data-lock-audience-text></p></div>` : ''}
   </div>
-  <div data-pane="text">
-    <label class="field"><span>Content</span><textarea name="content" rows="18" spellcheck="false" placeholder="Paste it here…" required>${esc(v.content)}</textarea></label>
+  <div data-pane="text" class="pf-pane">
+    <div class="codebox" data-codebox>
+      <div class="codebox-bar">
+        <span class="codebox-drop">Drop a file, or <button type="button" class="pf-file" data-code-file>choose one</button></span>
+        <span class="codebox-lang" data-lang-chip>${esc(languageLabel(v.language))}</span>
+      </div>
+      <div class="codebox-body">
+        <div class="codebox-gutter" aria-hidden="true"><div data-gutter>${gutter}</div></div>
+        <textarea name="content" rows="12" wrap="off" spellcheck="false" placeholder="Paste it here…" required aria-label="Content">${esc(v.content)}</textarea>
+      </div>
+      <input type="file" data-code-file-input accept="text/*,image/*,.md,.json,.js,.ts,.jsx,.tsx,.py,.sh,.yml,.yaml,.toml,.ini,.sql,.css,.html,.xml,.diff,.patch,.log,.txt" hidden>
+    </div>
   </div>
   <div data-pane="image" hidden>
     <label class="field"><span>Image (PNG, JPEG, WebP or GIF)</span><input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp,image/gif" disabled></label>
     <label class="field"><span>Description</span><textarea name="description" rows="3" maxlength="2000" placeholder="What is this a picture of?"></textarea></label>
   </div>
-  <div class="field-row options">
-    <label class="check"><input type="checkbox" name="burn_after_read" value="1"${v.burn_after_read ? ' checked' : ''}> Burn after reading</label>
-    <label class="check"><input type="checkbox" name="is_nsfw" value="1"${v.is_nsfw ? ' checked' : ''}> Mark as NSFW</label>
+  <section class="ovk-section pf-options" aria-labelledby="pf-options-h">
+    <h2 id="pf-options-h">Options</h2>
+    ${kit.switchRow({ name: 'burn_after_read', icon: 'flame', title: 'Burn after reading', line: 'Gone once it is opened', checked: !!v.burn_after_read })}
+    ${kit.switchRow({ name: 'is_nsfw', icon: 'eye-off', title: 'Mark as NSFW', line: 'Blurred until it is opened', checked: !!v.is_nsfw })}
+    ${lock}
+  </section>
+  <div class="pf-actions">
+    <p class="form-status" data-status aria-live="polite"></p>
+    <button class="btn btn-primary pf-create" type="submit">${kit.icon('send')} Create paste</button>
+    <p class="pf-rules">By posting you agree to the <a href="${esc(config.liveUrl)}/tos">rules</a>. Say it, own it.</p>
   </div>
-  ${user ? `<section class="lock-it" data-lock-it hidden>
-    <label class="check lock-it-switch"><input type="checkbox" name="lock_it" value="1" data-lock-switch>
-      <i class="fa-solid fa-lock" aria-hidden="true"></i> <strong>Lock it</strong>
-      <span class="muted small">OpenVibe can’t read what’s inside.</span></label>
-    <div class="lock-it-body" data-lock-body hidden>
-      <p class="muted small">Choose how people open it. Your browser seals the content before it leaves this page; the key never reaches OpenVibe.</p>
-      <div class="lock-kinds" role="radiogroup" aria-label="How to lock it">
-        <label class="lock-kind"><input type="radio" name="lock_kind" value="people" checked>
-          <span><strong>For the people on the list</strong><small>Only you and the people you name can open it, each with their own keys. It switches the audience to Specific people.</small></span></label>
-        <label class="lock-kind"><input type="radio" name="lock_kind" value="password">
-          <span><strong>With a password</strong><small>Anyone you give the password to can open it. If the password is lost, nobody can open it, including OpenVibe.</small></span></label>
-        <label class="lock-kind"><input type="radio" name="lock_kind" value="link">
-          <span><strong>With the link</strong><small>The key travels in the link, after the #, which browsers never send to OpenVibe. Anyone with the whole link can open it.</small></span></label>
-      </div>
-      <div data-lock-for="people">
-        <label class="field"><span>People</span>
-          <input type="text" name="lock_people" placeholder="@maticus, @quinn" autocomplete="off" spellcheck="false">
-        </label>
-        <p class="muted small">Their OpenVibe names. Each needs a Locker: they make one the first time they open a locked item.</p>
-      </div>
-      <label class="field" data-lock-for="password" hidden><span>Password</span>
-        <input type="password" name="lock_password" autocomplete="new-password" spellcheck="false">
-      </label>
-      <label class="check"><input type="checkbox" name="show_title" value="1"> Show the title to people who can open it</label>
-      <p class="muted small">Lose the password, or your locker passphrase and recovery kit, and nobody can open this, including OpenVibe. There is no reset.</p>
-    </div>
-  </section>` : ''}
-  <div class="form-actions">
-    <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Create paste</button>
-    <span class="muted small">By posting you agree to the <a href="${esc(config.liveUrl)}/tos">rules</a>. Say it, own it.</span>
-  </div>
-  <p class="form-status" data-status aria-live="polite"></p>
 </form>`;
     return renderPage({
         title: 'New paste',
@@ -674,6 +702,7 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
         robots: 'noindex,follow',
         active: 'new',
         footerVariant: 'compact',
+        styles: ['kit.css'],   // the options card and the switch rows (openvibe-shared/kit)
         body,
     });
 }
