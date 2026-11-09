@@ -36,7 +36,7 @@ const EXPORTS = [
     ['pastes.json', 'pastes', 'owner_subject'], ['paste_comments.json', 'paste_comments', 'author_subject'], ['comments.json', 'comments', 'author_subject'],
     ['threads.json', 'threads', 'author_subject'], ['posts.json', 'posts', 'author_subject'], ['attachments.json', 'attachments', 'owner_subject'],
     ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'], ['thread_votes.json', 'thread_votes', 'subject_id'],
-    ['post_reactions.json', 'post_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
+    ['post_reactions.json', 'post_reactions', 'subject_id'], ['section_reactions.json', 'thread_section_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
     ['space_moderators.json', 'space_moderators', 'subject_id'], ['quest_checks.json', 'pulse_quest_people', 'subject'],
 ];
@@ -95,7 +95,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
     await db.tx(async () => {
         // Likes, votes and reactions first, so the counts recomputed below see only what stays.
         const recount = [];
-        for (const [table, item] of [['paste_likes', 'paste_id'], ['comment_votes', 'comment_id'], ['thread_votes', 'thread_id'], ['post_reactions', 'post_id']]) {
+        for (const [table, item] of [['paste_likes', 'paste_id'], ['comment_votes', 'comment_id'], ['thread_votes', 'thread_id'], ['post_reactions', 'post_id'], ['thread_section_reactions', 'thread_id']]) {
             if (!await hasTable(db, table)) continue;
             const items = (await db.prepare(`SELECT DISTINCT ${item} AS i FROM ${table} WHERE subject_id IN ${S}`).all(...subjects)).map((r) => r.i);
             add(erased, table, (await db.prepare(`DELETE FROM ${table} WHERE subject_id IN ${S}`).run(...subjects)).changes);

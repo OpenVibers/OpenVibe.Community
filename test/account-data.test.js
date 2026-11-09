@@ -51,6 +51,7 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
     await db.prepare("INSERT INTO posts (id, thread_id, body_markdown, author_subject, is_opening) OVERRIDING SYSTEM VALUE VALUES (1, 1, 'opening', ?, 1), (2, 1, 'otto answers', ?, 0), (3, 2, 'quiet opening', ?, 1)").run(DANA, OTTO, DANA);
     await db.prepare('INSERT INTO thread_votes (thread_id, subject_id, value) VALUES (2, ?, 1)').run(OTTO);
     await db.prepare("INSERT INTO post_reactions (post_id, subject_id, reaction) VALUES (2, ?, 'fire')").run(DANA);
+    await db.prepare("INSERT INTO thread_section_reactions (thread_id, section_id, subject_id, value) VALUES (1, 'intro', ?, 1)").run(DANA);
     await db.prepare("INSERT INTO game_progress (subject_id, level, updated_at) VALUES (?, 3, '2026-09-27'), (?, 4, '2026-09-27')").run(DANA, OTTO);
     await db.prepare('INSERT INTO network_blocks (blocker_subject, blocked_subject, active, revision, updated_at) VALUES (?, ?, 1, 1, 0), (?, ?, 1, 1, 0)').run(DANA, OTTO, OTTO, DANA);
     // Sharing: DANA owns a paste shared as people, and is a member of OTTO's paste with a pending ask.
@@ -106,6 +107,7 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, title FROM threads ORDER BY id'), [{ id: 1, a: null, title: '[deleted]' }], 'the busy thread a tombstone, the quiet one gone');
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, body_markdown AS b FROM posts ORDER BY id'), [{ id: 1, a: null, b: '[deleted]' }, { id: 2, a: OTTO, b: 'otto answers' }]);
         assert.strictEqual((await all('SELECT * FROM post_reactions')).length + (await all('SELECT * FROM paste_likes')).length, 0);
+        assert.strictEqual((await all('SELECT * FROM thread_section_reactions')).length, 0, 'section reactions go with the person');
         assert.strictEqual((await db.prepare('SELECT likes FROM pastes WHERE id = 3').get()).likes, 0, 'the like count follows');
         assert.deepStrictEqual(await all('SELECT subject_id AS s FROM game_progress'), [{ s: OTTO }]);
         assert.strictEqual((await all('SELECT * FROM network_blocks')).length, 0, 'blocks both ways');
