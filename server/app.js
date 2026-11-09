@@ -309,6 +309,8 @@ async function createApp(opts = {}) {
     const cors = v1.cors(config.apiCorsOrigins);
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter, limits }));
     app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers, limits }));
+    app.use('/api/v1/me/status', cors, require('./status/api').createStatusApi({ forum, pulse, viewers, limits, db, baseUrl: config.baseUrl }));
+    app.use('/api/v1/profiles', cors, require('./status/api').createProfileStatusApi({ viewers, limits, db, baseUrl: config.baseUrl }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
     const pulseConsumer = require('./pulse/consumer').createPulseConsumer({ db, vipCache: vip && vip.cache, revocations, accountSend: config.oauth && config.oauth.clientSecret ? require('./identity/account-data').createSender({ config }) : null, secrets: String(process.env.COMMUNITY_EVENTS_SECRET || '').split(',').map((s) => s.trim()).filter(Boolean) });
     app.locals.pulseConsumer = pulseConsumer;

@@ -59,11 +59,11 @@ async function upsertItem(db, it) {
     return await db.tx(async () => {
         const key = [it.source_service, it.source_type, String(it.source_id)];
         if (await find.get(...key)) {
-            await db.prepare('UPDATE pulse_items SET title = ?, url = ? WHERE source_service = ? AND source_type = ? AND source_id = ?').run(it.title, it.url, ...key);
+            await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, app_name = ? WHERE source_service = ? AND source_type = ? AND source_id = ?').run(it.title, it.url, it.picture_url || null, it.app_name || null, ...key);
             return { item: await find.get(...key), created: false };
         }
-        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at);
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, app_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at, it.picture_url || null, it.app_name || null);
         return { item: await find.get(...key), created: true };
     });
 }
@@ -83,11 +83,13 @@ async function removeItem(db, service, type, id) {
  *   opts.before   [occurred_at, id] of the last item already seen
  * → { rows, hasMore }
  */
-async function listItems(db, { origin = null, before = null, limit = 30 } = {}) {
+async function listItems(db, { origin = null, before = null, limit = 30, followed = [], hour = null } = {}) {
+    const priority = "CASE WHEN @hour::text IS NOT NULL AND i.occurred_at >= @hour AND jsonb_exists(@followed::jsonb, i.actor_subject) THEN 1 ELSE 0 END";
     const rows = await db.prepare(`
-        SELECT i.* FROM pulse_items i
+        SELECT i.*, ${priority} AS feed_priority FROM pulse_items i
         WHERE (@origin::text IS NULL OR i.origin = @origin)
-          AND (@at::text IS NULL OR i.occurred_at < @at OR (i.occurred_at = @at AND i.id < @id::bigint))
+          AND (@at::text IS NULL OR ${priority} < @priority::integer
+               OR (${priority} = @priority::integer AND (i.occurred_at < @at OR (i.occurred_at = @at AND i.id < @id::bigint))))
           AND NOT (i.source_service = 'live' AND i.source_type = 'stream' AND EXISTS (
                    SELECT 1 FROM pulse_items j
                    WHERE j.source_service = 'live' AND j.source_type = 'stream'
@@ -100,12 +102,16 @@ async function listItems(db, { origin = null, before = null, limit = 30 } = {}) 
                OR (i.source_type = 'thread' AND EXISTS (SELECT 1 FROM threads t JOIN spaces s ON s.id = t.space_id
                                                         WHERE t.id = CAST(i.source_id AS INTEGER) AND t.deleted_at IS NULL AND s.visibility = 'public'
                                                           AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL))
+               OR (i.source_type = 'status' AND EXISTS (SELECT 1 FROM threads t JOIN spaces s ON s.id = t.space_id
+                                                        WHERE t.id = CAST(i.source_id AS INTEGER) AND t.deleted_at IS NULL AND s.slug = 'status'
+                                                          AND s.visibility = 'public'))
                OR (i.source_type = 'post' AND EXISTS (SELECT 1 FROM posts po JOIN threads t ON t.id = po.thread_id JOIN spaces s ON s.id = t.space_id
                                                       WHERE po.id = CAST(i.source_id AS INTEGER) AND po.deleted_at IS NULL AND t.deleted_at IS NULL AND s.visibility = 'public'
                                                         AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL))
                OR (i.source_type = 'submission' AND EXISTS (SELECT 1 FROM submissions su WHERE su.slug = i.source_id AND su.status = 'accepted')))
-        ORDER BY i.occurred_at DESC, i.id DESC
-        LIMIT @limit`).all({ origin, at: before ? before[0] : null, id: before ? before[1] : null, limit: limit + 1 });
+        ORDER BY feed_priority DESC, i.occurred_at DESC, i.id DESC
+        LIMIT @limit`).all({ origin, followed: JSON.stringify(followed), hour,
+            priority: before ? before[0] : null, at: before ? before[1] : null, id: before ? before[2] : null, limit: limit + 1 });
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
     return { rows, hasMore };

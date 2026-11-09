@@ -15,6 +15,7 @@ const contracts = require('openvibe-contracts');
 const { run, serviceCap, jsonBody } = require('../http/v1');
 
 const WRITE = 'community.pulse.write';
+const CONTRIBUTE = 'community.pulse.contribute';
 
 function createPulseApi({ pulse, viewers, limits }) {
     const router = express.Router();
@@ -24,13 +25,21 @@ function createPulseApi({ pulse, viewers, limits }) {
     // an item when something public happens on its site (most arrive through Events instead): one a second.
     router.use(limits.reads('community.pulse.read'));
     const ingest = limits('community.pulse.write', { minute: 60, hour: 1200 });
+    const contribute = limits('community.pulse.contribute', { minute: 10, hour: 100 });
+    const app = (req) => req.viewer.kind === 'service' && String(req.viewer.service).startsWith('app:');
 
     const servicesOnly = (req, res, next) => (req.viewer.kind === 'service' ? next()
         : contracts.http.sendProblem(res, 403, 'capability.denied', { detail: `a service token with ${WRITE} is required`, ctx: req.ov }));
 
-    router.get('/', run(async (req) => await pulse.list(req.query)));
-    router.post('/items', servicesOnly, serviceCap(WRITE), ingest, jsonBody, run(async (req) => await pulse.ingest(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
-    router.delete('/items/:service/:type/:id', servicesOnly, serviceCap(WRITE), ingest, run(async (req) => await pulse.retract(req.viewer, req.params.service, req.params.type, req.params.id)));
+    router.get('/', run(async (req) => await pulse.list(req.query, req.viewer)));
+    router.post('/items', servicesOnly, (req, res, next) => (app(req) ? serviceCap(CONTRIBUTE) : serviceCap(WRITE))(req, res, next),
+        (req, res, next) => (app(req) ? contribute : ingest)(req, res, next), jsonBody,
+        run(async (req) => app(req) ? await pulse.contribute(req.viewer, req.body || {}) : await pulse.ingest(req.viewer, req.body || {}), (out) => (out.created ? 201 : 200)));
+    router.delete('/items/:service/:type/:id', servicesOnly,
+        (req, res, next) => (app(req) ? serviceCap(CONTRIBUTE) : serviceCap(WRITE))(req, res, next),
+        (req, res, next) => (app(req) ? contribute : ingest)(req, res, next),
+        run(async (req) => app(req) ? await pulse.retractContribution(req.viewer, req.params.service, req.params.type, req.params.id)
+            : await pulse.retract(req.viewer, req.params.service, req.params.type, req.params.id)));
 
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

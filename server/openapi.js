@@ -318,27 +318,39 @@ route('post', '/api/v1/comments/{commentId}/votes', {
 
 // ── /api/v1/pulse — the network's public activity (server/pulse/api.js) ──────────────────────
 route('get', '/api/v1/pulse', {
-    operationId: 'listPulse', summary: 'What the network is doing, newest first', tags: ['pulse'], security: ANONYMOUS, parameters: [
-        query('origin', { type: 'string', enum: ['user', 'ai', 'system', 'all'] }), query('after', str(), 'The next_cursor from the previous page'),
+    operationId: 'listPulse', summary: 'What the network is doing; followed people first in the last hour for me', tags: ['pulse'], security: ANONYMOUS, parameters: [
+        query('origin', { type: 'string', enum: ['user', 'ai', 'system', 'all'] }), query('for', { type: 'string', enum: ['me'] }),
+        query('cursor', str(), 'The personal next_cursor'), query('after', str(), 'The public next_cursor from the previous page'),
         query('limit', { type: 'integer', minimum: 1, maximum: 100 })],
     responses: { 200: json('Items and the cursor for the next page', { type: 'object', properties: { items: arrayOf(ref('PulseItem')), next_cursor: nullable('string') } }), ...errors([400, 429]) },
 });
 route('post', '/api/v1/pulse/items', {
     operationId: 'ingestPulseItem', summary: 'Publish one public activity item', tags: ['pulse'], security: SERVICE,
-    description: 'community.pulse.write. Idempotent per item ref: 201 when created, 200 when it was already there.',
-    requestBody: body({ type: 'object', required: ['ref', 'title', 'url'], properties: {
+    description: 'community.pulse.write for services or community.pulse.contribute with a person grant for developer apps. An app sends {id,text,url,picture_url?}; its subject and label come from the token. Idempotent per source id.',
+    requestBody: body({ anyOf: [{ type: 'object', required: ['id', 'text', 'url'], properties: {
+        id: str(), text: str({ maxLength: 300 }), url: str({ format: 'uri' }), picture_url: str({ format: 'uri' }),
+    } }, { type: 'object', required: ['ref', 'title', 'url'], properties: {
         ref: { type: 'object', required: ['service', 'type', 'id'], properties: { service: str(), type: str(), id: str() } },
         title: str(), url: str({ format: 'uri' }), origin: { type: 'string', enum: ['user', 'ai', 'system'] },
         occurred_at: str({ format: 'date-time' }), visibility: { type: 'string', enum: ['public'] },
-    } }),
+    } }] }),
     responses: { 200: json('Already there', { type: 'object', properties: { item: ref('PulseItem'), created: { const: false } } }),
         201: json('Created', { type: 'object', properties: { item: ref('PulseItem'), created: { const: true } } }), ...errors() },
 });
 route('delete', '/api/v1/pulse/items/{service}/{type}/{id}', {
     operationId: 'retractPulseItem', summary: 'Retract one of the calling service\'s items', tags: ['pulse'], security: SERVICE,
     parameters: [path('service', str()), path('type', str()), path('id', str())],
-    description: 'community.pulse.write.',
+    description: 'community.pulse.write for services, community.pulse.contribute for apps.',
     responses: { 200: json('Whether it was there'), ...errors() },
+});
+route('post', '/api/v1/me/status', {
+    operationId: 'postStatus', summary: 'Post a public status to your profile and Pulse', tags: ['pulse'], security: PERSON,
+    requestBody: body({ type: 'object', required: ['text'], properties: { text: str({ minLength: 1, maxLength: 500 }), link: str({ format: 'uri' }) } }),
+    responses: { 201: json('Status and its opening post id'), ...errors() },
+});
+route('get', '/api/v1/profiles/{subject}/statuses', {
+    operationId: 'profileStatuses', summary: 'A person\'s recent public statuses', tags: ['pulse'], security: ANONYMOUS,
+    parameters: [SUBJECT], responses: { 200: json('Recent statuses'), ...errors([400, 429]) },
 });
 
 // ── /api/v1/spaces — the forum (server/forum/api.js) ─────────────────────────────────────────
@@ -723,8 +735,9 @@ function openapi() {
                     page_url: str(), can: { type: 'object', properties: { withdraw: { type: 'boolean' }, review: { type: 'boolean' } } },
                 } },
                 PulseItem: { type: 'object', properties: {
-                    id: str(), ref: { type: 'object', properties: { service: str(), type: str(), id: str() } }, title: str(), url: str(),
+                    id: { type: 'integer' }, source: { type: 'object', properties: { service: str(), type: str(), id: str() } }, title: str(), url: str(),
                     origin: { type: 'string', enum: ['user', 'ai', 'system'] }, occurred_at: str({ format: 'date-time' }), actor: nullable('object'),
+                    label: nullable('string'), via: str(), picture_url: str({ format: 'uri' }),
                 } },
                 Thread: { type: 'object', required: ['id', 'visibility'], properties: {
                     id: str(), access_id: str(), ref: { type: 'object' }, visibility: { type: 'string', enum: ['public', 'hidden', 'locked'] },

@@ -34,7 +34,8 @@ function itemHtml(it) {
     <span class="badge pulse-source" title="${esc(`${it.source.service} · ${it.source.type}`)}">${esc(service)} · ${esc(it.source.type)}</span>
     <div class="pulse-main">
       <a class="thread-title" href="${esc(it.url)}"${local ? '' : ' rel="nofollow ugc noopener"'}>${esc(it.title)}</a>
-      <p class="thread-meta">${byline} <span class="sep">·</span> ${timeTag(it.occurred_at)}</p>
+      ${it.picture_url ? `<img src="${esc(it.picture_url)}" alt="" loading="lazy" decoding="async">` : ''}
+      <p class="thread-meta">${byline}${it.via ? ` <span class="badge">${esc(it.via)}</span>` : ''} <span class="sep">·</span> ${timeTag(it.occurred_at)}</p>
     </div>
   </li>`;
 }
