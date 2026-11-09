@@ -72,9 +72,18 @@ const feedFetch = async (url) => ({ ok: /\/api\/(frame|streams)/.test(String(url
         assert.deepStrictEqual(none.items, []);
     });
 
-    await check('cross-site: answers any OpenVibe site (CORS)', async () => {
+    await check('cross-site: any OpenVibe site reads it from the browser (CORS, no credentials)', async () => {
         const r = await t.get('/api/v1/feed', { headers: { origin: 'https://openvibe.video' } });
         assert.strictEqual(r.status, 200);
+        assert.strictEqual(r.headers.get('access-control-allow-origin'), '*', 'a site off the write list still reads it');
+        assert.ok(!r.headers.get('access-control-allow-credentials'), 'never with cookies');
+        const pre = await t.get('/api/v1/feed', { method: 'OPTIONS', headers: { origin: 'https://open.shoes', 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' } });
+        assert.strictEqual(pre.status, 204);
+        assert.match(pre.headers.get('access-control-allow-headers') || '', /Authorization/);
+        const wall = await t.get('/api/v1/pulse', { headers: { origin: 'https://openvibe.pics' } });
+        assert.strictEqual(wall.headers.get('access-control-allow-origin'), '*', 'the wall too');
+        const write = await t.get('/api/v1/pulse/items', { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' } });
+        assert.ok(!write.headers.get('access-control-allow-origin'), 'a write from elsewhere gets no CORS');
     });
 
     await done(t);
