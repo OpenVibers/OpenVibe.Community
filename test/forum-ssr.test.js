@@ -8,9 +8,11 @@ const assert = require('assert');
 const { ids } = require('openvibe-contracts');
 const { boot, check, done } = require('./helpers/app');
 const forumStore = require('../server/forum/store');
+const { draftPrefill } = require('../server/forum/prefill');
 
 const ld = (html) => (html.match(/<script type="application\/ld\+json">(.*?)<\/script>/g) || []).map((s) => JSON.parse(s.replace(/<script[^>]*>|<\/script>/g, '')));
 const has = (html, s, msg) => assert.ok(html.includes(s), msg || `expected to find: ${s}`);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString(), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
 
 (async () => {
@@ -55,6 +57,81 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         assert.strictEqual(ok.headers.get('location'), '/forum/general/how-do-i-b-embed-b-comments');
         const foreign = await t.get('/forum/general/new', as(alexJwt, { ...form({ title: 'Cross site', body: 'x' }), headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'https://evil.example' } }));
         assert.strictEqual(foreign.status, 403, 'a form sent from another site is refused');
+    });
+
+    await check('share drafts travel through the forum picker into the prefilled form, escaped and never in the head', async () => {
+        const title = '<script>alert("title")</script> Meme remix draft-9f3a';
+        const body = '<script>alert("body")</script>\nMade this with OpenVibe.Meme: https://openvibe.meme/c/mcp_01ARZ3NDEKTSV4RRFFQ69G5FAV draft-9f3a';
+        const query = new URLSearchParams({ title, body }).toString();
+        const target = `/forum/general/new?${query}`;
+        const discuss = await t.get(`/forum/discuss?${query}`);
+        assert.strictEqual(discuss.status, 200);
+        assert.ok(discuss.text.includes(`href="${target}"`), 'the picker carries the draft into every space');
+        assert.ok(discuss.text.includes(`/auth/login?next=${encodeURIComponent(`/forum/discuss?${query}`)}`), 'signing in from the picker keeps the draft query');
+        assert.ok(!discuss.text.slice(0, discuss.text.indexOf('</head>')).includes('draft-9f3a'), 'the draft never reaches the picker head');
+        has(discuss.text, '<link rel="canonical" href="https://openvibe.community/forum/discuss">');
+
+        const page = await t.get(target, as(alexJwt));
+        assert.strictEqual(page.status, 200);
+        has(page.text, `value="${esc(title)}"`, 'the title is escaped in the form value');
+        has(page.text, `>${esc(body)}</textarea>`, 'the body is escaped in the textarea');
+        assert.ok(!page.text.includes('<script>alert("title")</script>') && !page.text.includes('<script>alert("body")</script>'), 'no raw draft HTML');
+        assert.ok(!page.text.slice(0, page.text.indexOf('</head>')).includes('draft-9f3a'), 'the draft never reaches the title, meta tags or canonical');
+        has(page.text, '<title>New thread · General · OpenVibe.Community</title>');
+        has(page.text, '<link rel="canonical" href="https://openvibe.community/forum/general/new">');
+        assert.strictEqual(page.headers.get('cache-control'), 'private, no-store', 'a prefilled form is never cached');
+        assert.match(page.headers.get('x-robots-tag') || '', /noindex/, 'a prefilled form is never indexed');
+
+        const picker = await t.get(`/forum/discuss?paste=snip1&${query}`);
+        has(picker.text, `/forum/general/new?paste=snip1`, 'a paste and the draft travel together');
+        const withPaste = await t.get(`/forum/general/new?paste=snip1&${query}`, as(alexJwt));
+        assert.strictEqual(withPaste.status, 200);
+        has(withPaste.text, 'name="pastes"', 'the paste stays attached to the draft');
+        has(withPaste.text, 'value="snip1"');
+        has(withPaste.text, `value="${esc(title)}"`);
+        has(withPaste.text, `>${esc(body)}</textarea>`);
+    });
+
+    await check('a share link posts nothing; signed out it signs in and returns to the same prefilled form', async () => {
+        const title = 'Draft marker 9f3a', body = 'Body marker 9f3a';
+        const query = new URLSearchParams({ title, body }).toString();
+        const target = `/forum/general/new?${query}`;
+        const space = await forumStore.getSpace(t.db, 'general');
+        const count = async () => Number((await t.db.prepare('SELECT COUNT(*) AS n FROM threads WHERE space_id = ?').get(space.id)).n);
+        const before = await count();
+
+        const anon = await t.get(target);
+        assert.strictEqual(anon.status, 303, 'signed out: sent to sign in before the form');
+        const location = anon.headers.get('location');
+        assert.ok(location.startsWith('/auth/login?next='), location);
+        const next = decodeURIComponent(location.slice('/auth/login?next='.length));
+        assert.strictEqual(next, target, 'sign-in returns to the same prefilled form');
+        assert.ok(next.startsWith('/forum/general/new?'), 'next stays a same-site path');
+        const anonPaste = await t.get('/forum/general/new?paste=snip1');
+        assert.strictEqual(anonPaste.status, 303, 'a paste prefill signs in too');
+        assert.ok(decodeURIComponent(anonPaste.headers.get('location').slice('/auth/login?next='.length)).includes('paste=snip1'));
+
+        const page = await t.get(target, as(alexJwt));
+        assert.strictEqual(page.status, 200);
+        has(page.text, 'method="post" action="/forum/general/new"', 'the form is still reviewed and posted by the person');
+        assert.strictEqual(await count(), before, 'opening a share link creates no thread');
+        assert.ok(!(await t.get('/forum/general')).text.includes(title), 'the draft is not posted into the space');
+    });
+
+    await check('draft limits: title 200, body 40,000, and a long body is carried past the old 6,000 cut', async () => {
+        const longTitle = 't'.repeat(250);
+        const longBody = 'b'.repeat(10_000);
+        const query = new URLSearchParams({ title: longTitle, body: longBody }).toString();
+        const page = await t.get(`/forum/general/new?${query}`, as(alexJwt));
+        assert.strictEqual(page.status, 200);
+        const title = page.text.match(/name="title"[^>]*value="([^"]*)"/)[1];
+        assert.strictEqual(title.length, 200, 'the title stops at 200 characters');
+        const body = page.text.match(/<textarea name="body"[^>]*>([\s\S]*?)<\/textarea>/)[1];
+        assert.strictEqual(body, longBody, 'a 10,000-character body is carried whole');
+        const over = draftPrefill({ title: 'x'.repeat(250), body: 'y'.repeat(40_001) });
+        assert.strictEqual(over.title.length, 200, 'the cap is 200 characters of title');
+        assert.strictEqual(over.body.length, 40_000, 'the cap is 40,000 characters of body');
+        assert.deepStrictEqual(draftPrefill({}), { title: '', body: '' });
     });
 
     const url = '/forum/general/how-do-i-b-embed-b-comments';

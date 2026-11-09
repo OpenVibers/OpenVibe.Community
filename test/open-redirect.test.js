@@ -17,4 +17,5 @@ for (const v of ['//evil.com', '/\\evil.com', '\\\\evil.com', 'https://evil.com'
     assert.ok(!/^\s*javascript:/i.test(String(sanitizeNext(v, config))), JSON.stringify(v));
 }
 assert.strictEqual(sanitizeNext('/settings?tab=a', config), '/settings?tab=a', 'a plain relative path is kept');
+assert.strictEqual(sanitizeNext('/forum/general/new?title=Draft&body=Text', config), '/forum/general/new?title=Draft&body=Text', 'a share link keeps its draft query');
 console.log('open redirect: all checks passed');
