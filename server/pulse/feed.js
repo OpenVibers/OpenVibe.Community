@@ -7,7 +7,7 @@
  * a meme, an update…) with the network's trending pictures and videos (Network's Frame cards) woven into the first page.
  *
  *   GET /?kind=live|clip|video|pic|post|meme|game|update&cursor=<opaque>&limit=   anyone (the signed-in person too)
- *   → { items: [{ id, kind, url, title, text, at, site, site_name, actor: { name, avatar } | null,
+ *   → { items: [{ id, kind (live while on air; a go-live that is over is "stream"), url, title, text, at, site, site_name, actor: { name, avatar } | null,
  *                 media: { thumb, ratio, length } | null, counts: {}, live_now? }], next_cursor }   live_now: on Live's live list now
  *
  * Text only (the client draws every field as text); https links only; nothing from Frame without a picture and a title.
@@ -104,7 +104,8 @@ function createFeedApi({ pulse, viewers, limits, networkUrl = 'https://openvibe.
     const trending = createTrending({ networkUrl, fetchImpl });
     const liveNow = createLiveNow({ liveUrl, fetchImpl });
     // A "went live" item is live now only while that channel is on Live's live list.
-    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') c.live_now = live.has(channelOf(c.url).toLowerCase()); });
+    // A go-live that is over is a stream that happened (kind "stream"): clients draw LIVE only on kind "live".
+    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') { c.live_now = live.has(channelOf(c.url).toLowerCase()); if (!c.live_now) c.kind = 'stream'; } });
 
     router.get('/', run(async (req) => {
         const kind = KINDS.includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
