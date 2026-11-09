@@ -37,6 +37,7 @@ const forumPages = require('../render/forum');
 const boardPages = require('../render/board');
 const { ApiError } = require('../http/v1');
 const { spacePath, threadPath, legacyForumPath } = require('./paths');
+const { draftPrefill } = require('./prefill');
 
 function createForumRoutes({ forum, viewers, config }) {
     const router = express.Router();
@@ -116,12 +117,14 @@ function createForumRoutes({ forum, viewers, config }) {
         }
     }));
 
-    // "Discuss in a space" from a paste: pick the space, then its new-topic form with the paste attached.
+    // "Discuss in a space" from a paste or another site's share link: pick the space, then its
+    // new-topic form with the paste attached or the draft title and body filled in.
     router.get('/forum/discuss', withViewer, wrap(async (req, res, next) => {
         try {
             const paste = String(req.query.paste || '').slice(0, 80);
+            const { title, body } = draftPrefill(req.query);
             const { groups } = await forum.listSpaces(req.viewer);
-            html(res, boardPages.discussPage({ groups, paste, user: req.user }));
+            html(res, boardPages.discussPage({ groups, paste, title, draftBody: body, user: req.user }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 
@@ -185,12 +188,18 @@ function createForumRoutes({ forum, viewers, config }) {
 
     router.get('/forum/:space/new', withViewer, wrap(async (req, res, next) => {
         try {
+            const paste = /^[A-Za-z0-9_-]{3,80}$/.test(String(req.query.paste || '')) ? String(req.query.paste) : '';
+            const { title, body } = draftPrefill(req.query);
+            // A share link fills the form, but only a signed-in person can submit it. Send them to
+            // sign in and come back to the same prefilled form (the query is kept in `next`).
+            if (!req.user && (paste || title || body)) return login(res, req.originalUrl);
             // A members-only space: the teaser, not the form, for someone who may not post there.
             const probe = await forum.listThreads(req.viewer, req.params.space, { limit: 1 });
             if (!probe.viewer.can_start) throw new ApiError(403, 'space.staff_threads', 'Roadmap items are added by staff. Reply to one, or suggest something in Feedback');
             const { space } = await forum.space(req.viewer, req.params.space);
-            const paste = /^[A-Za-z0-9_-]{3,80}$/.test(String(req.query.paste || '')) ? String(req.query.paste) : '';
-            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled(), values: paste ? { pastes: paste, title: await forum.pasteTitle(paste) || '' } : {} }));
+            const values = { title, body };
+            if (paste) { values.pastes = paste; if (!values.title) values.title = await forum.pasteTitle(paste) || ''; }
+            html(res, forumPages.newThreadPage({ space, user: req.user, categories: probe.categories, attachments: forum.attachmentsEnabled(), values }));
         } catch (err) { failPage(req, res, err, next); }
     }));
 

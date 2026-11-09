@@ -302,13 +302,17 @@ function newSpacePage({ groups = [], error = null, values = {} }) {
 }
 
 /** "Discuss in a space": pick where a paste should be talked about; each space's new-topic form attaches it. */
-function discussPage({ groups = [], paste = '', user }) {
-    const q = paste ? `?paste=${encodeURIComponent(paste)}` : '';
+function discussPage({ groups = [], paste = '', title = '', draftBody = '', user }) {
+    const params = new URLSearchParams();
+    if (paste) params.set('paste', paste);
+    if (title) params.set('title', title);
+    if (draftBody) params.set('body', draftBody);
+    const q = params.size ? `?${params}` : '';
     const body = `
 <header class="page-head">
   ${crumbs([['Home', '/'], ['Forum', '/forum'], ['Discuss', '/forum/discuss']])}
   <h1>Discuss${paste ? ' this paste' : ''} in the forum</h1>
-  <p class="muted">Pick a forum. Its new-topic form opens with ${paste ? `the paste <a href="/p/${esc(paste)}">${esc(paste)}</a>` : 'your paste'} attached.</p>
+  <p class="muted">Pick a forum. Its new-topic form opens with ${paste ? `the paste <a href="/p/${esc(paste)}">${esc(paste)}</a>` : title || draftBody ? 'your draft text' : 'your paste'}${title || draftBody ? ' filled in; edit it before posting.' : ' attached.'}</p>
   ${user ? '' : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/forum/discuss${q}`)}">Sign in with your OpenVibe account</a> to start a topic.</p>`}
 </header>
 ${groups.map((g) => `<section class="board-group"><h2 class="board-group-h">${esc(g.name)}</h2><ul class="discuss-list">${g.spaces.filter((sp) => sp.thread_kind !== 'roadmap').map((sp) => `<li><a class="btn" href="/forum/${esc(sp.slug)}/new${q}">${esc(sp.name)}</a> <span class="muted small">${esc(sp.description || '')}</span></li>`).join('')}</ul></section>`).join('')}`;

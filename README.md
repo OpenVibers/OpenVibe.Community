@@ -351,6 +351,12 @@ Spaces hold threads; a thread is its opening post plus replies (Markdown). Seede
 reads, people post), `members` (signed-in people only; every Network account counts as a
 member for now), `staff` (moderators only; looks missing to everyone else).
 
+**Share a draft into the forum.** Another OpenVibe site opens `/forum/discuss?title=…&body=…`
+(optionally with `&paste=<id>`, which attaches a paste) and the picker carries it to
+`/forum/<space>/new` with the fields filled in. Both are plain text, cut to 200 characters of
+title and 40,000 of body and escaped when shown; the link never posts, and a signed-out visitor
+signs in and comes back to the same prefilled form, served `private, no-store` and `noindex`.
+
 - **Pages work without JavaScript** — sorting and pagination are links, replying, voting,
   pin/lock and delete are plain form posts (SameSite=Lax cookie; a foreign `Origin` is
   refused). Thread pages carry canonical, Open Graph `article`, `DiscussionForumPosting`
