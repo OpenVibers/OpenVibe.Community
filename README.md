@@ -1,6 +1,10 @@
+![OpenVibe.Community](https://openvibe.community/shared/social/community.jpg)
+
 # OpenVibe.Community
 
-**https://openvibe.community — the people of OpenVibe.**
+**The OpenVibe community home** — [openvibe.community](https://openvibe.community). The roadmap, feedback, pastes and Pulse, from the people who build and use the network.
+
+Part of the [OpenVibe network](https://openvibe.network); [help](https://openvibe.help) and the [developer API](https://openvibe.services).
 
 ## Purpose
 
@@ -42,7 +46,7 @@ little progressive JavaScript for pagination, copy buttons and the upload path.
   (a space's room), OpenVibe.Events (the outbox relay and the Pulse and account subscriptions)
 - OpenVibe.Live only for old VOD/clip comment imports (it reads and writes no pastes here any more)
 - `openvibe-contracts` v0.338.0, `openvibe-sdk` v0.89.0 (events outbox, per-actor limits, no-looks, share and the
-  Locker), `openvibe-shared` v4.161.0 (the Share sheet's Locked part and `ov-locker.js`), pinned by release tarball
+  Locker), `openvibe-shared` v4.163.0 (the Share sheet's Locked part and `ov-locker.js`), pinned by release tarball
 
 ## How it fits the network
 
@@ -873,5 +877,5 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 <!-- versions:start -->
 - openvibe-contracts: v0.352.0
 - openvibe-sdk: v0.94.0
-- openvibe-shared: v4.161.0
+- openvibe-shared: v4.163.0
 <!-- versions:end -->

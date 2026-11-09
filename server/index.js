@@ -63,6 +63,14 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
         if (reviewRetry.start()) console.log('[Community] paste review retry: on');
     } catch (err) { console.warn('[Pastes] review retry not started:', err.message); }
 
+    // Pulse's due-based public sources (Today's calendar, Network's open stats, Quest badges): one minute check,
+    // each source's next run kept in pulse_source_runs so a restart does not skip it (server/pulse/sources.js).
+    let pulseSources = null;
+    try {
+        pulseSources = app.locals.pulseSources || null;
+        if (pulseSources) { pulseSources.start(); console.log('[Pulse sources] on: today-events, network-members, quest-badges'); }
+    } catch (err) { console.warn('[Pulse sources] not started:', err.message); }
+
     // ── Stop (roadmap WS-P lifecycle; openvibe-sdk/service) ──────
     // SIGTERM: the Pulse subscription retries, the community.profile scan and the search-document scans
     // stop (nothing new starts); the server stops taking connections, closes idle keep-alive ones (it keeps
@@ -80,6 +88,7 @@ const { createPgTelemetrySink, startTelemetryRetention } = require('openvibe-sdk
             () => { if (profiles) profilesDone = profiles.stop(); },
             () => { if (searchDocs) searchDocs.stop(); },
             () => { if (reviewRetry) reviewRetry.stop(); },
+            () => { if (pulseSources) pulseSources.stop(); },
         ],
         close: [
             () => within(1000, profilesDone),
