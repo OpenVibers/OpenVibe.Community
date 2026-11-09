@@ -16,7 +16,7 @@ const FRAME = { cards: [
     ] },
     { site: 'news', title: 'Top stories', items: [{ title: 'Not a kind the feed shows', url: 'https://openvibe.news/a', image: { src: 'https://openvibe.media/t/n.webp' } }] },
 ] };
-const LIVE = { streams: [{ username: 'ada' }] };
+const LIVE = { streams: [{ username: 'alex' }, { username: 'ada' }] };
 const feedFetch = async (url) => {
     const u = String(url);
     return { ok: /\/api\/(frame|streams)/.test(u), json: async () => (/\/api\/streams/.test(u) ? LIVE : FRAME) };
@@ -121,9 +121,9 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual((await mk('s1', 'ada')).status, 201);
         assert.strictEqual((await mk('s2', 'bo')).status, 201);
         const j = (await t.get('/api/v1/feed?kind=live&limit=40')).json();
-        const by = Object.fromEntries(j.items.map((x) => [x.url, x.live_now]));
-        assert.strictEqual(by['https://openvibe.live/@ada'], true, 'ada is on the live list');
-        assert.strictEqual(by['https://openvibe.live/@bo'], false, 'bo went live earlier and is not live now');
+        const by = Object.fromEntries(j.items.map((x) => [x.url, [x.kind, x.live_now]]));
+        assert.deepStrictEqual(by['https://openvibe.live/@ada'], ['live', true], 'ada is on the live list');
+        assert.deepStrictEqual(by['https://openvibe.live/@bo'], ['stream', false], 'bo went live earlier: a stream that happened, never LIVE');
     });
 
     await check('a kind filters the stream, a site filters the stream, q searches title and text', async () => {

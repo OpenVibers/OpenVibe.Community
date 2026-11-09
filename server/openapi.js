@@ -359,7 +359,7 @@ route('get', '/api/v1/feed', {
     operationId: 'getFeed', summary: 'The menu\'s Feed: one stream from Pulse, newest first', tags: ['feed'], security: ANONYMOUS,
     description: 'Public. A kind, site or word filters the stream; following=1 is the signed-in person\'s Network follows. Cards carry Community\'s views, likes and comments where it knows them.',
     parameters: [
-        query('kind', { type: 'string', enum: ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'] }),
+        query('kind', { type: 'string', enum: ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'] }),
         query('site', str({ maxLength: 40 }), 'A source service (live, community, wiki, quest, chat, today, network…)'),
         query('q', str({ maxLength: 80 }), 'Words in the title or text'), query('following', { type: 'string', enum: ['1', 'true'] }),
         query('cursor', str(), 'The next_cursor from the previous page'), query('limit', { type: 'integer', minimum: 1, maximum: 40, default: 20 })],

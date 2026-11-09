@@ -7,9 +7,9 @@
  * a meme, a game, a wiki page, a quest badge, a busy chat hour, a calendar event, the people who joined, an update…)
  * with the network's trending pictures and videos (Network's Frame cards) woven into the first page.
  *
- *   GET /?kind=live|clip|video|pic|post|meme|game|update|wiki|quest|chat|event|member
+ *   GET /?kind=live|stream|clip|video|pic|post|meme|game|update|wiki|quest|chat|event|member
  *        &site=<source service>&q=<title or text>&following=1&cursor=<opaque>&limit=
- *   → { items: [{ id, kind, url, title, text, at, site, site_name, actor: { name, avatar } | null,
+ *   → { items: [{ id, kind (live while on air; a go-live that is over is "stream"), url, title, text, at, site, site_name, actor: { name, avatar } | null,
  *                 media: { thumb, ratio, length } | null, counts: { views?, likes?, comments? }, live_now? }], next_cursor }
  *
  * Text only (the client draws every field as text); https links only; nothing from Frame without a picture and a title.
@@ -22,7 +22,7 @@ const express = require('express');
 const contracts = require('openvibe-contracts');
 const { run, fail, isoTime } = require('../http/v1');
 
-const KINDS = ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'];
+const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'];
 const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
 const MAX_PAGE_READS = 8;
 const https = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
@@ -167,7 +167,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     const trending = createTrending({ networkUrl, fetchImpl });
     const liveNow = createLiveNow({ liveUrl, fetchImpl });
     // A "went live" item is live now only while that channel is on Live's live list.
-    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') c.live_now = live.has(channelOf(c.url).toLowerCase()); });
+    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') { c.live_now = live.has(channelOf(c.url).toLowerCase()); if (!c.live_now) c.kind = 'stream'; } });
 
     router.get('/', run(async (req) => {
         const kind = KINDS.includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
