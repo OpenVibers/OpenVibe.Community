@@ -12,6 +12,8 @@
  *   PATCH  /:commentId                  { message }   the author only
  *   DELETE /:commentId                  author or moderator
  *   POST   /:commentId/votes            { value: 1|-1|0 }
+ *   POST   /threads/:id/section-reactions { section_id, value: 1|-1|0 }   a reader's read on a section
+ *   GET    /threads/:id/section-reactions  the counts of every section, and mine
  *
  * Callers: browsers (the Network user JWT as ov_token cookie or Bearer — other OpenVibe sites use
  * Bearer through CORS), anonymous browsers (comments with an anon_name, under the shared
@@ -45,6 +47,9 @@ function createCommentsApi({ service, viewers, anonWriteLimiter, resolveLimiter,
     router.get('/threads/:id', read, run(async (req) => await service.get(req.viewer, req.params.id, req.query)));
     router.post('/threads/:id/comments', serviceCap(WRITE), limits('community.comment.create', { minute: 20, hour: 300 }), anonWriteLimiter || passAnon, jsonBody,
         run(async (req) => await service.add(req.viewer, req.params.id, req.body || {}), 201));
+    router.post('/threads/:id/section-reactions', serviceCap(WRITE), limits('community.comment.vote', { minute: 120, hour: 1200 }), jsonBody,
+        run(async (req) => await service.sectionReaction(req.viewer, req.params.id, req.body || {})));
+    router.get('/threads/:id/section-reactions', read, run(async (req) => await service.sectionReactionCounts(req.viewer, req.params.id)));
     router.put('/threads/:id/visibility', serviceCap(MOD), moderate, jsonBody, run(async (req) => await service.setVisibility(req.viewer, req.params.id, req.body || {})));
     router.get('/:commentId', read, run(async (req) => await service.getComment(req.viewer, req.params.commentId)));
     router.patch('/:commentId', serviceCap(WRITE), limits('community.comment.edit', { minute: 30, hour: 300 }), jsonBody, run(async (req) => await service.edit(req.viewer, req.params.commentId, req.body || {})));
