@@ -180,6 +180,30 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}?after=abc`)).status, 400);
     });
 
+    await check('section reactions: one thread per post, the section id is the key; people only', async () => {
+        const ref = { service: 'blog', type: 'post', id: 'pst_1' };
+        const thread = (await resolve(ref, { cookie: alexJwt })).json().thread;
+        const react = (json, who) => call(`/api/v1/comments/threads/${thread.id}/section-reactions`, { method: 'POST', json, ...who });
+        const counts = (who = {}) => call(`/api/v1/comments/threads/${thread.id}/section-reactions`, { ...who });
+
+        const first = await react({ section_id: 'blueprint-rework', value: 1 }, { cookie: alexJwt });
+        assert.strictEqual(first.status, 200, first.text);
+        assert.strictEqual((await react({ section_id: 'blueprint-rework', value: 1 }, { cookie: samJwt })).status, 200);
+        assert.strictEqual((await react({ section_id: 'blueprint-rework', value: -1 }, { cookie: samJwt })).status, 200, 'reacting again replaces the row');
+        let out = (await counts({ cookie: alexJwt })).json();
+        assert.deepStrictEqual(out.sections['blueprint-rework'], { up: 1, down: 1, mine: 1 });
+        assert.strictEqual(out.sections['other-section'], undefined, 'a section nobody reacted to is not a section');
+
+        assert.strictEqual((await react({ section_id: 'blueprint-rework', value: 0 }, { cookie: samJwt })).status, 200);
+        out = (await counts()).json();
+        assert.deepStrictEqual(out.sections['blueprint-rework'], { up: 1, down: 0, mine: 0 });
+
+        assert.strictEqual((await react({ section_id: 'Not A Slug', value: 1 }, { cookie: alexJwt })).status, 400, 'the section id must be a slug');
+        assert.strictEqual((await react({ section_id: 'ok', value: 2 }, { cookie: alexJwt })).status, 400);
+        assert.strictEqual((await react({ section_id: 'ok', value: 1 }, {})).status, 401, 'anonymous cannot react');
+        assert.strictEqual((await react({ section_id: 'ok', value: 1 }, { token: svc([WRITE]) })).status, 401, 'a service must name the person');
+    });
+
     await check('votes: add, change, remove; score recomputed; my_vote; people only', async () => {
         const c = (await post(vod.id, { message: 'vote on me' }, { cookie: alexJwt })).json().comment;
         const vote = (value, who) => call(`/api/v1/comments/${c.id}/votes`, { method: 'POST', json: { value }, ...who });

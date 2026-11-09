@@ -38,6 +38,7 @@ const contracts = require('openvibe-contracts');
 const store = require('./store');
 const pasteStore = require('../pastes/store');
 const { applyVote, myVotes, parseVote } = require('../votes');
+const sectionReactions = require('./section-reactions');
 const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
@@ -345,6 +346,35 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             const out = await applyVote(db, 'comment', c.id, v.subject, value);
             voteLimiter.record(`s:${v.subject}`);
             return { comment_id: c.id, ...out };
+        },
+
+        /**
+         * POST /comments/threads/:id/section-reactions { section_id, value: 1 | -1 | 0 }
+         * A reader says whether a SECTION of the post was good. The section id is the key.
+         */
+        async sectionReaction(v, threadId, body = {}) {
+            const sectionId = String(body.section_id || body.sectionId || '').trim();
+            if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(sectionId)) fail(400, 'section.invalid_id', 'section_id must be a lowercase slug');
+            const value = parseVote(body.value);
+            if (value === null) fail(400, 'section.invalid_value', 'value must be 1, -1 or 0');
+            if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to react');
+            const t = await visibleThread(v, threadId);
+            if (t.visibility !== 'public') fail(403, 'thread.locked', 'This comment thread is locked');
+            voteLimiter.check(`s:${v.subject}`);
+            const out = await sectionReactions.setSectionReaction(db, t.id, sectionId, v.subject, value);
+            voteLimiter.record(`s:${v.subject}`);
+            return out;
+        },
+
+        /** GET /comments/threads/:id/section-reactions — the counts of every section, and mine. */
+        async sectionReactionCounts(v, threadId) {
+            const t = await visibleThread(v, threadId);
+            const counts = await sectionReactions.sectionReactions(db, t.id);
+            const mine = await sectionReactions.mySectionReactions(db, t.id, v && v.subject);
+            const sections = {};
+            for (const [id, c] of counts) sections[id] = { up: c.up, down: c.down, mine: mine.get(id) || 0 };
+            for (const [id, value] of mine) if (!sections[id]) sections[id] = { up: 0, down: 0, mine: value };
+            return { thread_id: t.id, sections };
         },
 
         /** PUT /threads/:id/visibility { visibility } — moderators. */

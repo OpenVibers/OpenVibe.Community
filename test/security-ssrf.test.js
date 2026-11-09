@@ -37,6 +37,7 @@ const INVENTORY = {
     'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
     'server/pulse/feed.js': [2, 'Network /api/frame at networkUrl (trending cards) and Live /api/streams at liveUrl (who is live now); no user input in either URL'],
     'server/pulse/service.js': [1, 'Network /api/v1/me/follows at the configured networkInternalUrl, with the viewer token and a bounded cursor'],
+    'server/pulse/sources.js': [2, 'Today /api/v1/events, Network /api/v1/stats and Quest /api/v1/profiles/<usr_>/badges at the configured internal base URLs (OV_TODAY_INTERNAL_URL, OV_NETWORK_INTERNAL_URL, OV_QUEST_INTERNAL_URL), fixed paths; the subject must be usr_'],
     'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],
     'server/relay/discord.js': [1, 'a Discord webhook URL read from an environment variable the owner allowlisted; mappings name the variable, never a URL'],
     'server/relay/events-worker.js': [3, 'Events pull API (EVENTS_URL) with a service token'],

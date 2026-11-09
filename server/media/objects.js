@@ -68,6 +68,11 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return { id, url: `${config.mediaUrl}/o/${id}`, size_bytes: buffer.length, mime };
     }
 
+    /** One object's metadata (GET /api/v2/community/objects/:id): owner, kind, mime and public URL. */
+    async function object(id) {
+        return await call('GET', `/${encodeURIComponent(String(id))}`);
+    }
+
     /**
      * A usable URL for one object's bytes: its public address, or a short-lived signed URL for a private
      * object. Used by Community's screenshot proxy, which checks canView before asking.
@@ -108,7 +113,7 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return { retired: true, changed: !!(out && out.changed), ...(out && out.retention_until ? { retention_until: out.retention_until } : {}) };
     }
 
-    return { configured, uploadImage, downloadUrl, deleteObject, retireLegacyPaste };
+    return { configured, uploadImage, object, downloadUrl, deleteObject, retireLegacyPaste };
 }
 
 module.exports = { createMediaObjects };

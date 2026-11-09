@@ -36,9 +36,9 @@ const EXPORTS = [
     ['pastes.json', 'pastes', 'owner_subject'], ['paste_comments.json', 'paste_comments', 'author_subject'], ['comments.json', 'comments', 'author_subject'],
     ['threads.json', 'threads', 'author_subject'], ['posts.json', 'posts', 'author_subject'], ['attachments.json', 'attachments', 'owner_subject'],
     ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'], ['thread_votes.json', 'thread_votes', 'subject_id'],
-    ['post_reactions.json', 'post_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
+    ['post_reactions.json', 'post_reactions', 'subject_id'], ['section_reactions.json', 'thread_section_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
-    ['space_moderators.json', 'space_moderators', 'subject_id'],
+    ['space_moderators.json', 'space_moderators', 'subject_id'], ['quest_checks.json', 'pulse_quest_people', 'subject'],
 ];
 
 async function exportPart(db, subject) {
@@ -47,7 +47,8 @@ async function exportPart(db, subject) {
     for (const [name, table, col] of EXPORTS) {
         if (!await hasColumn(db, table, col)) continue;
         // Newest first: by id where the table has one, else by its timestamp.
-        const order = await hasColumn(db, table, 'id') ? 'id' : await hasColumn(db, table, 'created_at') ? 'created_at' : 'updated_at';
+        const order = await hasColumn(db, table, 'id') ? 'id' : await hasColumn(db, table, 'created_at') ? 'created_at'
+            : await hasColumn(db, table, 'checked_at') ? 'checked_at' : 'updated_at';
         const rows = await db.prepare(`SELECT * FROM ${table} WHERE ${col} = ? ORDER BY ${order} DESC LIMIT ${ROW_LIMIT + 1}`).all(subject);
         if (!rows.length) continue;
         if (rows.length > ROW_LIMIT) truncated.push(name);
@@ -94,7 +95,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
     await db.tx(async () => {
         // Likes, votes and reactions first, so the counts recomputed below see only what stays.
         const recount = [];
-        for (const [table, item] of [['paste_likes', 'paste_id'], ['comment_votes', 'comment_id'], ['thread_votes', 'thread_id'], ['post_reactions', 'post_id']]) {
+        for (const [table, item] of [['paste_likes', 'paste_id'], ['comment_votes', 'comment_id'], ['thread_votes', 'thread_id'], ['post_reactions', 'post_id'], ['thread_section_reactions', 'thread_id']]) {
             if (!await hasTable(db, table)) continue;
             const items = (await db.prepare(`SELECT DISTINCT ${item} AS i FROM ${table} WHERE subject_id IN ${S}`).all(...subjects)).map((r) => r.i);
             add(erased, table, (await db.prepare(`DELETE FROM ${table} WHERE subject_id IN ${S}`).run(...subjects)).changes);
@@ -172,7 +173,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             add(erased, 'submissions', (await db.prepare(`DELETE FROM submissions WHERE author_subject IN ${S}`).run(...subjects)).changes);
             await db.prepare(`UPDATE submissions SET reviewer_subject = NULL WHERE reviewer_subject IN ${S}`).run(...subjects);
         }
-        for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
+        for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_quest_people', `subject IN ${S}`, 'quest_checks'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
             ['subject_projection', `subject_id IN ${S}`, 'profile'], ['profile_module_pushes', `subject_id IN ${S}`, 'profile'],
             ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks'], ['space_moderators', `subject_id IN ${S}`, 'space_moderators']]) {
             if (!await hasTable(db, table)) continue;

@@ -111,6 +111,7 @@
       tabs.forEach(function (t) { t.hidden = false; });
       var lockSection = $('[data-lock-it]', form);
       var visField = $('[data-vis-field]', form);
+      var visibilityInputs = $$('input[name="visibility"]', form);
       var audienceLine = $('[data-lock-audience]', form);
       var audienceText = $('[data-lock-audience-text]', form);
       var LOCK_AUDIENCE = { people: 'For the people on the list', password: 'Anyone with the password', link: 'Anyone with the link' };
@@ -137,9 +138,8 @@
           if (lockBody) lockBody.hidden = !on;
           // The audience is the lock's (Specific people, or the link), so the column is replaced by one read-only line
           // naming it, and comes back when Lock it is off.
-          var vis = form.elements.visibility;
           var kind = (form.querySelector('input[name="lock_kind"]:checked') || {}).value || 'people';
-          if (vis) vis.disabled = on;
+          visibilityInputs.forEach(function (i) { i.disabled = on; });
           if (visField) visField.hidden = on;
           if (audienceLine) audienceLine.hidden = !on;
           if (audienceText) audienceText.textContent = LOCK_AUDIENCE[kind] || kind;
@@ -150,7 +150,74 @@
         $$('input[name="lock_kind"]', form).forEach(function (r) { r.addEventListener('change', syncLock); });
         syncLock();
       }
-      tabs.forEach(function (t) { t.addEventListener('click', function () { setMode(t.getAttribute('data-tab')); }, { signal }); });
+      tabs.forEach(function (t) { t.addEventListener('click', function () { setMode(t.getAttribute('data-tab')); if (t.getAttribute('data-tab') === 'text') growBox(); }, { signal }); });
+
+      // ── The code box: line numbers, a box that grows from 12 lines, the language chip, and a dropped file ──
+      var codebox = $('[data-codebox]', form);
+      var contentBox = form.elements.content;
+      var gutterBox = $('[data-gutter]', form);
+      var langSelect = $('[data-lang-select]', form);
+      var langChip = $('[data-lang-chip]', form);
+      var fileInput = $('[data-code-file-input]', form);
+      var minBox = 0;
+      function paintGutter() {
+        if (!contentBox || !gutterBox) return;
+        var n = Math.max(12, contentBox.value.split('\n').length);
+        var out = '';
+        for (var i = 1; i <= n; i++) out += i + (i === n ? '' : '\n');
+        gutterBox.textContent = out;
+        if (gutterBox.parentNode) gutterBox.parentNode.scrollTop = contentBox.scrollTop;
+      }
+      function growBox() {
+        if (!contentBox) return;
+        var cs = window.getComputedStyle(contentBox);
+        if (!minBox) minBox = contentBox.offsetHeight || (12 * parseFloat(cs.lineHeight) + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom));
+        contentBox.style.height = 'auto';
+        var max = Math.round(window.innerHeight * 0.68);
+        contentBox.style.height = Math.max(minBox, Math.min(contentBox.scrollHeight, max)) + 'px';
+        paintGutter();
+      }
+      function readText(f) {
+        var r = new FileReader();
+        r.onload = function () {
+          contentBox.value = String(r.result || '');
+          if (!form.elements.title.value.trim()) form.elements.title.value = f.name.replace(/\.[^.]+$/, '');
+          setMode('text');
+          growBox();
+          contentBox.focus();
+        };
+        r.readAsText(f);
+      }
+      function fillFile(f) {
+        if (!f) return;
+        if (/^image\//.test(f.type)) { takeFile(f); return; }
+        if (/^text\//.test(f.type) || /\.(txt|log|md|markdown|json|jsonc|js|mjs|cjs|ts|tsx|jsx|py|sh|bash|zsh|yml|yaml|toml|ini|sql|css|scss|html?|xml|diff|patch|go|rs|php|rb|java|kt|swift|c|cpp|cs|lua|pl|r|conf|nginx)$/i.test(f.name)) readText(f);
+      }
+      if (contentBox && gutterBox) {
+        growBox();
+        contentBox.addEventListener('input', growBox, { signal });
+        contentBox.addEventListener('scroll', function () { if (gutterBox.parentNode) gutterBox.parentNode.scrollTop = contentBox.scrollTop; }, { signal });
+        window.addEventListener('resize', growBox, { signal });
+      }
+      if (langSelect && langChip) {
+        var sayLang = function () { var o = langSelect.options[langSelect.selectedIndex]; langChip.textContent = o ? o.text : 'Auto-detect'; };
+        langSelect.addEventListener('change', sayLang, { signal }); sayLang();
+      }
+      if (fileInput) {
+        fileInput.addEventListener('change', function () { fillFile(fileInput.files && fileInput.files[0]); fileInput.value = ''; }, { signal });
+        var pickFile = $('[data-code-file]', form);
+        if (pickFile) pickFile.addEventListener('click', function () { fileInput.click(); }, { signal });
+      }
+      if (codebox) {
+        ['dragenter', 'dragover'].forEach(function (ev) { codebox.addEventListener(ev, function (e) { e.preventDefault(); codebox.classList.add('is-drop'); }, { signal }); });
+        codebox.addEventListener('dragleave', function () { codebox.classList.remove('is-drop'); }, { signal });
+        codebox.addEventListener('drop', function (e) {
+          codebox.classList.remove('is-drop');
+          if (!e.dataTransfer || !e.dataTransfer.files[0]) return;
+          e.preventDefault(); e.stopPropagation();
+          fillFile(e.dataTransfer.files[0]);
+        }, { signal });
+      }
       setMode('text');
       // Dropping or pasting an image anywhere on the form switches to the screenshot mode.
       function takeFile(f) { if (!f || !/^image\//.test(f.type)) return; var dt = new DataTransfer(); dt.items.add(f); setMode('image'); form.elements.screenshot.files = dt.files; if (!form.elements.title.value) form.elements.title.value = f.name.replace(/\.[^.]+$/, ''); }

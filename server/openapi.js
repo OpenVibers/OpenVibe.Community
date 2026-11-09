@@ -285,6 +285,19 @@ route('post', '/api/v1/comments/threads/{id}/comments', {
     } }),
     responses: { 201: json('The comment', { type: 'object', properties: { comment: ref('Comment') } }), ...errors() },
 });
+route('post', '/api/v1/comments/threads/{id}/section-reactions', {
+    operationId: 'reactToSection', summary: 'Say whether a section of a post was good', tags: ['comments'], security: PERSON, parameters: [path('id', str())],
+    description: 'community.comment.create. One row per person and section: 1 (good), -1 (not good), 0 takes it back. The counts are recomputed from the rows.',
+    requestBody: body({ type: 'object', required: ['section_id', 'value'], properties: {
+        section_id: str({ maxLength: 64 }), value: { type: 'integer', enum: [1, -1, 0] },
+    } }),
+    responses: { 200: json('The section\'s counts', { type: 'object', properties: { section_id: str(), value: { type: 'integer' }, upvotes: { type: 'integer' }, downvotes: { type: 'integer' } } }), ...errors() },
+});
+route('get', '/api/v1/comments/threads/{id}/section-reactions', {
+    operationId: 'sectionReactions', summary: 'The counts of every section of a post, and mine', tags: ['comments'], parameters: [path('id', str())],
+    description: 'community.comment.read. Anyone may read the counts; a signed-in reader also gets their own reaction per section.',
+    responses: { 200: json('Counts by section', { type: 'object' }), ...errors() },
+});
 route('put', '/api/v1/comments/threads/{id}/visibility', {
     operationId: 'setThreadVisibility', summary: 'Hide or lock a thread (moderators)', tags: ['comments'], security: PERSON, parameters: [path('id', str())],
     description: 'community.comment.moderate.',
@@ -354,6 +367,21 @@ route('delete', '/api/v1/pulse/items/{service}/{type}/{id}', {
     parameters: [path('service', str()), path('type', str()), path('id', str())],
     description: 'community.pulse.write for services, community.pulse.contribute for apps.',
     responses: { 200: json('Whether it was there'), ...errors() },
+});
+route('get', '/api/v1/feed', {
+    operationId: 'getFeed', summary: 'The menu\'s Feed: one stream from Pulse, newest first', tags: ['feed'], security: ANONYMOUS,
+    description: 'Public. A kind, site or word filters the stream; following=1 is the signed-in person\'s Network follows. Cards carry Community\'s views, likes and comments where it knows them.',
+    parameters: [
+        query('kind', { type: 'string', enum: ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'] }),
+        query('site', str({ maxLength: 40 }), 'A source service (live, community, wiki, quest, chat, today, network…)'),
+        query('q', str({ maxLength: 80 }), 'Words in the title or text'), query('following', { type: 'string', enum: ['1', 'true'] }),
+        query('cursor', str(), 'The next_cursor from the previous page'), query('limit', { type: 'integer', minimum: 1, maximum: 40, default: 20 })],
+    responses: { 200: json('Cards and the next cursor', { type: 'object', required: ['items', 'next_cursor'], properties: {
+        items: arrayOf({ type: 'object', required: ['id', 'kind', 'url', 'title', 'text', 'site', 'site_name', 'counts'], properties: {
+            id: str(), kind: str(), url: str(), title: str({ maxLength: 300 }), text: str({ maxLength: 280 }), at: nullable('string', { format: 'date-time' }),
+            site: str(), site_name: str(), media: nullable('object'), counts: { type: 'object' },
+            actor: nullable('object', { properties: { name: nullable('string'), avatar: nullable('string') } }) } }),
+        next_cursor: nullable('string') } }), ...errors([400, 401, 429]) },
 });
 route('post', '/api/v1/me/status', {
     operationId: 'postStatus', summary: 'Post a public status to your profile and Pulse', tags: ['pulse'], security: PERSON,
@@ -565,6 +593,15 @@ route('delete', '/api/v1/spaces/{space}/moderators/{subject}', {
 });
 
 // ── /api/v1/posts — one forum post (server/forum/api.js) ────────────────────────────────────
+route('post', '/api/v1/posts', {
+    operationId: 'createPost', summary: 'Post a status with pictures, in the Feed at once', tags: ['posts'], security: PERSON,
+    description: 'People only. Pictures are Media objects the person owns, each with required alt text; the post is a thread in the Status space.',
+    requestBody: body({ type: 'object', required: ['text'], properties: {
+        text: str({ minLength: 1, maxLength: 2000 }),
+        pictures: { type: 'array', maxItems: 4, items: { type: 'object', required: ['media_id', 'alt'], properties: {
+            media_id: str({ pattern: '^med_[0-9A-HJKMNP-TV-Z]{26}$' }), alt: str({ minLength: 1, maxLength: 300 }) } } } } }),
+    responses: { 201: json('The post and its pictures'), ...errors([400, 401, 409, 429]) },
+});
 route('put', '/api/v1/posts/{id}', {
     operationId: 'editPost', summary: 'Edit a post (its author or a moderator)', tags: ['posts'], security: PERSON,
     parameters: [path('id', { type: 'string' })],
