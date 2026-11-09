@@ -56,14 +56,19 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
         return ids;
     }
 
+    /** The feed's short text: the first 280 characters, one line, never a whole post. */
+    const feedText = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 280);
+    const picture = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
+
     /** Record one of Community's own items; never lets a Pulse problem fail the write that caused it. */
-    async function recordLocal(type, id, { title, path, actor = null, origin = 'user', at = null }) {
+    async function recordLocal(type, id, { title, path, actor = null, origin = 'user', at = null, text = '', pictureUrl = null }) {
         try {
             const o = ORIGINS.includes(origin) ? origin : 'user';
             await store.upsertItem(db, {
                 source_service: 'community', source_type: type, source_id: String(id),
                 title: String(title || 'Untitled').slice(0, 300), url: `${base}${path}`,
                 actor_subject: o === 'user' ? actor : null, origin: o, occurred_at: at || sqlTime(),
+                text: feedText(text), picture_url: picture(pictureUrl),
             });
         } catch (err) { console.warn('[Pulse] record failed:', err.message); }
     }
@@ -83,6 +88,7 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             label: ai ? 'AI' : (i.origin === 'system' ? 'System' : null),
             ...(i.source_service.startsWith('app:') ? { via: `via ${i.app_name || i.source_service.slice(4)}` } : {}),
             ...(i.picture_url ? { picture_url: i.picture_url } : {}),
+            ...(i.text ? { text: i.text } : {}),
             actor,
             occurred_at: isoTime(i.occurred_at),
         };
@@ -91,33 +97,41 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
     return {
         ORIGINS,
         forgetLocal,
-        async statusCreated(thread, text, actor) {
+        /** The channels the signed-in person follows (Network), for the feed's following filter. */
+        async followedFor(v) {
+            if (!v || v.kind !== 'user' || !v.token) return [];
+            return await followedSubjects(v);
+        },
+        async statusCreated(thread, text, actor, pictureUrl = null) {
             await recordLocal('status', thread.id, { title: text.slice(0, 300), path: `/forum/status/${thread.slug}`,
-                actor, origin: 'user', at: thread.created_at });
+                actor, origin: 'user', at: thread.created_at, text, pictureUrl });
         },
 
         // ── hooks for Community's own writes ─────────────────
         async pasteCreated(p) {
             if (!p || p.visibility !== 'public' || p.origin !== 'user' || Number(p.burn_after_read) || Number(p.is_nsfw)) return;
-            await recordLocal('paste', p.slug, { title: p.title, path: `/p/${encodeURIComponent(p.slug)}`, actor: p.owner_subject, origin: 'user', at: p.created_at });
+            await recordLocal('paste', p.slug, { title: p.title, path: `/p/${encodeURIComponent(p.slug)}`, actor: p.owner_subject, origin: 'user', at: p.created_at,
+                text: p.content, pictureUrl: p.screenshot_url });
         },
         async pasteChanged(p) {
             if (!p) return;
             if (p.deleted_at || p.visibility !== 'public' || Number(p.is_nsfw)) await forgetLocal('paste', p.slug);
         },
         async pasteGone(slug) { await forgetLocal('paste', slug); },
-        async threadCreated(thread, space) {
+        async threadCreated(thread, space, extra = {}) {
             if (!thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner) return;
             await recordLocal('thread', thread.id, {
                 title: thread.title, path: `/forum/${space.slug}/${thread.slug}`,
                 actor: thread.author_subject, origin: thread.origin === 'ai' ? 'ai' : (thread.origin === 'system' ? 'system' : 'user'), at: thread.created_at,
+                text: extra.text, pictureUrl: extra.picture,
             });
         },
-        async postCreated(post, thread, space) {
+        async postCreated(post, thread, space, extra = {}) {
             if (!post || !thread || !space || space.visibility !== 'public' || space.members_only_owner || thread.members_only_owner || post.is_opening) return;
             await recordLocal('post', post.id, {
                 title: `Re: ${thread.title}`, path: `/forum/${space.slug}/${thread.slug}#post-${post.id}`,
                 actor: post.author_subject, origin: post.origin === 'ai' ? 'ai' : 'user', at: post.created_at,
+                text: post.body_markdown, pictureUrl: extra.picture,
             });
         },
         async submissionAccepted(s) {

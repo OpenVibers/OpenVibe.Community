@@ -149,6 +149,12 @@ async function createApp(opts = {}) {
     await revocations.load();
     const viewers = createViewerResolver({ auth, config, network, revocations });
     const pulse = createPulse({ db, network, config });
+    // Public activity without an Events topic (Today's calendar, Network's open stats, Quest badges): a due-based
+    // job that fills Pulse, started by server/index.js and never called while a feed request is being answered.
+    const pulseSources = require('./pulse/sources').createPulseSources({
+        db, config, fetchImpl: opts.sourcesFetch || opts.fetchImpl || globalThis.fetch, ...(opts.pulseSources || {}),
+    });
+    app.locals.pulseSources = pulseSources;
     const relay = opts.relay || createDiscordRelay({
         db, config, enabled: config.discordRelay.enabled,
         pollMs: config.discordRelay.pollMs, baseMs: config.discordRelay.backoffMs, maxAttempts: config.discordRelay.maxAttempts,
@@ -308,9 +314,11 @@ async function createApp(opts = {}) {
     });
     const cors = v1.cors(config.apiCorsOrigins);
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter, limits }));
-    app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers, limits }));
+    // The menu's wall and Feed on every OpenVibe site read these: public reads from any origin, writes from the listed ones.
+    const readCors = v1.publicReadCors(config.apiCorsOrigins);
+    app.use('/api/v1/pulse', readCors, createPulseApi({ pulse, viewers, limits }));
     // The menu's Feed on every site: one stream from Pulse with the network's trending pictures and videos (pulse/feed.js).
-    app.use('/api/v1/feed', cors, require('./pulse/feed').createFeedApi({ pulse, viewers, limits, networkUrl: config.networkUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch }));
+    app.use('/api/v1/feed', readCors, require('./pulse/feed').createFeedApi({ pulse, viewers, limits, db, networkUrl: config.networkUrl, liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch }));
     app.use('/api/v1/me/status', cors, require('./status/api').createStatusApi({ forum, pulse, viewers, limits, db, baseUrl: config.baseUrl }));
     app.use('/api/v1/profiles', cors, require('./status/api').createProfileStatusApi({ viewers, limits, db, baseUrl: config.baseUrl }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
@@ -320,7 +328,7 @@ async function createApp(opts = {}) {
     // and these deliveries carry token cutoffs and account deletions.
     app.use('/internal/events', pulseConsumer.router);
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers, limits }));
-    app.use('/api/v1/posts', createPostsApi({ forum, viewers, limits }));
+    app.use('/api/v1/posts', createPostsApi({ forum, pulse, viewers, limits, baseUrl: config.baseUrl }));
     app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers, limits }));
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
     // OpenVibe.Services reads a person's pastes and spaces here (community.resource.read, a service token on loopback;

@@ -46,6 +46,12 @@ module.exports = {
     // OpenVibe.Search's query API (the /search page), asked anonymously: public documents only.
     searchInternalUrl: (process.env.OV_SEARCH_INTERNAL_URL || 'http://127.0.0.1:4710').replace(/\/$/, ''),
     liveUrl: (process.env.OV_LIVE_URL || 'https://openvibe.live').replace(/\/$/, ''),
+    // The public sites whose activity a due-based job reads into Pulse (server/pulse/sources.js): Today's
+    // calendar, Quest's public badges and Network's open stats. The internal addresses are for the API calls.
+    todayUrl: (process.env.OV_TODAY_URL || 'https://openvibe.today').replace(/\/$/, ''),
+    todayInternalUrl: (process.env.OV_TODAY_INTERNAL_URL || 'http://127.0.0.1:5100').replace(/\/$/, ''),
+    questUrl: (process.env.OV_QUEST_URL || 'https://openvibe.quest').replace(/\/$/, ''),
+    questInternalUrl: (process.env.OV_QUEST_INTERNAL_URL || 'http://127.0.0.1:4980').replace(/\/$/, ''),
     // OpenVibe.Vision — the unsafe-image review (VIS-6). Unset or without Community's service principal:
     // no review runs and image pastes keep their old behaviour.
     vision: {

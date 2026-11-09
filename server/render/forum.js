@@ -221,7 +221,7 @@ function crosspostBlock(c, base) {
 
 /** A post's images. */
 function postImages(p) {
-    return `${(p.attachments || []).length ? `<div class="post-images">${p.attachments.map((a) => `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.filename || 'Image')}" loading="lazy" decoding="async"></a>`).join('')}</div>` : ''}`;
+    return `${(p.attachments || []).length ? `<div class="post-images">${p.attachments.map((a) => `<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" alt="${esc(a.alt || a.filename || 'Image')}" loading="lazy" decoding="async"></a>`).join('')}</div>` : ''}`;
 }
 /**
  * A post's ratings (Facepunch-style): the ratings given, as buttons that take yours back or switch to them,

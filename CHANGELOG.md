@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **The wide Feed** (owner, 11-09: "one huge feed of everything, all the data, SDK and API enabled"). Pulse now carries
+  every kind the menu's Feed draws — `wiki` (new and updated articles), `quest` (a finished quest's badge), `chat` (a
+  busy public room hour), `event` (Today's calendar) and `member` (a day's new Network accounts, "5 people joined
+  today") — beside live, clip, video, pic, post, meme, game and update. Wiki and Chat arrive over Events
+  (`wiki.page.updated`, `chat.room.message.created`); Today, Network and Quest are read by the due-based
+  `server/pulse/sources.js` (next run per source in `pulse_source_runs`), never while a feed request is answered.
+  - `GET /api/v1/feed` keeps its shape and gains `text` (the first 280 characters), the first `picture_url` of
+    Community's own posts and pastes, Community's own `counts` (views, likes, comments), and the `site=`, `q=` and
+    `following=1` filters (the signed-in person's Network follows).
+  - `POST /api/v1/posts { text, pictures: [{ media_id, alt }] }` posts up to four pictures (alt required), uploaded
+    through Media, and the post is in the Feed at once. Attachments remember the alt text.
+  - `migrations/0024_feed_wide.sql` (expand): `pulse_items.text`, `attachments.alt`, `pulse_source_runs` and
+    `pulse_quest_people`.
+  - Contracts: `community.feed-item@1`; SDK: `ov.community.feed()` and `ov.community.posts.create()` (their own PRs).
+
 - **The forum moved from `/s` to `/forum`** (design 2026-11-07, section 13 "URLs people already know"). The board
   is `/forum`, a space `/forum/<space>`, and a thread `/forum/<space>/<thread>` (the `/t/` segment is gone);
   `/forum/new` and `/forum/discuss` replace `/s/new-space` and `/s/discuss`. Every old `/s` address answers a
