@@ -81,6 +81,26 @@ function decodeCursor(cursor, arity) {
  * CORS for the embeddable APIs: other OpenVibe sites call them from the browser with the
  * visitor's Network JWT as a Bearer token (never with cookies — no credentials mode).
  */
+/**
+ * CORS for public reads every OpenVibe site makes from the menu (the Feed, the wall): any origin may GET them, with no
+ * credentials mode (a Bearer token at most, never cookies), so the answer is the same public data it would be by URL.
+ * The ~60 OpenVibe domains are not a list to keep in step here; writes keep cors(origins).
+ */
+function publicReadCors(origins) {
+    const strict = cors(origins);
+    return (req, res, next) => {
+        const read = req.method === 'GET' || req.method === 'HEAD' || (req.method === 'OPTIONS' && /^(GET|HEAD)$/i.test(String(req.get('access-control-request-method') || '')));
+        if (!read) return strict(req, res, next);
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, traceparent, X-OpenVibe-Request-Id');
+        res.set('Access-Control-Allow-Methods', 'GET, HEAD');
+        res.set('Access-Control-Expose-Headers', 'X-OpenVibe-Request-Id, Retry-After');
+        res.set('Access-Control-Max-Age', '600');
+        if (req.method === 'OPTIONS') return res.status(204).end();
+        return next();
+    };
+}
+
 function cors(origins) {
     const allowed = new Set(origins);
     return (req, res, next) => {
@@ -108,4 +128,4 @@ function isoTime(v) {
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-module.exports = { ApiError, fail, run, serviceCap, serviceAnyCap, jsonBody, encodeCursor, decodeCursor, cors, intIn, sqlTime, isoTime };
+module.exports = { ApiError, fail, run, serviceCap, serviceAnyCap, jsonBody, encodeCursor, decodeCursor, cors, publicReadCors, intIn, sqlTime, isoTime };
