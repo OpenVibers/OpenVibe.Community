@@ -8,7 +8,12 @@ const { renderMarkdown: md, markdownToText } = require('../server/render/markdow
 const { check, done } = require('./helpers/app');
 
 (async () => {
-    await check('the supported subset renders', () => {
+    await check('Pics embeds accept only fixed raster URLs and escape alt text', () => {
+        assert.ok(md('![forest](https://openvibe.pics/i/Abcdef23.png)').includes('<img src="https://openvibe.pics/i/Abcdef23.png"'));
+        for (const url of ['https://evil.test/i/Abcdef23.png','https://openvibe.pics/i/Abcdef23.svg','https://openvibe.pics.evil.test/i/Abcdef23.png']) assert.ok(!md(`![x](${url})`).includes('<img'));
+        assert.ok(!md('![" onerror="alert(1)](https://openvibe.pics/i/Abcdef23.png)').includes('alt="" onerror'));
+    });
+    await check('the supported subset renders' , () => {
         assert.strictEqual(md('Hello **bold**, *em*, _em_, ~~gone~~ and `x < y`'), '<p>Hello <strong>bold</strong>, <em>em</em>, <em>em</em>, <del>gone</del> and <code>x &lt; y</code></p>');
         assert.strictEqual(md('line one\nline two'), '<p>line one<br>\nline two</p>');
         assert.strictEqual(md('# Title\n## Sub'), '<h3>Title</h3>\n<h4>Sub</h4>', 'headings demoted so the page keeps one h1');

@@ -123,6 +123,9 @@ function inline(raw) {
     let s = codeSpans(String(raw), (code) => hold(`<code>${esc(code)}</code>`));
     // 2. everything else is escaped before any tag is written
     s = esc(s);
+    // Opt-in Pics embeds only: a fixed HTTPS origin and raster paths, no SVG or arbitrary trackers.
+    s = s.replace(/!\[([^\]\n]{0,300})\]\((https:\/\/openvibe\.pics\/i\/[2-9a-km-zA-HJ-NP-Z]{8}\.(?:jpg|png|webp|gif|avif))\)/g,
+        (_m, alt, url) => hold(`<img src="${url}" alt="${alt}" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="pics-embed">`));
     // 3. [text](url) — only safe schemes; the rest stays as text
     s = s.replace(/\[([^\]\n]{1,300})\]\(([^\s()]{1,2000})\)/g, (m, text, url) => {
         if (!SAFE_URL.test(unescapeEntities(url))) return m;

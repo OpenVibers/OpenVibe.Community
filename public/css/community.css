@@ -536,3 +536,5 @@ button.rx:hover { border-color: var(--accent); }
 .paste-plain:focus-visible { outline: 2px solid rgba(var(--accent-rgb), .5); outline-offset: 2px; }
 .locked-file { margin: 0 0 10px; }
 .locked-file a { white-space: nowrap; }
+
+.md .pics-embed { display: block; max-width: 100%; height: auto; border-radius: 8px; margin: 1em 0; }
