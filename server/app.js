@@ -314,9 +314,11 @@ async function createApp(opts = {}) {
     });
     const cors = v1.cors(config.apiCorsOrigins);
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter, limits }));
-    app.use('/api/v1/pulse', cors, createPulseApi({ pulse, viewers, limits }));
+    // The menu's wall and Feed on every OpenVibe site read these: public reads from any origin, writes from the listed ones.
+    const readCors = v1.publicReadCors(config.apiCorsOrigins);
+    app.use('/api/v1/pulse', readCors, createPulseApi({ pulse, viewers, limits }));
     // The menu's Feed on every site: one stream from Pulse with the network's trending pictures and videos (pulse/feed.js).
-    app.use('/api/v1/feed', cors, require('./pulse/feed').createFeedApi({ pulse, viewers, limits, db, networkUrl: config.networkUrl, liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch }));
+    app.use('/api/v1/feed', readCors, require('./pulse/feed').createFeedApi({ pulse, viewers, limits, db, networkUrl: config.networkUrl, liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch }));
     app.use('/api/v1/me/status', cors, require('./status/api').createStatusApi({ forum, pulse, viewers, limits, db, baseUrl: config.baseUrl }));
     app.use('/api/v1/profiles', cors, require('./status/api').createProfileStatusApi({ viewers, limits, db, baseUrl: config.baseUrl }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
