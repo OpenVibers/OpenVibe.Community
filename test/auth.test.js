@@ -17,7 +17,9 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(u.searchParams.get('redirect_uri'), 'https://openvibe.community/auth/callback');
         assert.strictEqual(u.searchParams.get('response_type'), 'code');
         assert.strictEqual(u.searchParams.get('scope'), 'profile theme');
-        assert.strictEqual(u.searchParams.get('prompt'), null);
+        // openvibe-sdk 0.143.0 made a plain sign-in quiet first: the Network is asked with prompt=none, and its
+        // callback starts the chooser once when nobody is signed in there.
+        assert.strictEqual(u.searchParams.get('prompt'), 'none');
         assert.match(u.searchParams.get('state'), /^[0-9A-Za-z_-]{32}$/, 'the SDK state: 24 random bytes, base64url');
         assert.match(u.searchParams.get('code_challenge'), /^[0-9A-Za-z_-]{43}$/, 'PKCE S256 challenge');
         assert.strictEqual(u.searchParams.get('code_challenge_method'), 'S256');
@@ -100,7 +102,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(session.status, 200, 'the session token itself signs in');
     });
 
-    await check('silent login with a valid ov_token skips the Network and 302s to next; non-silent and bad tokens still go', async () => {
+    await check('a valid ov_token skips the Network and 302s to next for a silent or a plain login; a bad token starts the sign-in', async () => {
         assert.ok(t.jar.has('ov_token'), 'precondition: signed in');
         const short = await t.get('/auth/login?silent=1&next=/pastes%3Fsort%3Dviews');
         assert.strictEqual(short.status, 302);
@@ -109,15 +111,18 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(!state || /Expires=Thu, 01 Jan 1970/i.test(state), 'no OAuth flow was started (state cookie only ever cleared)');
         const evil = await t.get('/auth/login?silent=1&next=https://evil.example/');
         assert.strictEqual(evil.headers.get('location'), '/');
+        // openvibe-sdk 0.143.0's quiet first try: a plain sign-in with a session takes the same shortcut (no chooser).
         const loud = await t.get('/auth/login?next=/my');
-        assert.strictEqual(new URL(loud.headers.get('location')).origin, t.network.url);
-        const stale = await t.get('/auth/login?silent=1&next=/my', { cookies: ['ov_token=garbage'] });
-        assert.strictEqual(stale.status, 302);
+        assert.strictEqual(loud.status, 302);
+        assert.strictEqual(loud.headers.get('location'), '/my');
         // The jar's good token is also sent, so exercise the shortcut miss with the jar emptied.
         const saved = t.jar.get('ov_token'); t.jar.delete('ov_token');
         const miss = await t.get('/auth/login?silent=1&next=/my', { cookies: ['ov_token=garbage'] });
         assert.strictEqual(new URL(miss.headers.get('location')).origin, t.network.url);
         assert.strictEqual(new URL(miss.headers.get('location')).searchParams.get('prompt'), 'none');
+        const plain = await t.get('/auth/login?next=/my', { cookies: ['ov_token=garbage'] });
+        assert.strictEqual(new URL(plain.headers.get('location')).origin, t.network.url, 'a bad token still starts the sign-in');
+        assert.strictEqual(new URL(plain.headers.get('location')).searchParams.get('prompt'), 'none', 'quiet first');
         t.jar.set('ov_token', saved);
     });
 
