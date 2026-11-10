@@ -14,7 +14,6 @@ const showcase = require('openvibe-shared/showcase');
 const kit = require('openvibe-shared/kit');
 const { highlight, escapeHtml: esc, languageLabel, extensionFor, LANGUAGES } = require('./highlight');
 const { renderMarkdown } = require('./markdown');
-const { pickBlock, foldBlock } = require('./short');
 const { canonicalSlug } = require('../pastes/url');
 const pastePathSlug = (p) => (p && (p.canonical_slug || canonicalSlug(p))) || '';
 
@@ -166,7 +165,11 @@ const HOME_FAQ = [
 
 const STATUS_WORDS = { in_progress: 'In progress', done: 'Done', planned: 'Planned', open: 'Open', paused: 'Paused', declined: 'Declined' };
 const STATUS_TONE = { in_progress: 'accent', done: 'ok', planned: '', open: '', paused: 'warn', declined: 'bad' };
-const SERVICE_WORDS = { community: 'Community', live: 'Live', blog: 'Blog', wiki: 'Wiki', news: 'News', games: 'Games', media: 'Media' };
+const SERVICE_WORDS = { community: 'Community', live: 'Live', blog: 'Blog', wiki: 'Wiki', news: 'News', games: 'Games', media: 'Media', 'media-hub': 'Video', video: 'Video', pics: 'Pics', meme: 'Meme', network: 'Network', today: 'Today', tools: 'Tools', reviews: 'Reviews', quest: 'Quest', chat: 'Chat' };
+// The site an item came from, as the kit's icon beside the person's picture (or alone, where no person did it).
+const SERVICE_ICON = { community: 'chat', live: 'live', blog: 'book', wiki: 'book', news: 'flag', games: 'game', media: 'video', 'media-hub': 'video', video: 'video', pics: 'image', meme: 'image', network: 'members', today: 'calendar', tools: 'grid', reviews: 'star', quest: 'trophy', chat: 'chat' };
+// A roadmap item's state as the row's mark: the word is under the title, once, in plain text.
+const STATUS_ICON = { in_progress: 'steps', done: 'check', planned: 'clock', open: 'flag', paused: 'pause', declined: 'close' };
 // The forum's places in the launcher: the network's ring icons (openvibe-shared ov-icons) by space.
 const SPACE_ICON = { general: 'ov:chat', help: 'ov:help', feedback: 'ov:bell', showcase: 'ov:image', 'off-topic': 'ov:community' };
 
@@ -245,16 +248,38 @@ function forumShelf(spaces) {
 const whenOf = (v) => (v ? kit.when(v) : { text: '', iso: '' });
 function roadmapShelf(items) {
     if (!items || !items.length) return '';
+    const mark = (st) => `<span class="cm-mark cm-mark--${esc(STATUS_TONE[st] || 'plain')}" aria-hidden="true">${kit.icon(STATUS_ICON[st] || 'flag')}</span>`;
     return `<section class="cm-sec" id="roadmap" aria-labelledby="h-roadmap">${shelfHead('h-roadmap', 'On the roadmap', { href: '/forum/roadmap', label: 'The whole roadmap' })}
-${kit.list(items.slice(0, 5).map((t) => kit.row({ href: `/forum/roadmap/${t.slug}`, title: t.title, subHtml: kit.badge(STATUS_WORDS[t.status] || 'Open', STATUS_TONE[t.status] || ''), meta: whenOf(t.last_activity_at).text, metaIso: whenOf(t.last_activity_at).iso })))}</section>`;
+${kit.list(items.slice(0, 5).map((t) => kit.row({ href: `/forum/roadmap/${t.slug}`, mark: mark(t.status), title: t.title, sub: STATUS_WORDS[t.status] || 'Open', meta: whenOf(t.last_activity_at).text, metaIso: whenOf(t.last_activity_at).iso })))}</section>`;
+}
+
+/**
+ * One thing that happened on the network, as a row: the person's picture with the site's icon on its corner (the
+ * site's icon alone where no person did it: a count, a system notice; a spark where OpenVibe.AI wrote it), what
+ * happened, the site in words with the item's own line where it has one, and its picture at the row's end.
+ */
+function pulseRow(it) {
+    const svc = it.source.service;
+    const site = SERVICE_WORDS[svc] || (it.via ? it.via.replace(/^via /, '') : svc);
+    const glyph = kit.icon(it.origin === 'ai' ? 'spark' : SERVICE_ICON[svc] || 'globe');
+    const person = it.actor && !it.actor.is_ai && !it.actor.is_system ? it.actor : null;
+    const mark = person
+        ? `<span class="cm-pmark">${kit.mark({ name: authorName(person), src: avatarUrl(person, 96) || '', size: 40 })}<span class="cm-pmark-site" title="${esc(site)}">${glyph}</span></span>`
+        : `<span class="cm-mark cm-mark--site" aria-hidden="true">${glyph}</span>`;
+    const line = it.text ? ld.clean(it.text, 80) : '';
+    const thumb = it.picture_url && /^https:\/\//i.test(it.picture_url) ? `<img class="cm-pthumb" src="${esc(kit.mediaW(it.picture_url, 96))}" alt="" width="44" height="44" loading="lazy" decoding="async">` : '';
+    return kit.row({
+        href: it.url, rel: svc === 'community' ? '' : 'nofollow ugc noopener', mark, title: it.title,
+        badge: it.origin === 'ai' ? kit.badge('AI', 'accent') : '', sub: line ? `${site} · ${line}` : site, trail: thumb,
+        meta: whenOf(it.occurred_at).text, metaIso: whenOf(it.occurred_at).iso,
+    });
 }
 
 function pulseShelf(items) {
     if (!items || !items.length) return '';
     // Links to the network's other sites keep the nofollow they have on /pulse.
-    const rows = items.slice(0, 4).map((it) => kit.row({ href: it.url, rel: it.source.service === 'community' ? '' : 'nofollow ugc noopener', title: it.title, badge: it.origin === 'ai' ? kit.badge('AI', 'accent') : '', sub: SERVICE_WORDS[it.source.service] || it.source.service, meta: whenOf(it.occurred_at).text, metaIso: whenOf(it.occurred_at).iso }));
     return `<section class="cm-sec" id="pulse" aria-labelledby="h-pulse">${shelfHead('h-pulse', 'Across OpenVibe', { href: '/pulse', label: 'All of Pulse' })}
-${kit.list(rows)}</section>`;
+${kit.list(items.slice(0, 5).map(pulseRow))}</section>`;
 }
 
 /** The API, read once: folded, with the two samples to copy. */
@@ -273,26 +298,29 @@ const { url } = await res.json(); // "/p/<slug>"` })}`,
     });
 }
 
+/**
+ * The questions. Every one is in the page; on a phone the list shows its first two and fades, and one button under
+ * it opens the rest (the owner, 2026-11-10: a closed fold "doesn't even look collapsible, so you can't even see the
+ * questions … show the first two and then fade out"). Each question opens its own answer. Without the script, and
+ * where there is room, the whole list is shown.
+ */
 function homeFaq() {
-    // The questions are a fold on a phone (the owner's short-pages rule, 2026-10-30): they stay in the page for the
-    // crawlers, and the script closes them where the reader has room for more.
-    return `<section class="cm-sec" id="questions" aria-labelledby="h-faq">${foldBlock({
-        id: 'faq-fold',
-        head: '<h2 id="h-faq" class="cm-h">Questions</h2>',
-        html: `<div class="cm-faq">${HOME_FAQ.map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>`,
-    })}</section>`;
+    const n = HOME_FAQ.length;
+    const item = (f) => `<details><summary><span class="cm-faq-i" aria-hidden="true">${kit.icon('help')}</span><span class="cm-faq-q">${esc(f.q)}</span>${kit.icon('chevron', { cls: 'cm-faq-c' })}</summary><p>${esc(f.a)}</p></details>`;
+    return `<section class="cm-sec" id="questions" aria-labelledby="h-faq"><div class="ovk-rail-head"><h2 id="h-faq">Questions</h2></div>
+<div class="cm-peek" id="faq-peek"><div class="cm-faq">${HOME_FAQ.map(item).join('')}</div></div>
+<button type="button" class="cm-peek-more" id="faq-more" aria-controls="faq-peek" aria-expanded="false" hidden><span data-more="All ${n} questions" data-less="Show fewer">All ${n} questions</span>${kit.icon('down')}</button>
+<script>(function(){var p=document.getElementById('faq-peek'),b=document.getElementById('faq-more');if(!p||!b||!window.matchMedia||!window.matchMedia('(max-width:640px)').matches)return;var l=b.querySelector('span');p.setAttribute('data-clamped','');b.hidden=false;
+b.addEventListener('click',function(){var open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',open?'true':'false');l.textContent=l.getAttribute(open?'data-less':'data-more');
+if(open){p.style.maxHeight=p.scrollHeight+'px';p.removeAttribute('data-clamped');p.setAttribute('data-open','');setTimeout(function(){if(p.hasAttribute('data-open'))p.style.maxHeight='none'},420)}
+else{p.style.maxHeight=p.scrollHeight+'px';p.offsetHeight;p.removeAttribute('data-open');p.setAttribute('data-clamped','');p.style.maxHeight='';b.scrollIntoView({block:'nearest'})}});
+p.addEventListener('toggle',function(e){if(p.hasAttribute('data-clamped')){if(e.target.open)b.click()}else if(p.hasAttribute('data-open'))p.style.maxHeight='none'},true);})();</script></section>`;
 }
 
-/**
- * The roadmap and the pulse, one at a time on a phone (the owner's short-pages rule, 2026-10-30): the chips pick one
- * of the two shelves, and both stay in the page for the crawlers. On a wide screen they stay side by side.
- */
-function pickWhatIsHappening(roadmap, activity) {
-    const panes = [
-        { id: 'shelf-roadmap', label: 'Roadmap', html: roadmapShelf(roadmap) },
-        { id: 'shelf-pulse', label: 'Across OpenVibe', html: pulseShelf(activity) },
-    ];
-    return pickBlock({ key: 'happening', label: 'What is happening', head: 'What is happening', panes, bodyClass: 'cm-pair' });
+/** The roadmap and the pulse: two sections, one under the other on a phone, side by side where there is room. */
+function whatIsHappening(roadmap, activity) {
+    const pair = roadmapShelf(roadmap) + pulseShelf(activity);
+    return pair ? `<div class="cm-pair">${pair}</div>` : '';
 }
 
 
@@ -311,7 +339,7 @@ function homePage({ latest, fromStreams = [], languages, user, spaces = [], road
 ${latestShelf(latest, languages)}
 ${streamsShelf(fromStreams)}
 ${forumShelf(spaces)}
-${pickWhatIsHappening(roadmap, activity)}
+${whatIsHappening(roadmap, activity)}
 <div class="cm-sec">${apiFold()}</div>
 ${homeFaq()}
 <section class="section">${frame.shipped({ service: 'community', title: 'Recently shipped on OpenVibe.Community' })}</section>`;
