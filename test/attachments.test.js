@@ -1,7 +1,8 @@
 'use strict';
 /**
  * Images on forum posts (WS-J task 2): an upload goes to OpenVibe.Media's Object API v2 as a med_ object
- * the person owns (init → content → complete, Community's service token, X-OV-Subject), metadata stripped
+ * the person owns (Media normalizes EXIF orientation and strips metadata before init → content → complete;
+ * Community supplies its service token and X-OV-Subject)
  * and the type taken from the bytes; a thread or reply names at most 4 of the person's own unattached
  * uploads; posts show them; the no-JS forms upload and attach in one step; someone else's upload, a
  * non-image, an anonymous upload and Media being unconfigured are refused.
@@ -12,6 +13,7 @@ const crypto = require('crypto');
 const { ids } = require('openvibe-contracts');
 const { boot, check, done } = require('./helpers/app');
 const { createMediaObjects } = require('../server/media/objects');
+const { stripImageMetadata } = require('../server/media/strip-metadata');
 const { sniffImage } = require('../server/forum/service');
 
 // A 1×1 PNG with a tEXt chunk (metadata that must not reach Media), with real lengths and CRCs.
@@ -29,6 +31,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
 (async () => {
     // ── A stub Media (Object API v2 for tenant community) ──
     const objects = new Map();
+    let normalizedImages = 0;
     const media = http.createServer((req, res) => {
         const chunks = [];
         req.on('data', (c) => chunks.push(c));
@@ -37,6 +40,11 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
             const send = (status, obj) => { res.statusCode = status; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(obj)); };
             if (req.url === '/oauth/token') return send(200, { access_token: 'svc-community', token_type: 'Bearer', expires_in: 300 });
             if (req.headers.authorization !== 'Bearer svc-community') return send(401, { code: 'auth.required' });
+            if (req.method === 'POST' && req.url === '/api/v2/community/objects/normalize-image') {
+                normalizedImages++;
+                res.statusCode = 200; res.setHeader('content-type', req.headers['content-type']);
+                return res.end(stripImageMetadata(body, req.headers['content-type']));
+            }
             if (req.method === 'POST' && req.url === '/api/v2/community/objects') {
                 const b = JSON.parse(body);
                 const id = ids.newId('media');
@@ -80,7 +88,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
     });
 
     let first;
-    await check('upload: a med_ object owned by the person, metadata stripped, the public URL', async () => {
+    await check('upload: Media orients pixels before stripping metadata and stores a med_ object owned by the person', async () => {
         const r = await upload(alexJwt);
         assert.strictEqual(r.status, 201, r.text);
         first = r.json().attachment;
@@ -89,6 +97,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         const o = objects.get(first.media_id);
         assert.strictEqual(o.owner, alex.subject_id); assert.strictEqual(o.visibility, 'unlisted', 'reachable by link, never listed on openvibe.media'); assert.strictEqual(o.status, 'ready');
         assert.ok(!o.bytes.includes(Buffer.from('secret')), 'the tEXt chunk never reached Media');
+        assert.strictEqual(normalizedImages, 1, 'Media normalization ran before object creation');
         assert.ok(PNG.includes(Buffer.from('secret')));
     });
 

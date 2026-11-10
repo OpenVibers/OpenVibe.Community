@@ -201,7 +201,7 @@ async function createApp(opts = {}) {
         async upload({ buffer, filename, mime, owner = null, visibility = 'private' }) {
             if (!mediaObjects.configured) return await mediaFiles.upload({ buffer, filename, mime });
             const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste', visibility });
-            return { key: o.id, url: o.url, size: o.size_bytes, mime, media_ref: o.id, private: visibility === 'private' };
+            return { key: o.id, url: o.url, size: o.size_bytes, mime, content_hash: o.content_hash, media_ref: o.id, private: visibility === 'private' };
         },
         /** A paste's screenshot bytes, for the proxy (a private object through a signed download). */
         async bytes(row, variant = null) {

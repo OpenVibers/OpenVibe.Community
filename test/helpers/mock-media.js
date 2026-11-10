@@ -1,7 +1,7 @@
 'use strict';
 /**
- * A stand-in for OpenVibe.Media: the v1 file store (POST /api/v1/community/files, multipart `file`) and the
- * Object API v2 upload (POST /api/v2/community/objects → PUT /:id/content → POST /:id/complete), with a
+ * A stand-in for OpenVibe.Media: the v1 file store (POST /api/v1/community/files, multipart `file`), image
+ * normalization, and Object API v2 upload (POST /api/v2/community/objects → PUT /:id/content → POST /:id/complete), with a
  * Network service token for openvibe.media holding media.object.upload. Keeps each finished upload's raw
  * bytes (and, for v2, its kind, visibility and owner) so tests can check what left Community.
  */
@@ -59,12 +59,18 @@ function start({ publicPem, issuer }) {
                     metadata: { filename: o.name } });
             }
             const v2 = req.url.match(/^\/api\/v2\/community\/objects(?:\/(med_[0-9A-Z]+)\/(content|complete|download))?(?:\?.*)?$/);
-            if (!v2 && (req.method !== 'POST' || req.url !== '/api/v1/community/files')) return json(404, { error: 'not found' });
+            const normalize = req.method === 'POST' && req.url === '/api/v2/community/objects/normalize-image';
+            if (!v2 && !normalize && (req.method !== 'POST' || req.url !== '/api/v1/community/files')) return json(404, { error: 'not found' });
             const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
             if (!v.ok) return json(401, { code: v.code, error: v.reason });
             const verb = v2 && req.method === 'GET' && v2[2] === 'download' ? 'media.object.read' : 'media.object.upload';
             if (!(v.claims.cap || []).includes(verb)) return json(403, { code: 'capability.denied', error: 'not granted' });
             const body = Buffer.concat(chunks);
+            if (normalize) {
+                const { stripImageMetadata } = require('../../server/media/strip-metadata');
+                res.writeHead(200, { 'Content-Type': req.headers['content-type'] || 'application/octet-stream' });
+                return res.end(stripImageMetadata(body, req.headers['content-type']));
+            }
             if (v2 && req.method === 'GET' && v2[2] === 'download') {
                 const o = uploads.find((u) => u.key === v2[1]);
                 if (!o) return json(404, { code: 'media.object.not_found' });
