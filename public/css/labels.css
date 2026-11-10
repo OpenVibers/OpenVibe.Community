@@ -34,4 +34,3 @@
 .labels-box-title i { color: var(--accent-light, #60a5fa); margin-right: 4px; }
 .labels-box-line { font-size: .85rem; color: var(--text-secondary, #96a7c2); }
 .labels-form { padding: 0 14px 14px; display: grid; gap: 12px; }
-@media (prefers-reduced-motion: reduce) { .ovl-card { transition: none; } }
