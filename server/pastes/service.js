@@ -298,7 +298,11 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         const projections = await projectionsFor(rows.map((r) => r.owner_subject));
         return rows.map((r) => {
             const out = shape(r, v, projections);
-            if (preview && !r.locked) out.content = r.type === 'paste' ? String(r.content || '').slice(0, 300) : null; // preview only in lists
+            if (preview && !r.locked) {
+                out.content = r.type === 'paste' ? String(r.content || '').slice(0, 300) : null; // preview only in lists
+                if (r.visibility === 'public') out.content_hash = r.content_hash || (r.type === 'paste' && !r.locked
+                    ? crypto.createHash('sha256').update(String(r.content || ''), 'utf8').digest('hex') : null);
+            }
             return out;
         });
     }
@@ -486,6 +490,16 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         PasteError,
         limits: L,
 
+        async duplicate(v, hash) {
+            if (!v || !v.subject) fail(401, 'Sign in to check your own uploads');
+            if (!/^[a-f0-9]{64}$/.test(String(hash || '').toLowerCase())) fail(400, 'sha256 must be a SHA-256 digest');
+            const row = await store.findOwnedHash(db, v.subject, String(hash).toLowerCase());
+            if (!row) return { duplicate: false };
+            const paste = await shapeOne(row, v);
+            const address = `/p/${canonicalSlug(row)}`;
+            return { duplicate: true, object: { id: row.slug, name: row.title || 'Untitled', date: row.created_at, address, url: address }, paste };
+        },
+
         /** GET /api/pastes */
         async list(v, q = {}) {
             const needsAi = truthy(q.needs_ai);
@@ -599,6 +613,11 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const content = body.content;
             if (!content || typeof content !== 'string' || content.trim().length === 0) fail(400, 'Content is required');
             if (content.length > L.maxSizeKb * 1024) fail(400, `Paste too large (max ${L.maxSizeKb} KB)`);
+            const contentHash = crypto.createHash('sha256').update(content.trim(), 'utf8').digest('hex');
+            if (v.subject && !truthy(body.keep_both)) {
+                const same = await store.findOwnedHash(db, v.subject, contentHash);
+                if (same) return { id: same.id, slug: same.slug, url: `/p/${canonicalSlug(same)}`, duplicate: true, paste: await shapeOne(same, v) };
+            }
             const metadata = serviceMetadata(v, body);
             let audience = audienceOf(v, body.audience !== undefined ? body.audience : body.visibility);
             audience = audienceFor(v, audience);
@@ -617,6 +636,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     // An AI paste's title and body are AI text too; a person's are theirs, as written.
                     title: store.sanitizeTitle(body.title),
                     content: content.trim(),
+                    content_hash: contentHash,
                     language: store.detectLanguage(content, body.language),
                     visibility,
                     stream_ref: streamRefFor(v, body),
@@ -657,6 +677,12 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const slug = await slugFor(v, body, visibility, truthy(body.burn_after_read));
             const extra = serviceMetadata(v, body);
             const bytes = stripImageMetadata(file.buffer, mime);
+            const contentHash = crypto.createHash('sha256').update(bytes).digest('hex');
+            const sourceHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+            if (v.subject && !truthy(body.keep_both)) {
+                const same = await store.findOwnedHash(db, v.subject, sourceHash);
+                if (same) return { id: same.id, slug: same.slug, url: `/p/${canonicalSlug(same)}`, duplicate: true, paste: await shapeOne(same, v) };
+            }
             let stored;
             try {
                 // Screenshot bytes are private Media objects owned by the person: only Community's proxy
@@ -683,6 +709,8 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     type: 'screenshot',
                     title: store.sanitizeTitle(body.title || 'Screenshot'),
                     content: String(body.description || body.content || ''),
+                    content_hash: contentHash,
+                    source_hash: sourceHash,
                     language: 'text',
                     visibility,
                     screenshot_url: stored.url,
@@ -726,6 +754,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                 const content = String(body.content);
                 if (content.length > L.maxSizeKb * 1024) fail(400, 'Too large');
                 patch.content = content;
+                patch.content_hash = crypto.createHash('sha256').update(content.trim(), 'utf8').digest('hex');
                 patch.language = store.detectLanguage(content, body.language);
             }
             if (reviewHidden(p)) {

@@ -276,6 +276,7 @@ async function createApp(opts = {}) {
         app.locals.pastes = service;
         app.locals.pasteMedia = pasteMedia;
         app.locals.pasteReview = review;
+        if (opts.startPasteHashWorker !== false) app.locals.pasteHashTimer = require('./pastes/content-hash').start({ db, media: mediaObjects, screenshots: pasteMedia });
     }
     // One anonymous-write budget per address, shared by the API and the no-JS form (20 / 10 min).
     const anonWriteLimiter = rateLimit({

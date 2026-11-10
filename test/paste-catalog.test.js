@@ -67,5 +67,16 @@ const check = async (name, fn) => { catalog.reset(); await fn(); passed++; conso
         assert.strictEqual((await catalog.browse({ type: 'images', sort: 'views' })).pastes[1].slug, 'shot-198', 'the image list keeps it');
         delete shots[198].title;
     });
+    await check('latest collapses consecutive same-owner exact hashes and counts older copies', async () => {
+        const hash = 'a'.repeat(64);
+        const first = { slug: 'same-newest', type: 'paste', visibility: 'public', owner_subject: 'usr_fixture', content_hash: hash, content: 'same', created_at: at(2000) };
+        const previous = { ...first, slug: 'same-previous', created_at: at(1999) };
+        const otherOwner = { ...first, slug: 'other-owner', owner_subject: 'usr_other', created_at: at(1998) };
+        all.unshift(first, previous, otherOwner);
+        const latest = await catalog.latest(4);
+        assert.deepStrictEqual(latest.slice(0, 3).map((p) => p.slug), ['same-newest', 'other-owner', 'shot-198']);
+        assert.strictEqual(latest[0].more_like_it, 1);
+        all.splice(0, 3);
+    });
     console.log(`paste catalog: ${passed} checks passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -62,6 +62,7 @@ const PNG = (() => {
     const upload = async (cookie, fields = {}) => {
         const fd = new FormData();
         fd.append('screenshot', new Blob([PNG], { type: 'image/png' }), 'shot.png');
+        fd.append('keep_both', '1'); // each moderation scenario needs its own independent paste fixture
         for (const [k, v] of Object.entries(fields)) fd.append(k, String(v));
         return await t.get('/api/pastes/screenshot', { method: 'POST', body: fd, cookies: [`ov_token=${cookie}`] });
     };

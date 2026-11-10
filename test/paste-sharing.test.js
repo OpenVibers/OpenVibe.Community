@@ -347,6 +347,7 @@ const pastesApiModule = require('../server/pastes/api');
         const fd = new FormData();
         fd.append('title', 'Shot for everyone');
         fd.append('audience', 'public');
+        fd.append('keep_both', '1');
         fd.append('screenshot', new Blob([jpeg], { type: 'image/jpeg' }), 'p.jpg');
         const made = await t.get('/api/pastes/screenshot', { method: 'POST', cookies: [`ov_token=${alexJwt}`], body: fd });
         assert.strictEqual(made.status, 201, made.text);

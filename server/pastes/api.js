@@ -115,6 +115,7 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
     const slug = (req) => req.params.slug;
 
     // ── collection + literal paths (before /:slug) ───────────
+    router.get('/duplicates', anyCap, run(async (req) => await service.duplicate(req.viewer, req.query.sha256)));
     router.get('/', anyCap, (req, res, next) => (req.query.needs_ai && req.viewer.kind !== 'service'
         ? contracts.http.sendProblem(res, 403, 'capability.denied', { detail: 'needs_ai is for services holding community.paste.moderate', ctx: req.ov })
         : next()), run(async (req) => await service.list(req.viewer, req.query)));
