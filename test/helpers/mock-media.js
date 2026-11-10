@@ -62,7 +62,7 @@ function start({ publicPem, issuer }) {
             if (!v2 && (req.method !== 'POST' || req.url !== '/api/v1/community/files')) return json(404, { error: 'not found' });
             const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
             if (!v.ok) return json(401, { code: v.code, error: v.reason });
-            const verb = v2 && req.method === 'GET' && v2[2] === 'download' ? 'media.object.read' : 'media.object.upload';
+            const verb = v2 && req.method === 'GET' ? 'media.object.read' : req.method === 'DELETE' ? 'media.object.delete' : 'media.object.upload';
             if (!(v.claims.cap || []).includes(verb)) return json(403, { code: 'capability.denied', error: 'not granted' });
             const body = Buffer.concat(chunks);
             if (v2 && req.method === 'GET' && v2[2] === 'download') {
@@ -70,6 +70,18 @@ function start({ publicPem, issuer }) {
                 if (!o) return json(404, { code: 'media.object.not_found' });
                 // Private objects answer a short-lived URL of their own; the shape is what Community reads.
                 return json(200, { url: `http://127.0.0.1:${server.address().port}/o/${o.key}`, public: o.visibility !== 'private' });
+            }
+            if (v2 && req.method === 'GET' && v2[1] && !v2[2]) {
+                const o = uploads.find((u) => u.key === v2[1]);
+                if (!o) return json(404, { code: 'media.object.not_found' });
+                return json(200, { id: o.key, owner: { subject: o.owner || null }, lifecycle_status: 'ready', mime_type: o.mime,
+                    size_bytes: o.bytes.length, metadata: { filename: o.name }, public_url: `http://127.0.0.1:${server.address().port}/o/${o.key}` });
+            }
+            if (v2 && req.method === 'DELETE' && v2[1]) {
+                const i = uploads.findIndex((u) => u.key === v2[1]);
+                if (i < 0) return json(404, { code: 'media.object.not_found' });
+                uploads.splice(i, 1); deletes.push(v2[1]);
+                return json(200, { id: v2[1], lifecycle_status: 'deleted' });
             }
             if (v2) {
                 if (req.method === 'POST' && !v2[1]) {

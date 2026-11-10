@@ -22,6 +22,7 @@
  * community.comment.moderate for visibility and moderation. Errors are problem+json.
  */
 const express = require('express');
+const multer = require('multer');
 const contracts = require('openvibe-contracts');
 const { run, serviceCap, serviceAnyCap, jsonBody } = require('../http/v1');
 
@@ -37,9 +38,35 @@ function createCommentsApi({ service, viewers, anonWriteLimiter, resolveLimiter,
     // refused ones included, and every write that has no content limit.
     router.use(limits.reads('community.comment.read'));
     const moderate = limits('community.comment.moderate', { minute: 60, hour: 600 });
+    const attachmentUpload = limits('community.comment.attachment.upload', { minute: 10, hour: 100 });
+    const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024, files: 1, fields: 5 } }).single('file');
+    const parseUpload = (req, res, next) => upload(req, res, (err) => {
+        if (!err) return next();
+        if (err instanceof multer.MulterError) {
+            const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+            return contracts.http.sendProblem(res, tooLarge ? 413 : 400, tooLarge ? 'attachment.too_large' : 'attachment.invalid_upload', {
+                detail: tooLarge ? 'Files are limited to 16 MB' : 'Upload one file with its item reference', ctx: req.ov,
+            });
+        }
+        return next(err);
+    });
 
     const read = serviceAnyCap([WRITE, MOD]);
     const passAnon = (_req, _res, next) => next();
+
+    router.post('/attachments', attachmentUpload, parseUpload, run(async (req) => {
+        let ref = req.body && req.body.ref;
+        if (typeof ref === 'string') { try { ref = JSON.parse(ref); } catch { ref = null; } }
+        if (!ref && req.body) ref = { service: req.body.service, type: req.body.type, id: req.body.id };
+        return await service.uploadAttachment(req.viewer, ref, req.file);
+    }, 201));
+
+    router.post('/attachments', attachmentUpload, upload, run(async (req) => {
+        let ref = req.body && req.body.ref;
+        if (typeof ref === 'string') { try { ref = JSON.parse(ref); } catch { ref = null; } }
+        if (!ref && req.body) ref = { service: req.body.service, type: req.body.type, id: req.body.id };
+        return await service.uploadAttachment(req.viewer, ref, req.file);
+    }, 201));
 
     // Opening a thread writes a row the first time: a person opens at most one a second.
     router.post('/threads/resolve', serviceCap(WRITE), limits('community.thread.resolve', { minute: 60, hour: 1200 }), resolveLimiter || passAnon, jsonBody,
