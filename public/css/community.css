@@ -438,7 +438,7 @@ button.rx:hover { border-color: var(--accent); }
 /* Home (server/render/pages.js homePage): a taste and a door. The shared kit draws it (showcase.css: the hero and the
    forum's launcher; kit.css: the numbers, lists, chips and the fold; room.css: the rails of cards); this is only the
    spacing between its parts, one heading size for all of them, and the quick filters' strip. */
-.cm-home .page > .sc-sec { margin-top: 32px; }
+.cm-home .page > .sc-sec { margin-top: 28px; }
 .cm-home .page > .sc-sec > h2, .cm-h { margin: 0 0 12px; font-family: inherit; font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; }
 .cm-sec { min-width: 0; margin-top: 28px; }
 .cm-sec > .ovk-rail { margin-top: 0; }
@@ -455,55 +455,50 @@ button.rx:hover { border-color: var(--accent); }
 /* Where the hero stacks (showcase.css, 860 px) it skips the terminal sample: the fold "Paste from a script" has it, and a
    phone gets to the pastes. */
 @media (max-width: 860px) { .cm-home .sc-hero-aside { display: none; } }
+
+/* The roadmap and "Across OpenVibe": two sections like the others (the same head, the same gap), their rows with a
+   mark at the start. A roadmap item's mark is its state as an icon in the state's colour; a thing that happened has
+   the person's picture with the site's icon on its corner, or the site's icon alone where no person did it. */
+.cm-pair > .cm-sec .ovk-rail-head { justify-content: space-between; }
+/* One gap between the home's blocks: a list at the end of a section adds none of its own. */
+.cm-sec > .ovk-list:last-child { margin-bottom: 0; }
+.cm-mark { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: color-mix(in srgb, var(--text-primary, #e6edf7) 8%, transparent); color: var(--text-secondary, #96a7c2); }
+.cm-mark .ovk-i { width: 20px; height: 20px; }
+.cm-mark--accent, .cm-mark--site { background: color-mix(in srgb, var(--accent, #3b82f6) 16%, transparent); color: var(--accent-text, var(--accent, #3b82f6)); }
+.cm-mark--ok { background: color-mix(in srgb, var(--success, #34d399) 16%, transparent); color: var(--success-text, var(--success, #34d399)); }
+.cm-mark--warn { background: color-mix(in srgb, var(--warning, #fbbf24) 16%, transparent); color: var(--warning-text, var(--warning, #fbbf24)); }
+.cm-mark--bad { background: color-mix(in srgb, var(--danger, #f87171) 14%, transparent); color: var(--danger-text, var(--danger, #f87171)); }
+.cm-pmark { position: relative; display: inline-grid; flex: none; }
+.cm-pmark-site { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--bg-card, #131c2e); color: var(--accent-text, var(--accent, #3b82f6)); box-shadow: 0 0 0 2px var(--bg-card, #131c2e); }
+.cm-pmark-site .ovk-i { width: 12px; height: 12px; }
+.cm-pthumb { display: block; width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: var(--bg-secondary, #0e1626); }
+
+/* The questions. Each is a row with its mark, the question and an arrow that turns when it is open; the answer comes
+   in under it. On a phone the list shows its first two and fades into the third, and the button under it opens the
+   rest (community's home script sets data-clamped; without it the whole list shows). */
 .cm-faq { display: grid; gap: 8px; max-width: 860px; }
-.cm-faq details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
-.cm-faq summary { min-height: 44px; box-sizing: border-box; cursor: pointer; padding: 12px 16px; font-weight: 700; }
-.cm-faq details[open] summary { border-bottom: 1px solid var(--border); }
-.cm-faq p { margin: 0; padding: 12px 16px 14px; color: var(--text-secondary); line-height: 1.6; }
-
-/* The phone home (2026-10-30, the owner's short-pages rule): the roadmap and the pulse are chips, one shelf at a
-   time, and the questions are a fold. Both only work under 640 px, so a wider screen shows both shelves and no chips. */
-/* Pick: on a phone every pane is shown, stacked, each with its own heading; the chips are a row of links that
-   jump to a pane (the owner's rule, 2026-10-31: never hide content to shorten). A wide screen shows the panes as
-   before, with no chips. */
-.pick-head, .pick-row { display: none; }
-@media (max-width: 640px) {
-  .pick-bar { margin-top: 30px; }
-  .pick-head { display: block; }
-  .pick-head h2 { margin: 0 0 4px; font: 700 clamp(20px, 2.4vw, 28px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); letter-spacing: -.02em; }
-  .pick-row { display: flex; gap: 8px; overflow-x: auto; margin: 10px -16px 0; padding: 2px 16px 4px; scrollbar-width: none; overscroll-behavior-x: contain; }
-  .pick-row::-webkit-scrollbar { display: none; }
-  .pick-chip { display: inline-flex; align-items: center; flex: none; min-height: 44px; padding: 0 15px; border-radius: 999px; border: 1px solid var(--border, #1f2d47); color: var(--text-secondary, #96a7c2); font-size: .9rem; font-weight: 650; white-space: nowrap; text-decoration: none; }
-  .pick-chip:hover, .pick-chip:focus-visible { color: var(--text-primary, #e6edf7); border-color: var(--accent, #3b82f6); }
-  .pick-chip:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
-  .pick .pick-pane { scroll-margin-top: 72px; }
-  .pick .pick-pane + .pick-pane { margin-top: 26px; }
-}
-
-/* The fold (the owner's short-pages rule): closed on a phone, and where there is room it looks like the section it
-   replaces: a heading and its content, with no card around it. */
-.hm-fold-block { margin-top: 32px; }
-.hm-fold-block > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; }
-.hm-fold-block > summary::-webkit-details-marker { display: none; }
-.hm-fold-block > summary h2 { margin: 0; font: 700 clamp(19px, 2.2vw, 26px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); }
-.hm-fold-block > summary span { color: var(--text-muted, #7386a3); font-weight: 600; font-size: .86rem; white-space: nowrap; }
-.hm-fold-block > summary:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
-@media (min-width: 641px) {
-  .hm-fold-block { border: 0; background: none; border-radius: 0; margin: 56px auto 0; padding: 0; }
-  .hm-fold-block > summary { display: block; min-height: 0; }
-  .hm-fold-block > summary h2 { margin: 0 0 6px; font: 700 clamp(22px, 2.6vw, 30px)/1.2 var(--ov-font, 'Inter', system-ui, sans-serif); }
-  .hm-fold-block > summary span { display: none; }
-  .hm-fold-block .hm-sec, .hm-fold-block .sc-sec { margin: 0; max-width: none; padding: 0; }
-}
-@media (max-width: 640px) { .hm-fold-block { margin-top: 24px; } .hm-fold-block > summary h2 { font-size: 1.05rem; } }
-/* A fold that sits inside the section it replaces adds no space of its own. */
-:where(.sc-sec, .cm-sec, .hm-sec, .section) > .hm-fold-block { margin: 0; }
-/* The chip names the shelf, so the shelf's own heading gives way to it; the link to the whole list stays. */
-@supports selector(:has(*)) { @media (max-width: 640px) {
-  .pick .pick-pane .ovk-rail-head { justify-content: flex-end; }
-} }
-/* The fold holds the questions, so its list gets the room the card gives it. */
-.hm-fold-block .cm-faq { margin: 0; padding: 0 16px 16px; }
+.cm-faq details { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); transition: border-color .15s ease; }
+.cm-faq details[open] { border-color: color-mix(in srgb, var(--accent, #3b82f6) 45%, var(--border)); }
+.cm-faq summary { display: flex; align-items: center; gap: 10px; min-height: 48px; box-sizing: border-box; padding: 8px 12px 8px 10px; cursor: pointer; font-weight: 700; list-style: none; }
+.cm-faq summary::-webkit-details-marker { display: none; }
+.cm-faq summary:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; border-radius: var(--radius); }
+.cm-faq-i { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent); color: var(--accent-text, var(--accent, #3b82f6)); }
+.cm-faq-i .ovk-i { width: 16px; height: 16px; }
+.cm-faq-q { flex: 1; min-width: 0; }
+.cm-faq-c { flex: none; width: 18px; height: 18px; color: var(--text-muted, #7386a3); transition: transform .2s ease; }
+.cm-faq details[open] .cm-faq-c { transform: rotate(90deg); }
+.cm-faq p { margin: 0; padding: 2px 14px 14px 48px; color: var(--text-secondary); line-height: 1.6; }
+.cm-faq details[open] > p { animation: cm-faq-in .22s ease both; }
+@keyframes cm-faq-in { from { opacity: 0; transform: translateY(calc(-6px * var(--ov-move, 1))); } }
+.cm-peek { overflow: hidden; transition: max-height .38s cubic-bezier(.2, .8, .2, 1); }
+.cm-peek[data-clamped] { max-height: 150px; -webkit-mask-image: linear-gradient(#000 58%, transparent 98%); mask-image: linear-gradient(#000 58%, transparent 98%); }
+.cm-peek-more { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px; margin: 4px 0 0; padding: 0 16px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; }
+.cm-peek-more[hidden] { display: none; }
+.cm-peek-more:hover { border-color: var(--accent, #3b82f6); }
+.cm-peek-more:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+.cm-peek-more .ovk-i { width: 18px; height: 18px; color: var(--accent-text, var(--accent, #3b82f6)); transition: transform .25s ease; animation: cm-peek-nudge 1.5s ease 1.2s 2; }
+.cm-peek-more[aria-expanded="true"] .ovk-i { transform: rotate(180deg); animation: none; }
+@keyframes cm-peek-nudge { 30% { transform: translateY(calc(3px * var(--ov-move, 1))); } 60% { transform: none; } }
 
 /* Content labels (L1): what a thread carries, in words beside its title (as Shared's kit.labels draws them); each
    reader's own choice (Shared's ov-labels.js) shows, covers or hides it. */

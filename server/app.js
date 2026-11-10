@@ -469,7 +469,11 @@ async function createApp(opts = {}) {
                 ORDER BY (t.status = 'in_progress') DESC, t.last_activity_at DESC, t.id DESC LIMIT 5`).all(), []),
             quiet(db.prepare(`SELECT t.status, COUNT(*) AS n FROM threads t JOIN spaces s ON s.id = t.space_id
                 WHERE s.slug = 'roadmap' AND t.deleted_at IS NULL GROUP BY t.status`).all(), []),
-            quiet(pulse.list({ limit: 12 }).then((out) => (out.items || []).filter((it) => it.source && it.source.type !== 'paste').slice(0, 4)), []),
+            quiet(pulse.list({ limit: 16 }).then((out) => {
+                // One row a place: a stream's go-live and the day's card that follows it link the same channel.
+                const seen = new Set();
+                return (out.items || []).filter((it) => it.source && it.source.type !== 'paste' && !seen.has(it.url) && seen.add(it.url)).slice(0, 5);
+            }), []),
             quiet(db.prepare(`SELECT (SELECT COUNT(*) FROM pastes WHERE deleted_at IS NULL AND visibility = 'public') AS pastes,
                 (SELECT COUNT(*) FROM pulse_items) AS pulse`).get(), {}),
         ]);
