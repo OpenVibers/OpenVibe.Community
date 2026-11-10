@@ -261,7 +261,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         published: thread.created_at || undefined,
         modified: (opening && opening.updated_at) || undefined,
         active: 'spaces',
-        historyType: 'page',
+        historyType: 'thread',
         historyTitle: thread.title,
         footerVariant: 'compact',
         styles: ['kit.css', ...(attachmentsEnabled ? ['ov-upload.css'] : [])],
