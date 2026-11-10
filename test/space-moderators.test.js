@@ -168,18 +168,12 @@ const { boot, check, done } = require('./helpers/app');
         assert.deepStrictEqual(await mods('general'), [alex.subject_id]);
     });
 
-    await check('(f) account deletion erases the row; a subject merge moves it', async () => {
+    await check('(f) account deletion erases its rows', async () => {
         const accountData = require('../server/identity/account-data');
-        const merge = require('../server/identity/subject-merge');
         const ids = async (subject) => (await t.db.prepare('SELECT space_id FROM space_moderators WHERE subject_id = ? ORDER BY space_id').all(subject)).map((r) => Number(r.space_id));
         await call(`/api/v1/spaces/showcase/moderators/${carol.subject_id}`, { method: 'PUT', who: boss });
         await call(`/api/v1/spaces/general/moderators/${carol.subject_id}`, { method: 'PUT', who: boss });
         await call(`/api/v1/spaces/showcase/moderators/${bob.subject_id}`, { method: 'PUT', who: boss });
-        // carol folds into bob: general moves over, showcase (both had it) stays bob's alone.
-        await merge.apply(t.db, { from: carol.subject_id, into: bob.subject_id, merge_id: 'mrg_01JAB2C3D4E5F6G7H8J9K0MNP4' }, { log: { log() {} } });
-        assert.deepStrictEqual(await ids(carol.subject_id), []);
-        assert.deepStrictEqual(await ids(bob.subject_id), [1, 3]);
-        assert.strictEqual((await call('/api/v1/spaces/general/threads', { who: bob })).json().viewer.can_moderate, true);
         // alex's account is deleted: the row goes, and the moderators alex added stay without them.
         await call(`/api/v1/spaces/general/moderators/${sam.subject_id}`, { method: 'PUT', who: alex });
         const out = await accountData.erase(t.db, [alex.subject_id]);

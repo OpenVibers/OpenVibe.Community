@@ -7,7 +7,7 @@
   "runtime": "node 22, express, PostgreSQL 18 (openvibe-sdk/db, async) + Valkey 9",
   "port": 4200,
   "domain": "openvibe.community",
-  "contracts": "openvibe-contracts v0.384.0",
+  "contracts": "openvibe-contracts v0.399.0",
   "sdk": "openvibe-sdk v0.146.0",
   "shared": "openvibe-shared v4.199.0",
   "capabilities": [
@@ -40,7 +40,7 @@
     "Discord relay (off in production)",
     "server-rendered pages with full SEO",
     "Search documents and community.* events",
-    "revocation, blocks, account merge, export and deletion from Network events",
+    "revocation, blocks, export and deletion from Network events",
     "N-1 compatibility tests",
     "per-actor limits (openvibe-sdk/limits)"
   ],
