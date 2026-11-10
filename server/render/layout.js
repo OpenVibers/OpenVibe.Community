@@ -72,7 +72,7 @@ function navbarInit(opts) {
         appBar: true,   // phones: the four places as the bottom tab bar (Shared 4.20)
         search: { page: '/search', label: 'OpenVibe.Community' },   // the magnifier offers this site's own search first
         menu: { after: [{ label: 'My pastes', href: '/my', icon: 'fa-paste' }] },
-        history: { type: opts.historyType || 'page', title: opts.historyTitle || opts.title },
+        history: { type: opts.historyType || 'page', title: opts.historyTitle || opts.title, image_url: opts.historyImage || null, private: !!opts.historyPrivate, mature: !!opts.historyMature },
         silentLogin: `${config.baseUrl}/auth/login?silent=1&next={url}`,
         sessionUrl: '/auth/me',
         loginUrl: '/auth/login?next={path}',           // filled from the current page (boost moves between pages)
