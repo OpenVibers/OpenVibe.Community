@@ -6,6 +6,7 @@
  * the person who attached them (X-OV-Subject), with Community's service token (media.object.upload,
  * namespace community):
  *
+ *   POST /api/v2/community/objects/normalize-image  raw image → oriented pixels with image metadata removed
  *   POST /api/v2/community/objects                 init { kind, visibility: 'unlisted', size_bytes, mime_type, filename, content_hash }
  *   PUT  /api/v2/community/objects/:id/content     the bytes
  *   POST /api/v2/community/objects/:id/complete    Media checks size, hash and type → ready
@@ -48,14 +49,34 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return await request(method, `${base}${path}`, opts);
     }
 
+    /** Apply EXIF orientation in Media before its encoder removes camera and location metadata. */
+    async function normalizeImage(buffer, mime, retried = false) {
+        if (!configured) { const e = new Error('Image uploads need Community\'s service principal'); e.status = 503; throw e; }
+        const headers = { Accept: mime, 'Content-Type': mime, ...(await tokens.authHeaders()) };
+        const res = await fetchImpl(`${base}/normalize-image`, { method: 'POST', headers, body: buffer, signal: AbortSignal.timeout(60_000) });
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await normalizeImage(buffer, mime, true); }
+        if (!res.ok) {
+            const data = await res.json().catch(() => null);
+            const err = new Error(`Media image normalization ${res.status}: ${(data && (data.detail || data.error)) || 'failed'}`);
+            err.status = res.status; err.code = data && data.code; throw err;
+        }
+        if (String(res.headers.get('content-type') || '').split(';')[0].toLowerCase() !== String(mime).toLowerCase()) {
+            throw Object.assign(new Error('Media returned an unexpected image type'), { status: 502 });
+        }
+        return Buffer.from(await res.arrayBuffer());
+    }
+
     /**
-     * Store one image. → { id (med_…), url, size_bytes, mime }
+     * Store one image. Media normalizes orientation and removes image metadata before its hash and size are recorded.
+     * → { id (med_…), url, size_bytes, mime, content_hash }
      * owner: the person (usr_…) the object belongs to, when there is one; kind: 'file' (post images) or
      * 'screenshot' (screenshot pastes); visibility 'unlisted': served to anyone with the link (the object id is
      * unguessable), never listed on openvibe.media — the post or paste decides who sees the link.
      */
-    async function uploadImage({ buffer, mime, filename, owner = null, kind = 'file', visibility = 'unlisted', source = 'community.attachment' }) {
+    async function uploadImage({ buffer, mime, filename, owner = null, kind = 'file', visibility = 'unlisted', source = 'community.attachment', normalized = false }) {
         if (!configured) { const e = new Error('Attachments need Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
+        // GIF has no EXIF orientation and Media's GIF variant path preserves animation, so do not re-encode it.
+        if (!normalized && mime !== 'image/gif') buffer = await normalizeImage(buffer, mime);
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
         const init = await call('POST', '', {
             json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, metadata: { source } },
@@ -65,7 +86,7 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         if (!/^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(id || ''))) throw Object.assign(new Error('Media returned no object id'), { status: 502 });
         await call('PUT', `/${id}/content`, { body: buffer, headers: { 'Content-Type': mime } });
         await call('POST', `/${id}/complete`, { json: { content_hash: sha256 } });
-        return { id, url: `${config.mediaUrl}/o/${id}`, size_bytes: buffer.length, mime };
+        return { id, url: `${config.mediaUrl}/o/${id}`, size_bytes: buffer.length, mime, content_hash: sha256 };
     }
 
     /** One object's metadata (GET /api/v2/community/objects/:id): owner, kind, mime and public URL. */
@@ -113,7 +134,7 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return { retired: true, changed: !!(out && out.changed), ...(out && out.retention_until ? { retention_until: out.retention_until } : {}) };
     }
 
-    return { configured, uploadImage, object, downloadUrl, deleteObject, retireLegacyPaste };
+    return { configured, uploadImage, normalizeImage, object, downloadUrl, deleteObject, retireLegacyPaste };
 }
 
 module.exports = { createMediaObjects };

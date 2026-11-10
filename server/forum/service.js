@@ -49,7 +49,6 @@ const { createPersonLimiter } = require('../limits');
 const { discussionModerator } = require('../identity/capabilities');
 const { renderMarkdown, markdownToText } = require('../render/markdown');
 const { isUserSubject } = require('../vip');
-const { stripImageMetadata } = require('../media/strip-metadata');
 const { sniffImage } = require('../media/sniff-image');
 const reactions = require('./reactions');
 const moderation = require('./moderation');
@@ -779,7 +778,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const mime = sniffImage(file.buffer);
             if (!mime) fail(415, 'attachments.unsupported', 'Attach a PNG, JPEG, GIF or WebP image');
             uploadLimiter.check(`s:${v.subject}`);
-            const buffer = stripImageMetadata(file.buffer, mime);
+            const buffer = file.buffer;
             const filename = String(file.originalname || 'image').replace(/[^\w.\- ]+/g, '_').slice(0, 120) || 'image';
             let stored;
             try { stored = await media.uploadImage({ buffer, mime, filename, owner: v.subject }); } catch (err) {

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Community paste screenshots and forum attachments now send source image bytes to Media's shared EXIF normalizer
+  before upload. Media applies orientation to pixels and removes camera/location metadata; Community stores the
+  normalized image hash and byte size. The screenshot upload, censor replacement, and forum attachment paths had
+  stripped EXIF before orientation was applied. Tests: `test/attachments.test.js`, `test/paste-sharing.test.js`.
+
 - Keep every Pulse row when paging the Feed, include trending cards within `limit`, and apply live/stream filters after resolving current live status.
 
 - **The wide Feed** (owner, 11-09: "one huge feed of everything, all the data, SDK and API enabled"). Pulse now carries

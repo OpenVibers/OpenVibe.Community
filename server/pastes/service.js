@@ -22,7 +22,6 @@ const { canonicalSlug, publicIdOfRef } = require('./url');
 const spam = require('./spam');
 const commentStore = require('../comments/store');
 const { discussionModerator } = require('../identity/capabilities');
-const { stripImageMetadata } = require('../media/strip-metadata');
 const { sniffImage } = require('../media/sniff-image');
 const { capabilities } = require('openvibe-contracts');
 const { inspectEnvelope } = require('openvibe-sdk/locker/server');
@@ -676,8 +675,6 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             const visibility = visibilityFor(audience);
             const slug = await slugFor(v, body, visibility, truthy(body.burn_after_read));
             const extra = serviceMetadata(v, body);
-            const bytes = stripImageMetadata(file.buffer, mime);
-            const contentHash = crypto.createHash('sha256').update(bytes).digest('hex');
             const sourceHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
             if (v.subject && !truthy(body.keep_both)) {
                 const same = await store.findOwnedHash(db, v.subject, sourceHash);
@@ -687,17 +684,18 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             try {
                 // Screenshot bytes are private Media objects owned by the person: only Community's proxy
                 // (which calls canView) serves them, never a bare Media URL.
-                stored = await media.upload({ buffer: bytes, filename: file.originalname || 'screenshot.png', mime, owner: v.subject || null, visibility: 'private' });
+                stored = await media.upload({ buffer: file.buffer, filename: file.originalname || 'screenshot.png', mime, owner: v.subject || null, visibility: 'private' });
             } catch (err) {
                 console.warn('[Pastes] screenshot upload failed:', err.message);
                 fail(502, 'Media service unavailable');
             }
+            const storedBytes = Number(stored.size_bytes ?? stored.size) || file.buffer.length;
             const metadata = {
                 ...(extra || {}),
                 page_url: body.page_url || (extra && extra.page_url) || null,
                 user_agent: body.user_agent || ctx.userAgent || null,
                 original_name: file.originalname || null,
-                size_bytes: bytes.length,
+                size_bytes: storedBytes,
                 mime_type: mime,
                 media_visibility: 'private',
             };
@@ -709,7 +707,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
                     type: 'screenshot',
                     title: store.sanitizeTitle(body.title || 'Screenshot'),
                     content: String(body.description || body.content || ''),
-                    content_hash: contentHash,
+                    content_hash: stored.content_hash || sourceHash,
                     source_hash: sourceHash,
                     language: 'text',
                     visibility,
@@ -993,7 +991,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             if (!media) fail(503, 'Media service unavailable');
             let stored;
             try {
-                stored = await media.upload({ buffer: stripImageMetadata(file.buffer, mime), filename: file.originalname || 'censored.png', mime, owner: p.owner_subject || null, visibility: 'private' });
+                stored = await media.upload({ buffer: file.buffer, filename: file.originalname || 'censored.png', mime, owner: p.owner_subject || null, visibility: 'private' });
             } catch (err) {
                 console.warn('[Pastes] censor upload failed:', err.message);
                 fail(502, 'Media service unavailable');
