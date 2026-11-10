@@ -79,7 +79,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(forum.includes('<ul class="sc-apps">') && forum.includes('<a href="/forum/general">') && forum.includes('href="/forum">All forums'), 'the forum\'s places as a launcher');
         assert.ok(/<dt>public pastes<\/dt><dd>\d+<\/dd>/.test(r.text), 'the real count of public pastes');
         const faq = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].flatMap((m) => [].concat(JSON.parse(m[1]))).find((x) => x['@type'] === 'FAQPage');
-        const shown = [...r.text.matchAll(/<summary>([^<]*)<\/summary>/g)].map((m) => m[1].replace(/&#39;/g, "'"));
+        const shown = [...r.text.matchAll(/<span class="cm-faq-q">([^<]*)<\/span>/g)].map((m) => m[1].replace(/&#39;/g, "'"));
         assert.deepStrictEqual(faq.mainEntity.map((q) => q.name), shown, 'every question in the FAQPage is on the page');
         // Verbiage: never "free"/"no cost".
         assert.ok(!/\bfree\b(?! speech)/i.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'no "free" claims outside "free speech"');
