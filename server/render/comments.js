@@ -39,8 +39,22 @@ function commentHtml(c) {
     return `<article class="post comment" id="comment-${c.id}">
     <header class="post-head">${who(c.author || (c.anon_name ? { display_name: c.anon_name } : null))} <span class="sep">·</span> <a class="muted small" href="#comment-${c.id}">${timeTag(c.created_at)}</a>${edited}</header>
     <p class="comment-text">${esc(c.message)}</p>
+    ${attachmentsHtml(c.attachments)}
     ${repliesHtml(c)}
   </article>`;
+}
+
+function attachmentsHtml(items) {
+    const refs = Array.isArray(items) ? items : [];
+    if (!refs.length) return '';
+    return `<ul class="comment-attachments">${refs.map((a) => {
+        const url = `${config.mediaUrl}/o/${encodeURIComponent(String(a.id || ''))}`;
+        if (!/^https:\/\//i.test(url)) return '';
+        const name = esc(a.name || 'file');
+        const type = String(a.media_type || '');
+        const body = type.startsWith('image/') ? `<img src="${esc(url)}" alt="${name}" loading="lazy">` : name;
+        return `<li><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${body}</a></li>`;
+    }).join('')}</ul>`;
 }
 
 function repliesHtml(c) {

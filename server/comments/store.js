@@ -49,7 +49,34 @@ async function setThreadVisibility(db, id, visibility) {
 }
 
 async function getComment(db, id) {
-    return await db.prepare('SELECT * FROM comments WHERE id = ?').get(id) || null;
+    const row = await db.prepare('SELECT * FROM comments WHERE id = ?').get(id) || null;
+    if (row) row.attachments = await listAttachments(db, [row.id]).then((m) => m.get(row.id) || []);
+    return row;
+}
+
+/** References staged by the owning service, grouped by comment id. */
+async function listAttachments(db, commentIds) {
+    const out = new Map();
+    const ids = [...new Set((commentIds || []).map(Number).filter(Number.isSafeInteger))];
+    for (const id of ids) out.set(id, []);
+    if (!ids.length) return out;
+    const rows = await db.prepare(`SELECT * FROM comment_attachments WHERE comment_id IN (${ids.map(() => '?').join(',')}) ORDER BY comment_id, created_at, media_id`).all(...ids);
+    for (const row of rows) if (out.has(row.comment_id)) out.get(row.comment_id).push(row);
+    return out;
+}
+
+async function createAttachment(db, row) {
+    await db.prepare(`INSERT INTO comment_attachments (media_id, ref_service, ref_type, ref_id, owner_subject, filename, mime, size_bytes, visibility)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(row.media_id, row.ref_service, row.ref_type, row.ref_id, row.owner_subject, row.filename, row.mime, row.size_bytes, row.visibility);
+    return await db.prepare('SELECT * FROM comment_attachments WHERE media_id = ?').get(row.media_id);
+}
+
+async function stagedAttachments(db, ids, subject, ref) {
+    if (!ids.length) return [];
+    const rows = await db.prepare(`SELECT * FROM comment_attachments WHERE media_id IN (${ids.map(() => '?').join(',')})
+        AND comment_id IS NULL AND owner_subject = ? AND ref_service = ? AND ref_type = ? AND ref_id = ?`).all(...ids, subject, ref.service, ref.type, String(ref.id));
+    return rows.length === ids.length ? rows : null;
 }
 
 /**
@@ -71,10 +98,17 @@ async function refIsPublic(db, t) {
 }
 
 /** Insert a comment and keep the thread's and parent's counters in step. */
-async function insertComment(db, { thread_id, parent_id = null, author_subject = null, anon_name = null, origin = 'user', message }) {
+async function insertComment(db, { thread_id, parent_id = null, author_subject = null, anon_name = null, origin = 'user', message, attachment_ids = [] }) {
     return await db.tx(async () => {
+        const thread = await getThread(db, thread_id);
+        const staged = await stagedAttachments(db, attachment_ids, author_subject, thread && { service: thread.ref_service, type: thread.ref_type, id: thread.ref_id });
+        if (!staged) { const err = new Error('Use attachments uploaded for this item'); err.status = 400; err.code = 'comment.attachment_invalid'; throw err; }
         const info = await db.prepare('INSERT INTO comments (thread_id, parent_id, author_subject, anon_name, origin, message) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
             .run(thread_id, parent_id, author_subject, anon_name, origin, message);
+        for (const row of staged) {
+            const claimed = await db.prepare('UPDATE comment_attachments SET comment_id = ? WHERE media_id = ? AND comment_id IS NULL').run(info.lastInsertRowid, row.media_id);
+            if (!claimed.changes) { const err = new Error('This attachment was already used'); err.status = 400; err.code = 'comment.attachment_invalid'; throw err; }
+        }
         await db.prepare('UPDATE comment_threads SET comment_count = comment_count + 1, updated_at = ov_now() WHERE id = ?').run(thread_id);
         if (parent_id) await db.prepare('UPDATE comments SET reply_count = reply_count + 1 WHERE id = ?').run(parent_id);
         const comment = await getComment(db, info.lastInsertRowid);
@@ -96,6 +130,7 @@ async function softDeleteComment(db, id, deletedBy = null) {
         const c = await getComment(db, id);
         if (!c || c.deleted_at) return 0;
         await db.prepare("UPDATE comments SET deleted_at = ov_now(), deleted_by = ?, message = '', updated_at = ov_now() WHERE id = ?").run(deletedBy, id);
+        await db.prepare('DELETE FROM comment_attachments WHERE comment_id = ?').run(id);
         await db.prepare('UPDATE comment_threads SET comment_count = (SELECT COUNT(*) FROM comments WHERE thread_id = ? AND deleted_at IS NULL), updated_at = ov_now() WHERE id = ?').run(c.thread_id, c.thread_id);
         if (c.parent_id) await db.prepare('UPDATE comments SET reply_count = (SELECT COUNT(*) FROM comments WHERE parent_id = ? AND deleted_at IS NULL) WHERE id = ?').run(c.parent_id, c.parent_id);
         return 1;
@@ -120,6 +155,9 @@ async function listTopLevel(db, threadId, { after = null, sort = 'old', limit = 
     if (hasMore) rows.pop();
     const replies = db.prepare('SELECT * FROM comments WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id ASC LIMIT ?');
     for (const r of rows) r.replies = await replies.all(r.id, replyLimit);
+    const all = rows.concat(rows.flatMap((r) => r.replies || []));
+    const attachments = await listAttachments(db, all.map((r) => r.id));
+    for (const row of all) row.attachments = attachments.get(row.id) || [];
     return { rows, hasMore };
 }
 
@@ -129,6 +167,8 @@ async function listReplies(db, parentId, { after = null, limit = 50 } = {}) {
         .all(...(after != null ? [parentId, after] : [parentId]), limit + 1);
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
+    const attachments = await listAttachments(db, rows.map((r) => r.id));
+    for (const row of rows) row.attachments = attachments.get(row.id) || [];
     return { rows, hasMore };
 }
 
@@ -140,7 +180,10 @@ async function listNewest(db, threadId, { limit = 50, offset = 0 } = {}) {
     const top = await db.prepare('SELECT * FROM comments WHERE thread_id = ? AND parent_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?').all(threadId, limit, offset);
     const replies = db.prepare('SELECT * FROM comments WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id ASC');
     for (const c of top) { c.replies = await replies.all(c.id); c.reply_count = c.replies.length; }
+    const all = top.concat(top.flatMap((r) => r.replies || []));
+    const attachments = await listAttachments(db, all.map((r) => r.id));
+    for (const row of all) row.attachments = attachments.get(row.id) || [];
     return top;
 }
 
-module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };
+module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, listAttachments, createAttachment, stagedAttachments, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };

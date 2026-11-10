@@ -180,6 +180,42 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}?after=abc`)).status, 400);
     });
 
+    await check('comment attachments upload through Community, are owner-validated, render on both paste and thread reads, and clear on removal', async () => {
+        const fileOwner = net.addUser({ network_user_id: 27, username: 'fileowner', display_name: 'File Owner' });
+        const fileOwnerJwt = net.sign({ id: 27, subject_id: fileOwner.subject_id, username: 'fileowner', display_name: 'File Owner', role: 'user' });
+        const stranger = net.addUser({ network_user_id: 28, username: 'attachmentstranger', display_name: 'Attachment Stranger' });
+        const strangerJwt = net.sign({ id: 28, subject_id: stranger.subject_id, username: 'attachmentstranger', display_name: 'Attachment Stranger', role: 'user' });
+        const slug = (await t.app.locals.pastes.createText({ kind: 'user', subject: fileOwner.subject_id, origin: 'user' }, { content: 'comment file', visibility: 'public' })).slug;
+        const ref = { service: 'community', type: 'paste', id: slug };
+        const form = new FormData();
+        form.set('ref', JSON.stringify(ref));
+        form.set('file', new Blob([Buffer.from('picture bytes')], { type: 'image/png' }), 'look.png');
+        const uploaded = await t.get('/api/v1/comments/attachments', { method: 'POST', headers: { authorization: `Bearer ${fileOwnerJwt}` }, body: form });
+        assert.strictEqual(uploaded.status, 201, uploaded.text);
+        const attachment = uploaded.json().attachment;
+        assert.strictEqual(attachment.name, 'look.png');
+        assert.strictEqual(attachment.storage.provider, 'media');
+        assert.deepStrictEqual(attachment.access.readers, [fileOwner.subject_id]);
+
+        const thread = (await resolve(ref)).json().thread;
+        const added = await post(thread.id, { message: 'with picture', attachments: [attachment] }, { cookie: fileOwnerJwt });
+        assert.strictEqual(added.status, 201, added.text);
+        assert.deepStrictEqual(added.json().comment.attachments.map((a) => a.id), [attachment.id]);
+        const paste = (await call(`/api/pastes/${slug}/comments`)).json();
+        assert.deepStrictEqual(paste.comments[0].attachments.map((a) => a.id), [attachment.id]);
+        const html = await t.get(`/c/${thread.id}`);
+        assert.match(html.text, new RegExp(`<img src="https://openvibe\\.media/o/${attachment.id}"`));
+
+        const stolen = await post(thread.id, { message: 'stolen', attachments: [attachment] }, { cookie: strangerJwt });
+        assert.strictEqual(stolen.status, 400);
+        const removed = await call(`/api/v1/comments/${added.json().comment.id}`, { method: 'DELETE', cookie: fileOwnerJwt });
+        assert.strictEqual(removed.status, 200);
+        const after = (await call(`/api/v1/comments/threads/${thread.id}`)).json();
+        assert.deepStrictEqual(after.comments, []);
+        assert.strictEqual((await t.db.prepare('SELECT COUNT(*) AS n FROM comment_attachments WHERE media_id = ?').get(attachment.id)).n, 0);
+        assert.ok(t.media.deletes.includes(attachment.id), 'removing the comment retires its Community Media object');
+    });
+
     await check('section reactions: one thread per post, the section id is the key; people only', async () => {
         const ref = { service: 'blog', type: 'post', id: 'pst_1' };
         const thread = (await resolve(ref, { cookie: alexJwt })).json().thread;

@@ -313,6 +313,7 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             id: c.id, paste_id: p.id, user_id: c.author_subject || null, author_subject: c.author_subject || null,
             parent_id: c.parent_id || null, anon_name: c.anon_name, message: c.message, is_deleted: c.deleted_at ? 1 : 0,
             created_at: c.created_at, updated_at: c.updated_at,
+            attachments: c.deleted_at ? [] : (c.attachments || []).map((a) => ({ id: a.media_id, name: a.filename || 'file', media_type: a.mime, size: Number(a.size_bytes) || 0, storage: { provider: 'media', key: a.media_id }, access: { readers: [a.owner_subject] }, read: { method: 'not_readable', reason: 'Attached to a comment.' }, role: 'input' })),
             ...authorFields(c.author_subject, c.origin, projections),
         };
         if (c.replies) { out.replies = c.replies.map((r) => shapeComment(r, p, projections)); out.reply_count = c.reply_count; }

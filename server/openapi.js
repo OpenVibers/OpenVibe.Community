@@ -268,6 +268,14 @@ route('post', '/api/v1/submissions/{slug}/review', {
 });
 
 // ── /api/v1/comments — the comment threads other products embed (server/comments/api.js) ─────
+route('post', '/api/v1/comments/attachments', {
+    operationId: 'uploadCommentAttachment', summary: 'Upload one comment attachment through the item owner', tags: ['comments'], security: PERSON,
+    requestBody: { required: true, content: { 'multipart/form-data': { schema: { type: 'object', required: ['ref', 'file'], properties: {
+        ref: { type: 'string', description: 'JSON EntityRef, for example {"service":"community","type":"paste","id":"…"}' },
+        file: { type: 'string', format: 'binary' },
+    } } } } },
+    responses: { 201: json('A staged ai.file@1 reference to pass in the comment write', { type: 'object', properties: { attachment: { type: 'object' } } }), ...errors([400, 401, 403, 413, 429, 502, 503]) },
+});
 route('post', '/api/v1/comments/threads/resolve', {
     operationId: 'resolveThread', summary: 'Open the thread for an item (creating it the first time)', tags: ['comments'], security: PERSON,
     description: 'community.thread.resolve. Idempotent: 201 when it created the thread, 200 when it already existed.',
@@ -290,6 +298,7 @@ route('post', '/api/v1/comments/threads/{id}/comments', {
     description: 'community.comment.create. Anonymous visitors may comment on public threads with anon_name.',
     requestBody: body({ type: 'object', required: ['message'], properties: {
         message: str(), parent_id: nullable('integer', { minimum: 1 }), anon_name: str({ maxLength: 32 }),
+        attachments: { type: 'array', maxItems: 4, items: ref('AiFile') },
     } }),
     responses: { 201: json('The comment', { type: 'object', properties: { comment: ref('Comment') } }), ...errors() },
 });
@@ -809,7 +818,14 @@ function openapi() {
                     id: { type: 'integer' }, thread_id: str(), parent_id: nullable('integer'), origin: str(), author: nullable('object'),
                     anon_name: nullable('string'), display_name: nullable('string'), message: nullable('string'), deleted: { type: 'boolean' },
                     score: { type: 'integer' }, upvotes: { type: 'integer' }, downvotes: { type: 'integer' }, my_vote: { type: 'integer' },
-                    created_at: str(), updated_at: str(), replies: arrayOf({ type: 'object' }),
+                    created_at: str(), updated_at: str(), replies: arrayOf({ type: 'object' }), attachments: arrayOf(ref('AiFile')),
+                } },
+                AiFile: { type: 'object', required: ['id', 'name', 'media_type', 'size', 'storage', 'access', 'read'], properties: {
+                    id: { type: 'string', pattern: '^med_[0-9A-HJKMNP-TV-Z]{26}$' }, name: str(), media_type: str(), size: { type: 'integer', minimum: 0 },
+                    storage: { type: 'object', required: ['provider', 'key'], properties: { provider: { const: 'media' }, key: str() } },
+                    access: { type: 'object', required: ['readers'], properties: { readers: arrayOf(str()) } },
+                    read: { type: 'object', required: ['method'], properties: { method: { type: 'string', enum: ['text', 'pages', 'image', 'audio_transcript', 'not_readable'] }, content: str(), pages: arrayOf(str()), reason: str() } },
+                    role: { type: 'string', enum: ['input', 'artifact'] },
                 } },
                 Space: { type: 'object', required: ['slug', 'name'], properties: {
                     slug: str(), name: str(), description: nullable('string'), visibility: { type: 'string', enum: ['public', 'members', 'staff'] },

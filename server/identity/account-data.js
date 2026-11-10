@@ -35,6 +35,7 @@ const inList = (xs) => `(${xs.map(() => '?').join(',')})`;
 const EXPORTS = [
     ['pastes.json', 'pastes', 'owner_subject'], ['paste_comments.json', 'paste_comments', 'author_subject'], ['comments.json', 'comments', 'author_subject'],
     ['threads.json', 'threads', 'author_subject'], ['posts.json', 'posts', 'author_subject'], ['attachments.json', 'attachments', 'owner_subject'],
+    ['comment_attachments.json', 'comment_attachments', 'owner_subject'],
     ['paste_likes.json', 'paste_likes', 'subject_id'], ['comment_votes.json', 'comment_votes', 'subject_id'], ['thread_votes.json', 'thread_votes', 'subject_id'],
     ['post_reactions.json', 'post_reactions', 'subject_id'], ['section_reactions.json', 'thread_section_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
@@ -142,7 +143,10 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             ['comments', 'author_subject = NULL, anon_name = NULL, message = ?, deleted_at = COALESCE(deleted_at, ?)']]) {
             if (!await hasTable(db, table)) continue;
             const { keep, drop } = await splitByReplies(db, table, subjects);
-            for (const id of keep) await db.prepare(`UPDATE ${table} SET ${tomb} WHERE id = ?`).run(TOMBSTONE, now, id);
+            for (const id of keep) {
+                if (table === 'comments' && await hasTable(db, 'comment_attachments')) await db.prepare('DELETE FROM comment_attachments WHERE comment_id = ?').run(id);
+                await db.prepare(`UPDATE ${table} SET ${tomb} WHERE id = ?`).run(TOMBSTONE, now, id);
+            }
             for (const id of drop) await db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
             add(erased, table, drop.length);
             add(retained, 'tombstones', keep.length);
@@ -165,6 +169,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             if (await hasColumn(db, 'threads', 'reply_count')) await db.prepare("UPDATE threads SET reply_count = (SELECT COUNT(*) FROM posts p WHERE p.thread_id = threads.id AND p.is_opening = 0)").run();
         }
         if (await hasTable(db, 'attachments')) add(erased, 'attachments', (await db.prepare(`DELETE FROM attachments WHERE owner_subject IN ${S}`).run(...subjects)).changes);
+        if (await hasTable(db, 'comment_attachments')) add(erased, 'comment_attachments', (await db.prepare(`DELETE FROM comment_attachments WHERE owner_subject IN ${S}`).run(...subjects)).changes);
         // Their submissions go (Pulse items with them, below); a decision they made stays, unsigned.
         if (await hasTable(db, 'submissions')) {
             for (const r of await db.prepare(`SELECT slug FROM submissions WHERE author_subject IN ${S}`).all(...subjects)) {

@@ -45,6 +45,8 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
     await db.prepare('INSERT INTO paste_likes (paste_id, subject_id) VALUES (3, ?)').run(DANA);
     await db.prepare("INSERT INTO comment_threads (id, ref_service, ref_type, ref_id) OVERRIDING SYSTEM VALUE VALUES (1, 'live', 'vod', '9')").run();
     await db.prepare("INSERT INTO comments (id, thread_id, parent_id, author_subject, message, score, upvotes, downvotes, reply_count) OVERRIDING SYSTEM VALUE VALUES (1, 1, NULL, ?, 'answered', 0, 0, 0, 1), (2, 1, 1, ?, 'reply', 1, 1, 0, 0), (3, 1, NULL, ?, 'alone', 0, 0, 0, 0)").run(DANA, OTTO, DANA);
+    await db.prepare(`INSERT INTO comment_attachments (media_id, ref_service, ref_type, ref_id, comment_id, owner_subject, filename, mime, size_bytes)
+        VALUES ('med_01JAB2C3D4E5F6G7H8J9K0MNP6', 'live', 'vod', '9', 1, ?, 'reply.png', 'image/png', 17)`).run(DANA);
     await db.prepare('INSERT INTO comment_votes (comment_id, subject_id, value) VALUES (2, ?, 1)').run(DANA);
     await db.prepare("INSERT INTO spaces (id, slug, name, created_by) OVERRIDING SYSTEM VALUE VALUES (901, 'dana-space', 'Dana space', ?)").run(DANA);
     await db.prepare("INSERT INTO threads (id, space_id, slug, title, author_subject, score) OVERRIDING SYSTEM VALUE VALUES (1, 901, 't1', 'busy', ?, 0), (2, 901, 't2', 'quiet', ?, 1)").run(DANA, DANA);
@@ -82,6 +84,7 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
         assert.deepStrictEqual(files['pastes.json'].map((p) => p.slug).sort(), ['p1', 'p2'], 'her pastes, with their content');
         assert.strictEqual(files['pastes.json'].find((p) => p.slug === 'p1').content, 'secret words');
         assert.ok(files['comments.json'] && files['posts.json'] && files['blocks.json'] && files['game_progress.json']);
+        assert.strictEqual(files['comment_attachments.json'][0].media_id, 'med_01JAB2C3D4E5F6G7H8J9K0MNP6');
         r = await post(exp);
         assert.strictEqual(r.json.outcome, 'unchanged');
         assert.strictEqual(sent.length, 1);
@@ -104,6 +107,7 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
             { id: 1, a: OTTO, message: 'nice' }, { id: 2, a: null, message: '[deleted]' }, { id: 3, a: OTTO, message: 'hi dana' }], 'her answered comment a tombstone; the other gone');
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, message, score, reply_count FROM comments ORDER BY id'), [
             { id: 1, a: null, message: '[deleted]', score: 0, reply_count: 1 }, { id: 2, a: OTTO, message: 'reply', score: 0, reply_count: 0 }], 'votes gone and the score recomputed');
+        assert.strictEqual((await all('SELECT * FROM comment_attachments')).length, 0, 'comment attachments are removed from a deleted account');
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, title FROM threads ORDER BY id'), [{ id: 1, a: null, title: '[deleted]' }], 'the busy thread a tombstone, the quiet one gone');
         assert.deepStrictEqual(await all('SELECT id, author_subject AS a, body_markdown AS b FROM posts ORDER BY id'), [{ id: 1, a: null, b: '[deleted]' }, { id: 2, a: OTTO, b: 'otto answers' }]);
         assert.strictEqual((await all('SELECT * FROM post_reactions')).length + (await all('SELECT * FROM paste_likes')).length, 0);

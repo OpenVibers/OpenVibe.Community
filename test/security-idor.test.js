@@ -23,7 +23,7 @@ const assert = require('assert');
 const { boot, check, done } = require('./helpers/app');
 
 const TABLES = ['pastes', 'paste_versions', 'paste_comments', 'paste_likes', 'spaces', 'space_groups', 'categories', 'threads', 'posts', 'post_versions',
-    'post_reactions', 'post_pastes', 'thread_votes', 'attachments', 'comment_threads', 'comments', 'comment_votes', 'space_chat_rooms', 'relay_mappings', 'relay_deliveries', 'pulse_items'];
+    'post_reactions', 'post_pastes', 'thread_votes', 'attachments', 'comment_attachments', 'comment_threads', 'comments', 'comment_votes', 'space_chat_rooms', 'relay_mappings', 'relay_deliveries', 'pulse_items'];
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 const PASTE_CAPS = ['community.paste.create', 'community.paste.write'];
 const FORUM_CAPS = ['community.post.create', 'community.comment.write'];

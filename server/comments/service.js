@@ -44,6 +44,7 @@ const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
 const { discussionModerator: moderator } = require('../identity/capabilities');
 const blocks = require('../identity/blocks');
+const commentAttachments = require('./attachments');
 
 /**
  * The entity types a browser may open a thread for (services with community.comment.write: any).
@@ -70,7 +71,7 @@ const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 const PAGE = 30;
 const REPLY_PAGE = 20;
 
-function createCommentService({ db, network = null, limits = {}, canViewPaste = null, fetchImpl = globalThis.fetch } = {}) {
+function createCommentService({ db, network = null, limits = {}, canViewPaste = null, fetchImpl = globalThis.fetch, media = null } = {}) {
     const authors = createAuthors({ db, network });
     const commentLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 5, noun: 'comments', ...(limits.comments || {}) });
     const voteLimiter = createPersonLimiter({ cooldownSec: 0, perMinute: 60, duplicate: false, noun: 'votes', ...(limits.votes || {}) });
@@ -112,6 +113,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             edited_at: deleted ? null : isoTime(c.edited_at),
             can_edit: !deleted && !!(v && v.subject && c.author_subject === v.subject),
             can_delete: !deleted && (moderator(v) || !!(v && v.subject && c.author_subject === v.subject)),
+            attachments: deleted ? [] : (c.attachments || []).map((row) => commentAttachments.publicReference(row)),
         };
         if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId));
         return out;
@@ -224,6 +226,35 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             return { thread: shapeThread(thread, v), created };
         },
 
+        /** Upload one attachment to Community, which owns Community paste comments. */
+        async uploadAttachment(v, ref, file) {
+            if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to attach a file');
+            if (!ref || ref.service !== 'community' || ref.type !== 'paste') fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
+            await checkCommunityRef(ref, v);
+            if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail(400, 'attachment.missing', 'Choose a file');
+            if (file.buffer.length > 16 * 1024 * 1024) fail(413, 'attachment.too_large', 'Files are limited to 16 MB');
+            if (!media || !media.configured || typeof media.uploadImage !== 'function') fail(503, 'attachment.unavailable', 'Files cannot be attached right now');
+            const filename = String(file.originalname || 'file').replace(/[\\/\\\\\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 255) || 'file';
+            let uploaded;
+            try {
+                uploaded = await media.uploadImage({ buffer: file.buffer, filename, mime: file.mimetype || 'application/octet-stream', owner: v.subject,
+                    kind: 'file', visibility: 'unlisted', source: 'community.comment' });
+            } catch (err) { fail(err.status === 413 ? 413 : 502, 'attachment.upload_failed', 'The file could not be stored. Try again.'); }
+            let object;
+            try { object = await media.object(uploaded.id); }
+            catch (err) { try { await media.deleteObject(uploaded.id); } catch { /* the uploaded object remains private/unlisted */ } fail(502, 'attachment.invalid', 'The stored file could not be verified'); }
+            if (!object || !object.owner || object.owner.subject !== v.subject || object.lifecycle_status !== 'ready') {
+                try { await media.deleteObject(uploaded.id); } catch { /* best effort cleanup */ }
+                fail(400, 'attachment.invalid', 'The stored file is not owned by you');
+            }
+            const row = await store.createAttachment(db, {
+                media_id: uploaded.id, ref_service: ref.service, ref_type: ref.type, ref_id: String(ref.id), owner_subject: v.subject,
+                filename: String((object.metadata && object.metadata.filename) || filename).slice(0, 255), mime: String(object.mime_type || file.mimetype || 'application/octet-stream'),
+                size_bytes: Number(object.size_bytes) || file.buffer.length, visibility: 'unlisted',
+            });
+            return { attachment: commentAttachments.publicReference(row) };
+        },
+
         /**
          * The thread of an entity as the entity's own page shows it (Community's paste page): get() found by
          * ref, after the same checks as resolve; reading never opens a thread, so null while nobody has
@@ -299,7 +330,27 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             }
             const key = author ? `s:${author}` : null;
             commentLimiter.check(key, message);
-            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message });
+            const rawAttachments = body.attachments == null ? [] : (Array.isArray(body.attachments) ? body.attachments : [body.attachments]);
+            if (rawAttachments.length > 4) fail(400, 'comment.attachments_too_many', 'At most four files can be attached to a comment');
+            if (rawAttachments.length && !author) fail(401, 'auth.required', 'Sign in to attach a file');
+            let attachmentIds = [];
+            if (rawAttachments.length) {
+                if (t.ref_service !== 'community' || t.ref_type !== 'paste') fail(403, 'attachment.owner_service', 'Upload attachments through the service that owns the item');
+                const refs = rawAttachments.map((raw) => {
+                    try { return commentAttachments.cleanReference(raw, author); }
+                    catch (err) { fail(err.status || 400, err.code || 'comment.attachment_invalid', err.message); }
+                });
+                attachmentIds = refs.map((a) => a.id);
+                if (new Set(attachmentIds).size !== attachmentIds.length) fail(400, 'comment.attachment_invalid', 'A file can only be attached once');
+                const staged = await store.stagedAttachments(db, attachmentIds, author, { service: t.ref_service, type: t.ref_type, id: t.ref_id });
+                if (!staged) fail(400, 'comment.attachment_invalid', 'Attach files uploaded through the service that owns this item');
+                for (const row of staged) {
+                    let object;
+                    try { object = await media.object(row.media_id); } catch { fail(400, 'comment.attachment_invalid', 'One of the attached files is no longer available'); }
+                    if (!object || !object.owner || object.owner.subject !== author || object.lifecycle_status !== 'ready') fail(400, 'comment.attachment_invalid', 'One of the attached files is not yours');
+                }
+            }
+            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds });
             commentLimiter.record(key, message);
             return { comment: (await shapeComments([c], v, t))[0] };
         },
@@ -332,6 +383,12 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
             if (!isAuthor && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
             await store.softDeleteComment(db, c.id, v.subject || v.service || null);
+            for (const a of c.attachments || []) {
+                if (a.ref_service === 'community' && media && typeof media.deleteObject === 'function') {
+                    try { await media.deleteObject(a.media_id); }
+                    catch (err) { console.warn(`[Comments] removed attachment ${a.media_id} from comment; Media cleanup failed: ${err.message}`); }
+                }
+            }
             return { ok: true, id: c.id };
         },
 
