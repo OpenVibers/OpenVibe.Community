@@ -32,7 +32,10 @@ const { sqlTime } = require('../server/http/v1');
     const env = { DISCORD_WEBHOOK_GENERAL: `${hook.url}/api/webhooks/1/general`, DISCORD_WEBHOOK_FEEDBACK: `${hook.url}/api/webhooks/2/feedback` };
     let clock = Date.parse('2026-09-22T12:00:00Z');
     const now = () => clock;
-    const relay = createDiscordRelay({ db, config: { baseUrl: 'https://openvibe.community' }, env, enabled: true, baseMs: 60_000, maxAttempts: 3, now });
+    // No background kick in these checks: drainAll() sends explicitly, and a 250 ms kick firing between a
+    // queued reply and the delete that must skip it made this test flaky. The app-wiring checks below keep
+    // the real 250 ms kick and poll for its sends.
+    const relay = createDiscordRelay({ db, config: { baseUrl: 'https://openvibe.community' }, env, enabled: true, baseMs: 60_000, maxAttempts: 3, kickMs: 300_000, now });
     const alex = ids.newId('user');
     await require('../server/pastes/store').upsertProjection(db, { subject_id: alex, username: 'alex', display_name: 'Alex @everyone' });
     await relay.addMapping({ space_id: general.id, webhook_url_ref: 'DISCORD_WEBHOOK_GENERAL' });
@@ -400,7 +403,7 @@ const { sqlTime } = require('../server/http/v1');
         const put = await call(`/api/v1/relay/mappings/${m.json().mapping.id}`, { method: 'PUT', cookie: adminJwt, json: { inbound: true, discord_channel_id: '2000000000000000009' } });
         assert.deepStrictEqual([put.json().mapping.inbound, put.json().mapping.discord_channel_id, put.json().mapping.enabled], [true, '2000000000000000009', true]);
         const before = hook.hits.length;
-        const waitHits = async (n) => { for (let i = 0; i < 100 && hook.hits.length < n; i++) await new Promise((res) => setTimeout(res, 10)); };
+        const waitHits = async (n) => { for (let i = 0; i < 1_000 && hook.hits.length < n; i++) await new Promise((res) => setTimeout(res, 10)); };
         const th = await call('/api/v1/spaces/general/threads', { method: 'POST', cookie: samJwt, json: { title: 'Through the app', body: 'hi' } });
         assert.strictEqual(th.status, 201);
         await waitHits(before + 1);
