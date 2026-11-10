@@ -16,6 +16,7 @@
  * text paste at all ("0 pastes in the latest 200" beside 59 on the newest page).
  */
 const source = require('./source');
+const crypto = require('crypto');
 
 const WINDOW = 200;             // page cap for one window query
 const LOCAL_TTL_MS = 2000;
@@ -66,9 +67,30 @@ const recentOf = (type) => windowOf({ type });
 
 function byViews(a, b) { return (b.views || 0) - (a.views || 0) || (b.likes || 0) - (a.likes || 0) || String(b.created_at).localeCompare(String(a.created_at)); }
 function byNewest(a, b) { return String(b.created_at || '').localeCompare(String(a.created_at || '')); }
+function contentKey(p) {
+    if (p.content_hash && /^[a-f0-9]{64}$/i.test(p.content_hash)) return `content:${p.content_hash.toLowerCase()}`;
+    if (p.type === 'screenshot') {
+        const ref = String(p.media_ref || p.screenshot_url || '');
+        const id = /med_[0-9A-HJKMNP-TV-Z]{26}/.exec(ref);
+        return id ? `image:${id[0]}` : null;
+    }
+    return `text:${crypto.createHash('sha256').update(String(p.content || ''), 'utf8').digest('hex')}`;
+}
+function consecutiveUnique(rows) {
+    const out = [];
+    for (const p of rows) {
+        const owner = p.owner_subject || p.user_id || p.username;
+        const hash = contentKey(p);
+        const key = owner && hash ? `${owner}:${hash}` : null;
+        const previous = out[out.length - 1];
+        if (key && previous && previous._dedupeKey === key) { previous.more_like_it = (previous.more_like_it || 0) + 1; continue; }
+        out.push({ ...p, ...(key ? { _dedupeKey: key } : {}) });
+    }
+    return out.map(({ _dedupeKey, ...p }) => p);
+}
 
 const fromOf = (v) => (Object.prototype.hasOwnProperty.call(FROM, v) ? v : 'all');
-async function latest(n = 12, { from = 'all' } = {}) { return _front(await windowOf({ from: fromOf(from) })).sort(byNewest).slice(0, n); }
+async function latest(n = 12, { from = 'all' } = {}) { return consecutiveUnique(_front(await windowOf({ from: fromOf(from) })).sort(byNewest)).slice(0, n); }
 async function trending(n = 8, { from = 'all' } = {}) { return _front(await windowOf({ from: fromOf(from) })).sort(byViews).slice(0, n); }
 
 /** Pastes in the same language first, then the newest, never the paste itself. */

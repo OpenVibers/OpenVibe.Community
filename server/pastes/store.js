@@ -169,7 +169,7 @@ async function canonicalForRef(db, ref) {
 }
 
 const INSERT_COLUMNS = ['slug', 'public_id', 'owner_subject', 'origin', 'type', 'title', 'content', 'language', 'visibility',
-    'screenshot_url', 'media_ref', 'stream_ref', 'metadata', 'burn_after_read', 'forked_from', 'pinned', 'is_nsfw',
+    'screenshot_url', 'media_ref', 'stream_ref', 'metadata', 'content_hash', 'source_hash', 'burn_after_read', 'forked_from', 'pinned', 'is_nsfw',
     'ai_summary', 'ai_tags', 'ai_analyzed_at', 'locked', 'lock_kind', 'envelope', 'title_shown'];
 
 /** Insert a new paste (fields already validated); returns the stored row. */
@@ -187,6 +187,9 @@ async function insertPaste(db, fields) {
     });
 }
 
+const findOwnedHash = (db, owner, hash) => db.prepare(`SELECT * FROM pastes WHERE owner_subject = ? AND (content_hash = ? OR source_hash = ?)
+    AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`).get(owner, hash, hash);
+
 /**
  * Apply an edit. `patch` may hold title/content/language/visibility/is_nsfw/pinned. A change to
  * title, content or language bumps the revision and appends a paste_versions row; the first
@@ -199,7 +202,7 @@ async function updatePaste(db, id, patch, editedBy = null) {
         if (!cur) return null;
         const sets = [];
         const params = [];
-        for (const k of ['title', 'content', 'language', 'visibility', 'is_nsfw', 'pinned']) {
+        for (const k of ['title', 'content', 'content_hash', 'language', 'visibility', 'is_nsfw', 'pinned']) {
             if (patch[k] === undefined) continue;
             sets.push(`${k} = ?`);
             params.push(patch[k]);
@@ -477,7 +480,7 @@ async function mapSet(db, system, type, id, targetType, targetId) {
 
 module.exports = { ensurePublicId, getByPublicId, canonicalForRef, canonicalSlug, publicIdOfRef,
     generateSlug, slugTaken, retireSlug, sanitizeTitle, detectLanguage,
-    getBySlug, getById, insertPaste, updatePaste, listVersions, softDelete, listPastes,
+    getBySlug, getById, insertPaste, findOwnedHash, updatePaste, listVersions, softDelete, listPastes,
     countOwnerSince, lastPasteTime, hasLiked, toggleLike, incrementCopies, bumpViews, recordVisit, pruneVisits,
     setAi, setScreenshot, setVisibility, stats, statSeries, listForks, deleteAllForks,
     getProjections, upsertProjection, subjectsByUsername,

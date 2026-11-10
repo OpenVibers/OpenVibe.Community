@@ -175,16 +175,30 @@
       var shotStatus = $('[data-screenshot-status]', form);
       var shotProgress = $('[data-screenshot-progress]', form);
       var shotFile = null;
+      var shotDuplicate = null;
+      var shotKeepBoth = false;
+      var shotChecking = false;
       var shotMeter = shotProgress && window.OVUpload ? window.OVUpload.progress(shotProgress) : null;
       var shotPicker = shotRoot && window.OVUpload ? window.OVUpload.picker(shotRoot, {
         label: 'Choose an image', accept: 'image/png,image/jpeg,image/webp,image/gif',
-        onFile: function (f) {
+        onFile: function (f, row) {
           shotFile = f;
+          shotDuplicate = null; shotKeepBoth = false; shotChecking = false;
           if (shotProgress) shotProgress.hidden = true;
           if (!form.elements.title.value) form.elements.title.value = f.name.replace(/\.[^.]+$/, '');
           setMode('image');
+          if (window.OVUpload && form.getAttribute('data-subject')) {
+            shotChecking = true;
+            window.OVUpload.preflight(f, function (_file, hash) {
+            return api('/api/pastes/duplicates?sha256=' + encodeURIComponent(hash)).then(function (out) { return out && out.duplicate ? out : null; });
+          }, row, {
+            onDuplicate: function (out) { shotDuplicate = out; sayShot('You already uploaded this image. Choose an option in its row.'); },
+            onUse: function (existing) { location.href = existing.address || existing.url; },
+            onAgain: function () { shotKeepBoth = true; shotDuplicate = null; sayShot('Uploading another copy.'); }
+            }).catch(function () { /* The server still checks uploads even if this read is unavailable. */ }).finally(function () { shotChecking = false; });
+          }
         },
-        onRemove: function () { shotFile = null; }
+        onRemove: function () { shotFile = null; shotDuplicate = null; shotKeepBoth = false; shotChecking = false; }
       }) : null;
       function sayShot(text, bad) { if (!shotStatus) return; shotStatus.textContent = text || ''; shotStatus.className = 'form-status' + (bad ? ' error' : ''); }
       var LOCK_AUDIENCE = { people: 'For the people on the list', password: 'Anyone with the password', link: 'Anyone with the link' };
@@ -407,12 +421,15 @@
         var common = { title: el.title.value, visibility: el.visibility.value, burn_after_read: el.burn_after_read.checked, is_nsfw: el.is_nsfw.checked };
         if (mode === 'image') {
           if (!shotFile) { btn.disabled = false; sayShot('Choose an image first.', true); return; }
+          if (shotChecking) { btn.disabled = false; sayShot('Checking whether you already uploaded this image.'); return; }
+          if (shotDuplicate && !shotKeepBoth) { btn.disabled = false; sayShot('Choose Open it, Use that one, or Upload again in the file row.', true); return; }
           sayShot('Uploading your image…');
           if (shotProgress) shotProgress.hidden = false;
           if (shotMeter) shotMeter.update({ state: 'sending', done: 0, total: shotFile.size });
           var fd = new FormData();
           fd.append('screenshot', shotFile);
           fd.append('title', common.title || 'Screenshot'); fd.append('description', el.description.value); fd.append('visibility', common.visibility);
+          if (shotKeepBoth) fd.append('keep_both', '1');
           if (common.is_nsfw) fd.append('is_nsfw', '1');
           p = uploadScreenshot(fd);
         } else {

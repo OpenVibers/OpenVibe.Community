@@ -195,7 +195,7 @@ function pasteKitCard(p, { eager = false } = {}) {
         href: `/p/${pastePathSlug(p)}`, title: p.title || 'Untitled', type: 'post', ratio: '16/9', image: image || '',
         badge: p.is_nsfw ? 'NSFW' : p.origin === 'ai' ? 'AI' : p.pinned ? 'Pinned' : '',
         corner: isShot ? '' : languageLabel(p.language || 'text'),
-        preview: !isShot && !p.is_nsfw ? String(p.content || '') : '',
+        preview: !isShot && !p.is_nsfw ? `${String(p.content || '')}${p.more_like_it ? `\n and ${p.more_like_it} more like it` : ''}` : '',
         who: authorName(p), avatar: avatarUrl(p, 68) || '',
         count: [Number(p.views) || 0, Number(p.views) === 1 ? 'view' : 'views'], when: p.created_at || null,
     });
