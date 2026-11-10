@@ -37,7 +37,7 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.subject.merged', 'network.account.export_requested', 'network.account.deleted']);
+const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.account.export_requested', 'network.account.deleted']);
 const GAME_NAMESPACE = 'games.progress.summary';
 const GAME_MILESTONE = 5;
 const GAME_URL = 'https://openvibe.games/';
@@ -186,22 +186,7 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
                 problem(500, 'community.event_failed', 'processing failed; it will be retried');
             });
         }
-        if (event.event_type === 'network.subject.merged') {
-            // Two accounts became one (ADR-029): the folded-in subject's rows become the survivor's (../identity/subject-merge.js).
-            const merge = require('../identity/subject-merge');
-            const p = merge.payloadOf(event);
-            if (typeof p === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: p }); }
-            try {
-                const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await merge.apply(db, p, { log }) }));
-                if (r.duplicate) stats.duplicates++; else stats.applied++;
-                return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
-            } catch (err) {
-                stats.failed++;
-                log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
-                return problem(500, 'community.event_failed', 'processing failed; it will be retried');
-            }
-        }
-        if (event.event_type === 'vip.membership.changed') {
+                if (event.event_type === 'vip.membership.changed') {
             if (event.source !== 'vip' || !vipCache) { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: event.source !== 'vip' ? 'ignored:source' : 'ignored:no_gate' }); }
             const r = await inbox.once(CONSUMER, event.event_id, () => ({ outcome: vipCache.handleEvent(event) ? 'vip:invalidated' : 'vip:unchanged' }));
             if (r.duplicate) stats.duplicates++; else stats.applied++;

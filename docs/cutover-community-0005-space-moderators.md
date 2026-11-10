@@ -85,5 +85,5 @@ a restore, so prefer the code rollback.
 ## 5. Afterwards
 
 - Account deletion erases a person's rows, and `added_by` becomes NULL where they added someone. A
-  subject merge moves the rows (`server/identity/account-data.js`, `subject-merge.js`).
+
 - When the forum moves to OpenVibe.Space (T10 step 3), `space_moderators` moves with the forum tables.
