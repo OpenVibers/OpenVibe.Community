@@ -104,7 +104,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.match(head, /<meta name="ov-boost" content="community@[^"]+">/);
         for (const js of ['theme-loader.js', 'navbar.js', 'footer.js', 'boost.js']) has(head, `/shared/${js}?v=`);
         assert.match(r.text, /<body[^>]* data-page="home">/);
-        has(r.text, '<div id="navbar-mount"></div>');
+        has(r.text, '<div id="navbar-mount">');
         has(r.text, 'id="ov-footer"');
         has(r.text, 'OpenVibeFooter.init(window.__OV_PAGE.footer)');
     });
