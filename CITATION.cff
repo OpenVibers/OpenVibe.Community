@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use OpenVibe.Community in research or a product, cite it as below."
+title: openvibe-community
+type: software
+authors:
+  - name: OpenVibe
+    alias: OpenVibers
+    website: https://openvibe.network
+repository-code: https://github.com/OpenVibers/OpenVibe.Community
+url: https://openvibe.community
+license: MIT
+abstract: "The OpenVibe community: roadmap, feedback, pastes, forum and Pulse, at openvibe.community."
+keywords:
+  - openvibe
+  - community
+  - feedback
+  - forum
+  - pastebin

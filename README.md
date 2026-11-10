@@ -4,6 +4,9 @@
 
 **The OpenVibe community home** — [openvibe.community](https://openvibe.community). The roadmap, feedback, pastes and Pulse, from the people who build and use the network.
 
+**Live site:** https://openvibe.community · **API docs:** https://openvibe.services · **For AI:** https://openvibe.community/llms.txt
+**Run it:** `npm ci && npm run dev` (Node 20 or newer) · **Tests:** `npm test`
+
 Part of the [OpenVibe network](https://openvibe.network); [help](https://openvibe.help) and the [developer API](https://openvibe.services).
 
 ## Purpose
