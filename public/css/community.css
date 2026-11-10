@@ -20,7 +20,7 @@ h1 { font-size: clamp(1.7rem, 3.5vw, 2.4rem); }
 h2 { font-size: 1.35rem; }
 h3 { font-size: 1.05rem; }
 img { max-width: 100%; height: auto; }
-.page { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+.page { max-width: 1120px; margin: 0 auto; padding: 24px 16px 0; }
 .muted { color: var(--text-secondary); }
 .small { font-size: .85rem; }
 .empty { color: var(--text-muted); padding: 32px 0; text-align: center; }
@@ -307,7 +307,7 @@ h1 .rss-link { font-size: .68rem; margin-left: 6px; }
 .ov-footer { margin-top: 24px; }
 
 @media (max-width: 640px) {
-  .page { padding: 16px 16px 40px; }
+  .page { padding: 16px 16px 0; }
   .card-meta { flex-wrap: wrap; }
   .code-wrap { max-height: none; }
   .gutter { display: none; }
