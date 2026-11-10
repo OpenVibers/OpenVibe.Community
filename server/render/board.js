@@ -218,11 +218,11 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
     const indexable = space.visibility === 'public' && !gated;
     const first = (page - 1) * perPage;
     const replyBlock = viewer.can_reply
-        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply"${attachmentsEnabled ? ' enctype="multipart/form-data"' : ''}>
+        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply">
     <h2 class="h3">Reply</h2>
     ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     <label class="field"><span class="sr-only">Your reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
-    ${f.imageField(attachmentsEnabled)}
+    ${f.imageField(attachmentsEnabled, space)}
     ${f.pasteField()}
     <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-reply" aria-hidden="true"></i> Post reply</button><span class="muted small">**bold**, *italic*, \`code\`, &gt; quotes, [links](https://…)</span></div>
   </form>`
@@ -264,7 +264,8 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         historyType: 'page',
         historyTitle: thread.title,
         footerVariant: 'compact',
-        styles: ['kit.css'],
+        styles: ['kit.css', ...(attachmentsEnabled ? ['ov-upload.css'] : [])],
+        ...(attachmentsEnabled ? { scripts: ['ov-upload.js'] } : {}),
         ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : []),

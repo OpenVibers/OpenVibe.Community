@@ -114,6 +114,7 @@ function footerInit(opts) {
  *   historyType ('page'|'paste'), historyTitle, footerVariant ('full'|'compact'), bodyClass,
  *   styles (Shared stylesheets by name, linked before community.css so this site's rules win: ['showcase.css']),
  *   pageCss (this site's own stylesheets for one page, linked after community.css: ['modlog.css']),
+ *   scripts (Shared scripts by name, loaded before community.js so it can use them: ['ov-upload.js']),
  *   published/modified (ISO, for article:*), noFrame (error pages during outages)
  */
 function renderPage(o) {
@@ -150,6 +151,7 @@ function renderPage(o) {
             ...(o.inlineStyles || []).map((css) => `<style>${css}</style>`),
             `<link rel="stylesheet" href="${asset('css/community.css')}">`,
             ...(o.pageCss || []).map((name) => `<link rel="stylesheet" href="${asset(`css/${name}`)}">`),
+            ...(o.scripts || []).map((name) => `<script src="${ovServe.url(name)}" defer></script>`),
             `<script src="${asset('js/community.js')}" defer></script>`,
             // openvibe-shared items.js + items.css: community.js loads them only on a page that shows someone.
             `<meta name="ov-items" content="${escapeHtml(ovServe.url('items.js'))} ${escapeHtml(ovServe.url('items.css'))}">`,

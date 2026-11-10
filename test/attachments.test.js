@@ -114,26 +114,46 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         r = await json(alexJwt, `/api/v1/spaces/general/threads/${thread.slug}/posts`, { body: 'again', attachments: [first.media_id] });
         assert.strictEqual(r.status, 400, 'already on a post');
         const html = (await t.get(`/forum/general/${thread.slug}`, { cookies: [`ov_token=${samJwt}`] })).text;
-        assert.ok(html.includes(`src="${first.url}"`) && html.includes('enctype="multipart/form-data"') && html.includes('name="attachments"'));
+        assert.ok(html.includes(`src="${first.url}"`), 'the post shows the image');
+        assert.ok(html.includes('data-attachment-upload') && html.includes('/shared/ov-upload.js') && html.includes('/shared/ov-upload.css'), 'the form loads the shared picker');
+        assert.ok(!html.includes('enctype="multipart/form-data"'), 'the form no longer posts files itself');
     });
 
-    await check('no-JS reply form: the images are uploaded and attached in one step', async () => {
-        const fd = new FormData();
-        fd.append('body', 'Two more');
-        fd.append('attachments', new Blob([PNG], { type: 'image/png' }), 'a.png');
-        fd.append('attachments', new Blob([PNG], { type: 'image/png' }), 'b.png');
-        const r = await t.get(`/forum/general/${thread.slug}/reply`, { method: 'POST', body: fd, cookies: [`ov_token=${samJwt}`] });
+    await check('the reply form names images the shared uploader already stored', async () => {
+        const a = await upload(samJwt, PNG, 'a.png');
+        const b = await upload(samJwt, PNG, 'b.png');
+        assert.strictEqual(a.status, 201); assert.strictEqual(b.status, 201);
+        const body = new URLSearchParams();
+        body.append('body', 'Two more');
+        body.append('attachments', a.json().attachment.media_id);
+        body.append('attachments', b.json().attachment.media_id);
+        const r = await t.get(`/forum/general/${thread.slug}/reply`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: body.toString(), cookies: [`ov_token=${samJwt}`] });
         assert.strictEqual(r.status, 303, r.text.slice(0, 300));
         const page = (await t.get(`/api/v1/spaces/general/threads/${thread.slug}`)).json();
         const reply = page.posts.find((p) => p.body_markdown === 'Two more');
-        assert.deepStrictEqual(reply.attachments.map((a) => a.filename), ['a.png', 'b.png']);
-        assert.ok(reply.attachments.every((a) => objects.get(a.media_id).owner === sam.subject_id));
-        const empty = new FormData();
-        empty.append('body', '');
-        empty.append('attachments', new Blob([PNG], { type: 'image/png' }), 'c.png');
+        assert.deepStrictEqual(reply.attachments.map((x) => x.filename), ['a.png', 'b.png']);
+        assert.ok(reply.attachments.every((x) => objects.get(x.media_id).owner === sam.subject_id));
+    });
+
+    await check('the old inline multipart upload is gone: 410, and nothing reaches Media', async () => {
         const before = objects.size;
-        await t.get(`/forum/general/${thread.slug}/reply`, { method: 'POST', body: empty, cookies: [`ov_token=${samJwt}`] });
-        assert.strictEqual(objects.size, before, 'an empty reply uploads nothing');
+        const fd = new FormData();
+        fd.append('body', 'Old way');
+        fd.append('attachments', new Blob([PNG], { type: 'image/png' }), 'c.png');
+        const r = await t.get(`/forum/general/${thread.slug}/reply`, { method: 'POST', body: fd, cookies: [`ov_token=${samJwt}`] });
+        assert.strictEqual(r.status, 410, r.text.slice(0, 300));
+        assert.strictEqual(objects.size, before, 'the old upload path stores nothing');
+    });
+
+    await check('the new-thread and new-paste pages load the shared picker', async () => {
+        const fresh = await t.get('/forum/general/new', { cookies: [`ov_token=${alexJwt}`] });
+        assert.strictEqual(fresh.status, 200);
+        assert.ok(fresh.text.includes('data-attachment-upload') && fresh.text.includes('/shared/ov-upload.js') && fresh.text.includes('/shared/ov-upload.css'), 'the forum form uses the kit');
+        assert.ok(!fresh.text.includes('name="attachments" type="file"') && !fresh.text.includes('enctype="multipart/form-data"'), 'no hand-rolled file input');
+        const paste = await t.get('/new');
+        assert.strictEqual(paste.status, 200);
+        assert.ok(paste.text.includes('data-screenshot-upload') && paste.text.includes('/shared/ov-upload.js') && paste.text.includes('/shared/ov-upload.css'), 'the paste form uses the kit');
+        assert.ok(!paste.text.includes('name="screenshot"') && !paste.text.includes('type="file" name="screenshot"'), 'the old screenshot input is gone');
     });
 
     await check('without the service principal, attaching is refused and the forms have no file field', async () => {

@@ -27,7 +27,6 @@
  */
 const express = require('express');
 const labelsUi = require('../render/labels');
-const multer = require('multer');
 const seo = require('openvibe-shared/seo');
 const cache = require('openvibe-shared/cache-policy');
 const discovery = require('../discovery');
@@ -43,22 +42,20 @@ function createForumRoutes({ forum, viewers, config }) {
     const router = express.Router();
     const withViewer = viewers.middleware({ services: false });
     const form = express.urlencoded({ extended: false, limit: '256kb' });
-    // New threads and replies may carry up to 4 images (multipart `attachments`); a urlencoded form passes through.
-    const imageParser = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 4, fields: 20, fieldSize: 64 * 1024 } }).array('attachments', 4);
-    const withImages = (req, res, next) => imageParser(req, res, (err) => {
-        if (err) req.uploadError = err.code === 'LIMIT_FILE_SIZE' ? 'Images are limited to 8 MB' : (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') ? 'At most 4 images per post' : 'The images could not be read';
-        next();
-    });
-    /** Store the form's images in Media first. → their media ids (the post then names them) */
-    async function uploadImages(req) {
-        if (req.uploadError) throw new ApiError(400, 'attachments.invalid', req.uploadError);
-        const ids = [];
-        for (const f of req.files || []) {
-            if (!f || !f.size) continue;
-            ids.push((await forum.uploadAttachment(req.viewer, req.params.space, f)).attachment.media_id);
-        }
-        return ids;
+    /**
+     * The image ids the shared uploader attached before the form was sent. Each was uploaded through
+     * POST /api/v1/spaces/:space/attachments (Media, owned by the writer); claimable() checks the rest.
+     */
+    function attachmentIds(body) {
+        const raw = body && body.attachments;
+        const list = Array.isArray(raw) ? raw : (raw == null ? [] : [raw]);
+        return list.map(String).filter(Boolean);
     }
+    // The old inline multipart upload is gone: the page sends images one by one through the kit first.
+    const noInlineUpload = (req, res, next) => {
+        if (!req.is('multipart/form-data')) return next();
+        return html(res, pages.errorPage({ status: 410, title: 'Images moved', message: 'Images are uploaded one by one before the post is sent. Reload this page and choose them again.' }), 410);
+    };
     const worthUploading = (title, body) => (title == null || String(title).trim().length >= 3) && String(body || '').trim().length > 0;
     const html = (res, body, status = 200) => {
         setRobotsHeader(res, body);
@@ -203,7 +200,7 @@ function createForumRoutes({ forum, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.post('/forum/:space/new', withViewer, sameOrigin, withImages, form, wrap(async (req, res, next) => {
+    router.post('/forum/:space/new', withViewer, sameOrigin, noInlineUpload, form, wrap(async (req, res, next) => {
         const values = { title: String((req.body || {}).title || '').slice(0, 200), body: String((req.body || {}).body || '').slice(0, 40_000) };
         if ((req.body || {}).members_only === '1') values.members_only = true;
         if ((req.body || {}).category) values.category = String(req.body.category).slice(0, 40);
@@ -211,8 +208,8 @@ function createForumRoutes({ forum, viewers, config }) {
         const labels = labelsUi.fromForm(req.body);
         if (labels !== undefined) values.labels = labels === null ? ['not-a-label'] : labels;
         try {
-            // Images go to Media only when the rest can be saved (no strays from an empty form).
-            if (worthUploading(values.title, values.body)) { const ids = await uploadImages(req); if (ids.length) values.attachments = ids; }
+            // Name the images only when the rest can be saved (an empty form claims nothing).
+            if (worthUploading(values.title, values.body)) { const ids = attachmentIds(req.body); if (ids.length) values.attachments = ids; }
             const out = await forum.createThread(req.viewer, req.params.space, values);
             discovery.resetCaches();
             res.redirect(303, out.thread.url);
@@ -242,10 +239,10 @@ function createForumRoutes({ forum, viewers, config }) {
         try { await renderThread(req, res); } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.post('/forum/:space/:slug/reply', withViewer, sameOrigin, withImages, form, wrap(async (req, res, next) => {
+    router.post('/forum/:space/:slug/reply', withViewer, sameOrigin, noInlineUpload, form, wrap(async (req, res, next) => {
         const draft = String((req.body || {}).body || '').slice(0, 40_000);
         try {
-            const attachments = worthUploading(null, draft) ? await uploadImages(req) : [];
+            const attachments = worthUploading(null, draft) ? attachmentIds(req.body) : [];
             const pastes = String((req.body || {}).pastes || '').slice(0, 400) || undefined;
             const out = await forum.reply(req.viewer, req.params.space, req.params.slug, { body: draft, attachments: attachments.length ? attachments : undefined, pastes });
             res.redirect(303, out.url);

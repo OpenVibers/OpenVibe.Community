@@ -680,7 +680,11 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     </div>
   </div>
   <div data-pane="image" hidden>
-    <label class="field"><span>Image (PNG, JPEG, WebP or GIF)</span><input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp,image/gif" disabled></label>
+    <div class="field"><span>Image (PNG, JPEG, WebP or GIF)</span>
+      <div data-screenshot-upload></div>
+      <p class="form-status" data-screenshot-status role="status" aria-live="polite"></p>
+      <div data-screenshot-progress hidden></div>
+    </div>
     <label class="field"><span>Description</span><textarea name="description" rows="3" maxlength="2000" placeholder="What is this a picture of?"></textarea></label>
   </div>
   <section class="ovk-section pf-options" aria-labelledby="pf-options-h">
@@ -702,7 +706,8 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
         robots: 'noindex,follow',
         active: 'new',
         footerVariant: 'compact',
-        styles: ['kit.css'],   // the options card and the switch rows (openvibe-shared/kit)
+        styles: ['kit.css', 'ov-upload.css'],   // the options card, the switch rows and the shared picker
+        scripts: ['ov-upload.js'],
         body,
     });
 }
