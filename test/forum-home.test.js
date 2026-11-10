@@ -59,6 +59,20 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(r.status, 308);
         assert.strictEqual(r.headers.get('location'), '/forum/general/hello/reply');
     });
+    await check('a forum with no threads draws the kit empty state and one button to start one', async () => {
+        const forumStore = require('../server/forum/store');
+        const db = t.app.locals.db || t.db;
+        await forumStore.createSpace(db, { slug: 'plain-pages-empty', name: 'Quiet forum', created_by: 'staff', visibility: 'public' });
+        const r = await t.get('/forum/plain-pages-empty');
+        assert.strictEqual(r.status, 200);
+        assert.match(r.text, /class="ovk-empty"/, 'the kit empty state is used, not a bare sentence');
+        assert.match(r.text, /This forum has no thread yet/);
+        assert.match(r.text, /class="ovk-btn[^"]*" href="\/forum\/plain-pages-empty\/new"/, 'the empty state offers the button that starts the first thread');
+        const filtered = await t.get('/forum/plain-pages-empty?sort=top');
+        assert.strictEqual(filtered.status, 200, `filtered page ${filtered.status}`);
+        assert.match(filtered.text, /class="ovk-empty"/, 'the empty list keeps the kit empty state under another sort');
+    });
+
     await t.close();
     done();
 })().catch((e) => { console.error(e); process.exitCode = 1; });

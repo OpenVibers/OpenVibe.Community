@@ -77,7 +77,7 @@ function spacesPage({ spaces }) {
       ${s.description ? `<p class="muted">${esc(s.description)}</p>` : ''}
       <p class="small muted">${num(s.thread_count)} ${s.thread_count === 1 ? 'thread' : 'threads'}${s.last_activity_at ? ` · last activity ${timeTag(s.last_activity_at)}` : ''}</p>
     </li>`).join('')}
-  </ul>` : '<p class="empty">No forums yet.</p>';
+  </ul>` : kit.empty({ icon: 'chat', title: 'No forums yet', text: 'No forum has been started here yet.', action: { href: '/pulse', label: 'See what is happening', icon: 'live' } });
     const body = `
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Forum</span></nav>
@@ -154,7 +154,7 @@ ${chatRoom}
 ${categoryNav}${statusNav}
 <nav class="tabs sort-tabs" aria-label="Sort threads">${tabs}</nav>
 <section data-results>
-  ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? `<p class="empty">Nothing here yet. <a href="${esc(spaceHref(space.slug))}">See everything in ${esc(space.name)}</a>.</p>` : canStart ? `<p class="empty">No threads yet — <a href="/forum/${esc(space.slug)}/new">start the first one</a>.</p>` : '<p class="empty">Nothing here yet.</p>'}
+  ${threads.length ? `<ol class="thread-list">${threads.map((t) => threadRow(t, space)).join('')}</ol>` : filtered ? kit.empty({ icon: 'search', title: 'Nothing here yet', text: 'No thread matches these filters.', action: { href: spaceHref(space.slug), label: `See everything in ${space.name}`, icon: 'grid' } }) : canStart ? kit.empty({ icon: 'chat', title: 'No threads yet', text: 'This forum has no thread yet.', action: { href: `/forum/${space.slug}/new`, label: 'Start the first thread', icon: 'plus' } }) : kit.empty({ icon: 'chat', title: 'Nothing here yet', text: 'No thread has been started here yet.', action: { href: '/forum', label: 'See the other forums', icon: 'grid' } })}
   ${pager((n) => spaceHref(space.slug, { sort, page: n, category, status }), page, pages)}
 </section>
 ${footer}
