@@ -80,6 +80,13 @@ route('get', '/api/pastes', {
         query('needs_ai', { type: 'string', description: 'Services holding community.paste.moderate only: pastes with no AI pass yet' })],
     responses: { 200: json('A page of pastes', { type: 'object', properties: { pastes: arrayOf(ref('Paste')), total: { type: 'integer' } } }), ...errors([400, 403, 429]) },
 });
+route('get', '/api/pastes/duplicates', {
+    operationId: 'findPasteDuplicate', summary: 'Check for your own matching paste', tags: ['pastes'], security: PERSON,
+    parameters: [query('sha256', { type: 'string', pattern: '^[a-fA-F0-9]{64}$', required: true, description: 'SHA-256 of the uploaded bytes' })],
+    responses: { 200: json('Whether this person already owns a matching paste', { type: 'object', properties: {
+        duplicate: { type: 'boolean' }, object: { type: 'object', properties: { id: str(), name: str(), date: str(), address: str(), url: str() } }, paste: ref('Paste'),
+    } }), ...errors([400, 401, 429]) },
+});
 route('post', '/api/pastes', {
     operationId: 'createPaste', summary: 'Create a paste', tags: ['pastes'], security: PERSON,
     description: 'community.paste.create. The body is JSON, or multipart with a file (then it is a screenshot paste).',
@@ -89,6 +96,7 @@ route('post', '/api/pastes', {
             members: { type: 'array', items: shareMember, maxItems: 100, description: 'audience people only: who may open it' },
             transfer_to: str({ description: "An exact @name: offer this paste's ownership in the same call" }),
             keep_access: { type: 'boolean', default: false, description: 'With transfer_to: the current owner keeps viewing' },
+            keep_both: { type: 'boolean', default: false, description: 'Create another paste even when these exact bytes already belong to you' },
             burn_after_read: { type: 'boolean' }, is_nsfw: { type: 'boolean' }, stream_id: str({ pattern: '^\\d{1,18}$' }),
             metadata: { type: ['object', 'string'], description: 'Services only: a JSON object kept with the paste' },
             ai_summary: str({ maxLength: 2000, description: 'A service with community.paste.moderate' }),
@@ -99,7 +107,7 @@ route('post', '/api/pastes', {
         } } },
         'multipart/form-data': { schema: { type: 'object', required: ['file'], properties: {
             file: { type: 'string', format: 'binary' }, title: str(), description: str(), page_url: str(), visibility: pasteVisibility, audience: pasteAudience,
-            members: str({ description: 'audience people only: @names, comma or space separated' }), transfer_to: str(), keep_access: { type: 'boolean' },
+            members: str({ description: 'audience people only: @names, comma or space separated' }), transfer_to: str(), keep_access: { type: 'boolean' }, keep_both: { type: 'boolean', default: false },
             burn_after_read: { type: 'boolean' }, is_nsfw: { type: 'boolean' },
         } } },
     } },

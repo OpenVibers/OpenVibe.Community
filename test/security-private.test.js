@@ -75,6 +75,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     const paste = async (who, fields) => ok(await send('POST', '/api/pastes', { who, json: fields }), `paste ${fields.title}`);
     const shotPaste = async (who, fields) => {
         const f = new FormData();
+        f.append('keep_both', '1'); // distinct privacy fixtures deliberately use identical screenshot bytes
         for (const [k, v] of Object.entries(fields)) f.append(k, String(v));
         f.append('screenshot', new Blob([PNG], { type: 'image/png' }), 'shot.png');
         return ok(await send('POST', '/api/pastes/screenshot', { who, body: f }), `screenshot ${fields.title}`);
