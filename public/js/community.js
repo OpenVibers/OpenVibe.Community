@@ -60,6 +60,62 @@
     }
   });
 
+  // ── Forum images: the shared picker, one request per image before the form ──
+  // The page loads ov-upload.js first. Each image goes to POST /api/v1/spaces/:space/attachments (Media,
+  // owned by the writer, metadata stripped by the server); the form then names the returned med_ ids, so
+  // the post itself is a plain urlencoded form and the old inline multipart upload is gone.
+  function uploadImage(space, file, opts) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/v1/spaces/' + encodeURIComponent(space) + '/attachments');
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable && opts.onProgress) opts.onProgress({ uploadedBytes: e.loaded }); };
+      xhr.onload = function () {
+        var body = null; try { body = JSON.parse(xhr.responseText || 'null'); } catch (e) { body = null; }
+        if (xhr.status >= 200 && xhr.status < 300 && body && body.attachment) { resolve(body); return; }
+        var err = new Error((body && (body.detail || body.error)) || ('The image could not be uploaded (' + xhr.status + ').'));
+        err.status = xhr.status; reject(err);
+      };
+      xhr.onerror = function () { reject(new Error('The connection dropped. Try that image again.')); };
+      if (opts.signal) opts.signal.addEventListener('abort', function () { xhr.abort(); reject(new Error('Upload cancelled.')); }, { once: true });
+      var fd = new FormData(); fd.append('file', file, file.name); xhr.send(fd);
+    });
+  }
+  function attachmentUploads(signal) {
+    $$('[data-attachment-upload]').forEach(function (root) {
+      if (root.getAttribute('data-ready') || !window.OVUpload) return;
+      var form = root.closest('form');
+      if (!form) return;
+      root.setAttribute('data-ready', '1');
+      var status = form.querySelector('[data-attachment-status]');
+      var space = root.getAttribute('data-space');
+      var done = new Map();
+      function say(text) { if (status) status.textContent = text; }
+      var queue = window.OVUpload.queue(root, {
+        label: 'Choose images', accept: 'image/png,image/jpeg,image/gif,image/webp', multiple: true, concurrency: 2,
+        upload: function (file, opts) { return uploadImage(space, file, opts); },
+        onDone: function (file, out) {
+          if (out && out.attachment && out.attachment.media_id) done.set(file, out.attachment.media_id);
+          say(done.size + (done.size === 1 ? ' image ready.' : ' images ready.'));
+        }
+      });
+      form.addEventListener('submit', function (e) {
+        var busy = queue.items.some(function (i) { return i.state === 'waiting' || i.state === 'sending'; });
+        var failed = queue.items.some(function (i) { return i.state === 'failed'; });
+        if (busy || failed) { e.preventDefault(); say(busy ? 'Wait for the images to finish uploading.' : 'Retry or remove the image that failed.'); return; }
+        form.querySelectorAll('input[data-attachment-id]').forEach(function (n) { n.remove(); });
+        queue.items.slice(0, 4).forEach(function (i) {
+          var id = done.get(i.file);
+          if (i.state !== 'done' || !id) return;
+          var input = document.createElement('input'); input.type = 'hidden'; input.name = 'attachments';
+          input.value = id; input.setAttribute('data-attachment-id', ''); form.appendChild(input);
+        });
+        if (queue.items.length > 4) say('The first 4 images go with this post.');
+      }, { signal: signal, capture: true });
+      say('Up to 4 images. Each is uploaded before you post.');
+    });
+  }
+
   // ── Per-page wiring ─────────────────────────────────────────
   // Runs once on load and again after openvibe-shared/boost swaps <main> (it fires ov:boost:load on
   // document), so the widgets of the page that just arrived are wired too. Each run replaces the
@@ -70,6 +126,7 @@
     if (wired) wired.abort();
     wired = new AbortController();
     var signal = wired.signal;
+    attachmentUploads(signal);
 
     var shot = $('.shot.nsfw');
     if (shot) shot.addEventListener('click', function (e) { if (!shot.classList.contains('revealed')) { e.preventDefault(); shot.classList.add('revealed'); } }, { signal });
@@ -114,6 +171,22 @@
       var visibilityInputs = $$('input[name="visibility"]', form);
       var audienceLine = $('[data-lock-audience]', form);
       var audienceText = $('[data-lock-audience-text]', form);
+      var shotRoot = $('[data-screenshot-upload]', form);
+      var shotStatus = $('[data-screenshot-status]', form);
+      var shotProgress = $('[data-screenshot-progress]', form);
+      var shotFile = null;
+      var shotMeter = shotProgress && window.OVUpload ? window.OVUpload.progress(shotProgress) : null;
+      var shotPicker = shotRoot && window.OVUpload ? window.OVUpload.picker(shotRoot, {
+        label: 'Choose an image', accept: 'image/png,image/jpeg,image/webp,image/gif',
+        onFile: function (f) {
+          shotFile = f;
+          if (shotProgress) shotProgress.hidden = true;
+          if (!form.elements.title.value) form.elements.title.value = f.name.replace(/\.[^.]+$/, '');
+          setMode('image');
+        },
+        onRemove: function () { shotFile = null; }
+      }) : null;
+      function sayShot(text, bad) { if (!shotStatus) return; shotStatus.textContent = text || ''; shotStatus.className = 'form-status' + (bad ? ' error' : ''); }
       var LOCK_AUDIENCE = { people: 'For the people on the list', password: 'Anyone with the password', link: 'Anyone with the link' };
       var syncLock = null;
       var lockOn = function () { return !!(form.elements.lock_it && form.elements.lock_it.checked); };
@@ -121,9 +194,8 @@
         mode = m;
         tabs.forEach(function (t) { var on = t.getAttribute('data-tab') === m; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
         $$('[data-pane]', form).forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== m; });
-        var content = form.elements.content, file = form.elements.screenshot, lang = form.elements.language;
+        var content = form.elements.content, lang = form.elements.language;
         if (content) content.required = m === 'text';
-        if (file) { file.disabled = m !== 'image'; file.required = m === 'image'; }
         if (lang) lang.closest('.field').style.display = m === 'image' ? 'none' : '';
         // A screenshot stays on the proxy: locking is offered for text only.
         if (lockSection) lockSection.hidden = m !== 'text';
@@ -220,7 +292,7 @@
       }
       setMode('text');
       // Dropping or pasting an image anywhere on the form switches to the screenshot mode.
-      function takeFile(f) { if (!f || !/^image\//.test(f.type)) return; var dt = new DataTransfer(); dt.items.add(f); setMode('image'); form.elements.screenshot.files = dt.files; if (!form.elements.title.value) form.elements.title.value = f.name.replace(/\.[^.]+$/, ''); }
+      function takeFile(f) { if (!f || !/^image\//.test(f.type)) return; setMode('image'); if (shotPicker) shotPicker.add([f]); }
       form.addEventListener('dragover', function (e) { e.preventDefault(); }, { signal });
       form.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files[0]) { e.preventDefault(); takeFile(e.dataTransfer.files[0]); } }, { signal });
       document.addEventListener('paste', function (e) { var items = e.clipboardData && e.clipboardData.items; if (!items) return; for (var i = 0; i < items.length; i++) { if (items[i].kind === 'file') { takeFile(items[i].getAsFile()); e.preventDefault(); return; } } }, { signal });
@@ -238,6 +310,24 @@
         });
       }
       function b64(u8) { var s = ''; for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); }
+
+      /** The screenshot goes to Community as one multipart request (it stores it in Media as the person's picture). */
+      function uploadScreenshot(fd) {
+        return new Promise(function (resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/pastes/screenshot');
+          xhr.withCredentials = true;
+          xhr.upload.onprogress = function (e) { if (e.lengthComputable && shotMeter) shotMeter.update({ state: 'sending', done: e.loaded, total: e.total }); };
+          xhr.onload = function () {
+            var body = null; try { body = JSON.parse(xhr.responseText || 'null'); } catch (_) { body = null; }
+            if (xhr.status >= 200 && xhr.status < 300) { if (shotMeter) shotMeter.update({ state: 'done', done: shotFile ? shotFile.size : 0, total: shotFile ? shotFile.size : 0 }); resolve(body || {}); return; }
+            var err = new Error((body && (body.detail || body.error)) || ('The image could not be uploaded (' + xhr.status + ').'));
+            err.status = xhr.status; err.data = body; reject(err);
+          };
+          xhr.onerror = function () { reject(new Error('The connection dropped. Try the image again.')); };
+          xhr.send(fd);
+        });
+      }
 
       /**
        * A locked paste: the plaintext never leaves this page. The document is sealed here, the envelope is what goes
@@ -314,15 +404,19 @@
           });
           return;
         }
-        status.textContent = 'Creating…';
         var common = { title: el.title.value, visibility: el.visibility.value, burn_after_read: el.burn_after_read.checked, is_nsfw: el.is_nsfw.checked };
         if (mode === 'image') {
+          if (!shotFile) { btn.disabled = false; sayShot('Choose an image first.', true); return; }
+          sayShot('Uploading your image…');
+          if (shotProgress) shotProgress.hidden = false;
+          if (shotMeter) shotMeter.update({ state: 'sending', done: 0, total: shotFile.size });
           var fd = new FormData();
-          fd.append('screenshot', el.screenshot.files[0]);
+          fd.append('screenshot', shotFile);
           fd.append('title', common.title || 'Screenshot'); fd.append('description', el.description.value); fd.append('visibility', common.visibility);
           if (common.is_nsfw) fd.append('is_nsfw', '1');
-          p = api('/api/pastes/screenshot', { method: 'POST', body: fd });
+          p = uploadScreenshot(fd);
         } else {
+          status.textContent = 'Creating…';
           p = api('/api/pastes', { method: 'POST', json: Object.assign({ content: el.content.value, language: el.language.value }, common) });
         }
         p.then(function (out) {
@@ -332,8 +426,10 @@
           status.textContent = 'Done — opening your paste…';
           location.href = href || '/p/' + encodeURIComponent(slug);
         }).catch(function (err) {
-          btn.disabled = false; status.className = 'form-status error';
-          status.textContent = err.status === 429 && err.data && err.data.cooldown ? 'Slow down — try again in ' + err.data.cooldown + 's.' : err.message;
+          btn.disabled = false;
+          var message = err.status === 429 && err.data && err.data.cooldown ? 'Slow down — try again in ' + err.data.cooldown + 's.' : err.message;
+          if (mode === 'image') { if (shotMeter) shotMeter.update({ state: 'failed', message: message }); sayShot(message, true); }
+          else { status.className = 'form-status error'; status.textContent = message; }
         });
       }, { signal });
     }
