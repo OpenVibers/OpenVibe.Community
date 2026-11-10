@@ -79,7 +79,8 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         if (!normalized && mime !== 'image/gif') buffer = await normalizeImage(buffer, mime);
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
         const init = await call('POST', '', {
-            json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, metadata: { source } },
+            json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256,
+                metadata: { source, orientation_status: 'orientation applied' } },
             headers: /^usr_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(owner || '')) ? { 'X-OV-Subject': owner } : {},
         });
         const id = init.id || (init.object && init.object.id);

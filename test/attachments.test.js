@@ -96,6 +96,7 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         assert.strictEqual(first.url, `https://openvibe.media/o/${first.media_id}`);
         const o = objects.get(first.media_id);
         assert.strictEqual(o.owner, alex.subject_id); assert.strictEqual(o.visibility, 'unlisted', 'reachable by link, never listed on openvibe.media'); assert.strictEqual(o.status, 'ready');
+        assert.strictEqual(o.metadata.orientation_status, 'orientation applied', 'the later AI pass can skip images already normalized by Media');
         assert.ok(!o.bytes.includes(Buffer.from('secret')), 'the tEXt chunk never reached Media');
         assert.strictEqual(normalizedImages, 1, 'Media normalization ran before object creation');
         assert.ok(PNG.includes(Buffer.from('secret')));

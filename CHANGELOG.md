@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Community records `orientation applied` on new Media image objects after Media normalizes their EXIF before upload.
+  This keeps already-corrected screenshots and attachments out of the later AI orientation queue. Test:
+  `test/attachments.test.js`.
+
 - Community paste screenshots and forum attachments now send source image bytes to Media's shared EXIF normalizer
   before upload. Media applies orientation to pixels and removes camera/location metadata; Community stores the
   normalized image hash and byte size. The screenshot upload, censor replacement, and forum attachment paths had
