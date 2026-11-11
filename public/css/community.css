@@ -449,7 +449,23 @@ button.rx:hover { border-color: var(--accent); }
 /* The kinds as quick filters: one strip that scrolls sideways on a phone (like the numbers), wrapping from 600 px. */
 .cm-kinds { display: flex; gap: 8px; margin: 2px -16px 0; padding: 0 16px 2px; overflow-x: auto; scrollbar-width: none; }
 .cm-kinds::-webkit-scrollbar { display: none; }
-.cm-kinds .ovk-btn { flex: none; min-height: 44px; }
+.cm-kind { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px 0 7px; box-sizing: border-box;
+  border-radius: 999px; border: 1px solid var(--ovk-line, rgba(255,255,255,.1)); background: var(--ovk-panel, rgba(255,255,255,.04)); color: var(--text-primary);
+  font-size: .9375rem; font-weight: 650; text-decoration: none; white-space: nowrap; transition: background-color .15s, border-color .15s, transform .12s; }
+.cm-kind:hover, .cm-kind:focus-visible { background: var(--ovk-panel-2, rgba(255,255,255,.07)); border-color: color-mix(in srgb, var(--cm-tint) 45%, var(--ovk-line, transparent)); }
+.cm-kind:active { transform: scale(.97); }
+.cm-kind-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; flex: none; color: var(--cm-tint);
+  background: color-mix(in srgb, var(--cm-tint) 16%, transparent); }
+.cm-kind-ic .ovk-i { width: 17px; height: 17px; }
+.cm-kind-n { margin-left: 2px; color: var(--text-secondary); font-size: .8125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cm-kind { --cm-tint: var(--accent-light, #60a5fa); }
+.cm-kind[data-kind="top"] { --cm-tint: #f59e0b; }
+.cm-kind[data-kind="image"] { --cm-tint: #34d399; }
+.cm-kind[data-kind="file"] { --cm-tint: #94a3b8; }
+.cm-kind[data-kind="book"] { --cm-tint: #a78bfa; }
+.cm-kind[data-kind="terminal"] { --cm-tint: #2dd4bf; }
+.cm-kind[data-kind="gear"] { --cm-tint: #fbbf24; }
+@media (prefers-reduced-motion: reduce) { .cm-kind { transition: none; } .cm-kind:active { transform: none; } }
 .cm-pair { display: grid; grid-auto-flow: row; gap: 0 28px; min-width: 0; }
 .cm-fold-lede { margin: 0 0 12px; color: var(--text-secondary); }
 .cm-snip-h { margin: 0 0 6px; color: var(--text-secondary); font-size: .8rem; font-weight: 700; }
