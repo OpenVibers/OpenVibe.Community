@@ -45,6 +45,7 @@ const { createPersonLimiter } = require('../limits');
 const { discussionModerator: moderator } = require('../identity/capabilities');
 const blocks = require('../identity/blocks');
 const commentAttachments = require('./attachments');
+const forumLinks = require('./forum-links');
 
 /**
  * The entity types a browser may open a thread for (services with community.comment.write: any).
@@ -90,7 +91,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         const id = threadIdFor(t, v);
         if (t.visibility === 'hidden' && !moderator(v)) return { id, access_id: t.access_id, ref: refOf(t), visibility: 'hidden', comment_count: null };
         return { id, access_id: t.access_id, ref: refOf(t), visibility: t.visibility, comment_count: t.comment_count,
-            forum_url: t.forum_thread_id && t.ref_service === 'community' && t.ref_type === 'paste' ? `/forum/pastes/item-${t.id}` : null,
+            forum_url: t.forum_thread_id ? `/forum/${t.ref_service === 'community' ? 'pastes' : forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`]}/item-${t.id}` : null,
             created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
     }
 
@@ -352,7 +353,8 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
                     if (!object || !object.owner || object.owner.subject !== author || object.lifecycle_status !== 'ready') fail(400, 'comment.attachment_invalid', 'One of the attached files is not yours');
                 }
             }
-            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds });
+            const forumItem = forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`] ? await forumLinks.publicExternalItem(t, fetchImpl) : null;
+            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds, forum_item: forumItem });
             commentLimiter.record(key, message);
             return { comment: (await shapeComments([c], v, t))[0] };
         },
