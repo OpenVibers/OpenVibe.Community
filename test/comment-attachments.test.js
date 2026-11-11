@@ -20,6 +20,6 @@ assert.equal(output.storage.key, input.storage.key);
 const html = commentPanel({ page: { thread: { ref: { service: 'community', type: 'paste', id: 'paste-1' }, comment_count: 1 },
     comments: [{ id: 1, message: 'Picture', created_at: null, author: { display_name: 'Owner' }, attachments: [output] }],
     viewer: { can_comment: false } }, user: null, base: '/p/paste-1' });
-assert.ok(html.includes(`<img src="https://openvibe.media/o/${ID}" alt="look.png" loading="lazy">`));
+assert.ok(html.includes(`<img src="https://openvibe.media/o/${ID}" alt="look.png" loading="lazy" width="120">`));
 assert.ok(html.includes('rel="noopener noreferrer"'));
 assert.equal(typeof createCommentsApi, 'function');

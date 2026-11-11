@@ -77,18 +77,35 @@ const MIGRATION = path.join(__dirname, '..', 'migrations', '0004_paste_comments_
         const pageHtml = await call(`/p/${pubUrl}`, { cookie: samJwt });
         assert.strictEqual(pageHtml.status, 200);
         for (const want of ['from the page form', 'from the paste API', 'from Live', `id="comment-${m[2]}"`, `id="comment-${viaApi.json().comment.id}"`,
-            `action="/p/${pubUrl}/comments"`, `href="/p/${pubUrl}?sort=old"`]) assert.ok(pageHtml.text.includes(want), want);
-        assert.ok(pageHtml.text.indexOf('from the paste API') < pageHtml.text.indexOf('from the page form'), 'newest first');
-        const oldest = await call(`/p/${pubUrl}?sort=old`);
-        assert.ok(oldest.text.indexOf('from the page form') < oldest.text.indexOf('from the paste API'), '?sort=old: oldest first');
-        assert.ok(oldest.text.includes(`/auth/login?next=${encodeURIComponent(`/p/${pubUrl}`)}`) && !oldest.text.includes(`action="/p/${pubUrl}/comments"`), 'signed out: a sign-in link, no form');
+            `action="/p/${pubUrl}/comments"`, `href="/p/${pubUrl}?sort=new#comments"`, 'data-ovt-composer', 'ovc-order']) assert.ok(pageHtml.text.includes(want), want);
+        assert.ok(pageHtml.text.indexOf('from the paste API') < pageHtml.text.indexOf('from the page form'), 'Top breaks equal scores by newest first');
+        const newest = await call(`/p/${pubUrl}?sort=new`);
+        assert.ok(newest.text.indexOf('from the paste API') < newest.text.indexOf('from the page form'), '?sort=new: newest first');
+        assert.ok(newest.text.includes('Sign in to comment') && !newest.text.includes(`action="/p/${pubUrl}/comments"`), 'signed out: a sign-in link, no form');
         const older = await call(`/p/${pubUrl}?sort=new&after=${viaApi.json().comment.id}`);
         assert.ok(older.text.includes('from the page form') && !older.text.includes('from the paste API'), 'paged with ?after=');
+
+        const reply = new FormData();
+        reply.set('message', 'from the shared composer');
+        reply.set('parent_id', m[2]);
+        const sent = await t.get(`/p/${pubUrl}/comments`, { method: 'POST', body: reply, cookies: [`ov_token=${samJwt}`] });
+        assert.strictEqual(sent.status, 303, sent.text);
+        const rendered = await call(`/p/${pubUrl}`);
+        assert.match(rendered.text, /from the shared composer/);
+        assert.match(rendered.text, /class="ovc-target"/);
+        assert.match(rendered.text, /class="ovc-replies"/);
 
         // Deleting a comment twice succeeds both times, as before.
         const del = await call(`/api/pastes/${pub}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'short-lived' } });
         for (let i = 0; i < 2; i++) assert.strictEqual((await call(`/api/pastes/${pub}/comments/${del.json().comment.id}`, { method: 'DELETE', cookie: samJwt })).status, 200);
         assert.ok(!(await call(`/p/${pubUrl}`)).text.includes('short-lived'));
+
+        const other = await call(`/api/pastes/${pub}/comments`, { method: 'POST', cookie: samJwt, json: { message: 'owner may moderate' } });
+        const otherId = other.json().comment.id;
+        assert.ok((await call(`/p/${pubUrl}`, { cookie: alexJwt })).text.includes(`name="comment_id" value="${otherId}"`));
+        const removedByOwner = await call(`/p/${pubUrl}/comments/delete`, { method: 'POST', cookie: alexJwt, form: { comment_id: otherId } });
+        assert.strictEqual(removedByOwner.status, 303, removedByOwner.text);
+        assert.ok(!(await call(`/p/${pubUrl}`)).text.includes('owner may moderate'));
     });
 
     await check('the form: signed in only, never from another site', async () => {

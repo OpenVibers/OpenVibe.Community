@@ -96,7 +96,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
     }
 
-    function shapeComment(c, v, projections, votes, threadId, targets) {
+    function shapeComment(c, v, projections, votes, threadId, targets, ownerSubject) {
         const deleted = !!c.deleted_at;
         const a = deleted ? null : authors.author(c.author_subject, c.origin, projections);
         const target = c.reply_to_id ? targets.get(c.reply_to_id) : null;
@@ -121,10 +121,10 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             updated_at: isoTime(c.updated_at),
             edited_at: deleted ? null : isoTime(c.edited_at),
             can_edit: !deleted && !!(v && v.subject && c.author_subject === v.subject),
-            can_delete: !deleted && (moderator(v) || !!(v && v.subject && c.author_subject === v.subject)),
+            can_delete: !deleted && (moderator(v) || !!(v && v.subject && (c.author_subject === v.subject || ownerSubject === v.subject))),
             attachments: deleted ? [] : (c.attachments || []).map((row) => commentAttachments.publicReference(row)),
         };
-        if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId, targets));
+        if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId, targets, ownerSubject));
         return out;
     }
 
@@ -134,7 +134,8 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         const targets = await store.replyTargets(db, all.map((c) => c.reply_to_id));
         const projections = await authors.projectionsFor(all.map((c) => c.author_subject).concat([...targets.values()].map((c) => c.author_subject)));
         const votes = await myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
-        return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v), targets));
+        const ownerSubject = await entityOwner(t);
+        return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v), targets, ownerSubject));
     }
 
     /** A thread by its access id, the only id anyone addresses a thread by (C-14). */
@@ -408,7 +409,8 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
                 fail(404, 'comment.not_found', 'Comment not found');
             if (!(v && v.subject) && !moderator(v)) fail(401, 'auth.required', 'Sign in to delete a comment');
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
-            if (!isAuthor && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
+            const isOwner = !!(v.subject && v.subject === await entityOwner(t));
+            if (!isAuthor && !isOwner && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
             await store.softDeleteComment(db, c.id, v.subject || v.service || null);
             for (const a of c.attachments || []) {
                 if (media && typeof media.deleteObject === 'function') {

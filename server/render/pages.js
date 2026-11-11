@@ -541,7 +541,7 @@ ${offer}
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
 </article>
-${p.burn_after_read ? '' : `<section class="section" id="comments">
+${p.burn_after_read ? '' : `<section class="section">
   ${locked ? '<p class="muted small">Comments are not locked: anyone who can open this paste can read them, and so can OpenVibe.</p>' : ''}
   ${require('./comments').commentPanel({ page: comments, user, base: `/p/${pageSlug}`, action: `/p/${pageSlug}/comments`, sort: commentSort, replyId, expandedId, expandedReplies })}
 </section>`}
