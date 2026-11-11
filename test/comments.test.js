@@ -169,7 +169,8 @@ const { checkCapability } = require('../server/identity/capabilities');
 
     await check('pagination: ?after= cursor, oldest first by default, ?sort=new newest first, next_cursor ends', async () => {
         const th = (await resolve({ service: 'blog', type: 'post', id: 'pagination' })).json().thread;
-        for (let i = 1; i <= 7; i++) await post(th.id, { message: `m${i}` }, { token: svc([WRITE]), headers: { 'x-ov-subject': sam.subject_id } });
+        const made = [];
+        for (let i = 1; i <= 7; i++) made.push((await post(th.id, { message: `m${i}` }, { token: svc([WRITE]), headers: { 'x-ov-subject': sam.subject_id } })).json().comment);
         const seen = [];
         let cursor = '';
         for (let guard = 0; guard < 10; guard++) {
@@ -183,6 +184,14 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.deepStrictEqual(newest.comments.map((c) => c.message), ['m7', 'm6']);
         const next = (await call(`/api/v1/comments/threads/${th.id}?limit=2&sort=new&after=${newest.next_cursor}`)).json();
         assert.deepStrictEqual(next.comments.map((c) => c.message), ['m5', 'm4']);
+        for (const [c, who] of [[made[0], alexJwt], [made[0], samJwt], [made[2], alexJwt]]) {
+            assert.strictEqual((await call(`/api/v1/comments/${c.id}/votes`, { method: 'POST', json: { value: 1 }, cookie: who })).status, 200);
+        }
+        const top = (await call(`/api/v1/comments/threads/${th.id}?limit=2&sort=top`)).json();
+        assert.deepStrictEqual(top.comments.map((c) => c.message), ['m1', 'm3']);
+        const topNext = (await call(`/api/v1/comments/threads/${th.id}?limit=2&sort=top&after=${encodeURIComponent(top.next_cursor)}`)).json();
+        assert.deepStrictEqual(topNext.comments.map((c) => c.message), ['m7', 'm6']);
+        assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}?sort=top&after=abc`)).status, 400);
         assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}?after=abc`)).status, 400);
     });
 

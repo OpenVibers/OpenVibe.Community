@@ -154,16 +154,21 @@ async function softDeleteComment(db, id, deletedBy = null) {
  * One page of a thread's top-level comments with up to `replyLimit` replies each.
  *   sort 'old' (default): oldest first, cursor = the last id seen (next page: id > after)
  *   sort 'new': newest first (next page: id < after)
+ *   sort 'top': score descending, then newest first (cursor: score:id)
  * Deleted top-level comments appear only while they still have replies (tombstones).
  * → { rows, hasMore } — each row carries .replies (oldest first) and .reply_count
  */
 async function listTopLevel(db, threadId, { after = null, sort = 'old', limit = 30, replyLimit = 20 } = {}) {
     const newest = sort === 'new';
+    const top = sort === 'top';
     const params = [threadId];
     let cursor = '';
-    if (after != null) { cursor = newest ? 'AND id < ?' : 'AND id > ?'; params.push(after); }
+    if (after != null) {
+        cursor = top ? 'AND (score < ? OR (score = ? AND id < ?))' : newest ? 'AND id < ?' : 'AND id > ?';
+        params.push(...(top ? [after.score, after.score, after.id] : [after]));
+    }
     const rows = await db.prepare(`SELECT * FROM comments WHERE thread_id = ? AND parent_id IS NULL AND (deleted_at IS NULL OR reply_count > 0) ${cursor}
-                             ORDER BY id ${newest ? 'DESC' : 'ASC'} LIMIT ?`).all(...params, limit + 1);
+                             ORDER BY ${top ? 'score DESC, id DESC' : `id ${newest ? 'DESC' : 'ASC'}`} LIMIT ?`).all(...params, limit + 1);
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
     const replies = db.prepare('SELECT * FROM comments WHERE parent_id = ? AND deleted_at IS NULL ORDER BY id ASC LIMIT ?');

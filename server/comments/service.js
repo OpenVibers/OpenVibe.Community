@@ -214,6 +214,12 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         if (!/^\d{1,15}$/.test(String(after))) fail(400, 'request.invalid_cursor', '`after` is the id of the last comment you have');
         return Number(after);
     };
+    const topCursor = (after) => {
+        if (after == null || after === '') return null;
+        const match = /^(-?\d{1,12}):(\d{1,15})$/.exec(String(after));
+        if (!match) fail(400, 'request.invalid_cursor', '`after` is the last comment cursor');
+        return { score: Number(match[1]), id: Number(match[2]) };
+    };
 
     return {
         BROWSER_REF_TYPES,
@@ -283,13 +289,14 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
 
         /**
          * GET /threads/:id — the thread and one page of top-level comments (replies nested, up to
-         * REPLY_PAGE each). ?after=<last comment id>&sort=old|new&limit=; ?parent=<id> pages one
+         * REPLY_PAGE each). ?after=<cursor>&sort=old|new|top&limit=; ?parent=<id> pages one
          * comment's replies instead.
          */
         async get(v, id, q = {}) {
             const t = await visibleThread(v, id);
             const limit = Math.min(Math.max(parseInt(q.limit, 10) || PAGE, 1), 100);
-            const after = cursorId(q.after);
+            const sort = q.sort === 'new' || q.sort === 'top' ? q.sort : 'old';
+            const after = q.parent == null && sort === 'top' ? topCursor(q.after) : cursorId(q.after);
             let rows, hasMore;
             if (q.parent != null && q.parent !== '') {
                 const parent = cursorId(q.parent);
@@ -297,13 +304,14 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
                 if (!p || p.thread_id !== t.id || p.parent_id) fail(404, 'comment.not_found', 'Comment not found');
                 ({ rows, hasMore } = await store.listReplies(db, parent, { after, limit }));
             } else {
-                ({ rows, hasMore } = await store.listTopLevel(db, t.id, { after, sort: q.sort === 'new' ? 'new' : 'old', limit, replyLimit: REPLY_PAGE }));
+                ({ rows, hasMore } = await store.listTopLevel(db, t.id, { after, sort, limit, replyLimit: REPLY_PAGE }));
             }
             const comments = await shapeComments(rows, v, t);
             return {
                 thread: shapeThread(t, v),
                 comments,
-                next_cursor: hasMore && rows.length ? String(rows[rows.length - 1].id) : null,
+                next_cursor: hasMore && rows.length ? (sort === 'top' && q.parent == null
+                    ? `${rows[rows.length - 1].score}:${rows[rows.length - 1].id}` : String(rows[rows.length - 1].id)) : null,
                 viewer: {
                     signed_in: !!(v && v.subject),
                     can_comment: t.visibility === 'public' || moderator(v),

@@ -4,7 +4,7 @@
  * /api/v1/comments — typed comment threads other products embed (service.js has the rules).
  *
  *   POST   /threads/resolve             { ref: EntityRef } → get-or-create (201 created, 200 existing)
- *   GET    /threads/:id                 thread + first page (?after=<id>&sort=old|new&limit=, ?parent=<id>)
+ *   GET    /threads/:id                 thread + first page (?after=<cursor>&sort=old|new|top&limit=, ?parent=<id>)
  *                                        :id is the access id (cth_…); the sequential id is for services only
  *   POST   /threads/:id/comments        { message, parent_id?, anon_name? }
  *   PUT    /threads/:id/visibility      { visibility: public|hidden|locked }   moderators
