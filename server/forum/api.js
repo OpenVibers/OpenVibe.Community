@@ -116,7 +116,7 @@ function createSpacesApi({ forum, viewers, limits }) {
     return router;
 }
 
-function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '' }) {
+function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', mediaUrl = 'https://openvibe.media' }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
@@ -131,7 +131,7 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '' }) 
         const v = req.viewer;
         if (!v || v.kind !== 'user' || !v.subject) fail(401, 'post.sign_in_required', 'Sign in to post');
         const body = req.body || {};
-        if (Object.keys(body).some((k) => !['text', 'pictures'].includes(k))) fail(400, 'post.invalid', 'Only text and pictures are accepted');
+        if (Object.keys(body).some((k) => !['text', 'pictures', 'attachments'].includes(k))) fail(400, 'post.invalid', 'Only text, pictures and attachments are accepted');
         const text = typeof body.text === 'string' ? body.text.trim() : '';
         if (!text) fail(400, 'post.invalid', 'Write something first');
         if (text.length > 2000) fail(400, 'post.invalid', 'Text is at most 2000 characters');
@@ -140,8 +140,29 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '' }) 
         for (const p of pictures) {
             if (!p || typeof p.media_id !== 'string' || typeof p.alt !== 'string') fail(400, 'post.invalid_pictures', 'Every picture is { media_id, alt }');
         }
+        const fileIds = body.attachments == null ? [] : body.attachments;
+        if (!Array.isArray(fileIds) || fileIds.length > 10 || fileIds.some((id) => !/^att_[0-9A-HJKMNP-TV-Z]{26}$/.test(id)) || new Set(fileIds).size !== fileIds.length) {
+            fail(400, 'post.invalid_attachments', 'attachments is an array of up to ten Media composer attachment ids');
+        }
+        const files = [];
+        const mediaOrigin = new URL(mediaUrl).origin;
+        for (const id of fileIds) {
+            const kept = await fetch(`${mediaOrigin}/api/v1/attachments/${id}/keep`, {
+                method: 'POST', headers: { Authorization: String(req.get('authorization') || ''), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message_id: `community:post:${id}` }), signal: AbortSignal.timeout(10000),
+            });
+            if (!kept.ok) fail(kept.status === 404 ? 400 : 502, 'post.attachment_unavailable', 'A file could not be attached');
+            const f = await kept.json();
+            const url = new URL(String(f.url || ''), mediaOrigin);
+            if (f.kind === 'image' || /^image\//.test(String(f.mime || ''))) fail(400, 'post.picture_alt_required', 'Pictures need alt text in pictures');
+            if (f.id !== id || url.origin !== mediaOrigin || !url.pathname.startsWith(`/a/${id}/`) || !Number.isFinite(Number(f.size)) || Number(f.size) < 0) {
+                fail(502, 'post.attachment_invalid', 'Media returned an invalid attachment');
+            }
+            files.push({ id, name: String(f.name || 'File').slice(0, 255), mime: String(f.mime || 'application/octet-stream').slice(0, 120), size: Number(f.size), url: url.href });
+        }
         const title = `Status: ${text.replace(/https?:\/\/[^\s<>]+/gi, '').trim().slice(0, 110) || 'Shared a picture'}`;
         const { thread, post } = await forum.createThread(v, 'status', { title, body: text, pictures: pictures.map((p) => ({ media_id: p.media_id, alt: p.alt })) });
+        if (files.length) await forum.attachComposerFiles(v, post.id, files);
         if (pulse) {
             await pulse.forgetLocal('thread', thread.id);
             const first = (post.attachments || [])[0];
@@ -149,7 +170,8 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '' }) 
         }
         return { id: thread.id, post_id: post.id, text,
             url: `${String(baseUrl).replace(/\/$/, '')}/forum/status/${thread.slug}`,
-            pictures: (post.attachments || []).map((a) => ({ media_id: a.media_id, alt: a.alt || null, url: a.url })),
+            pictures: (post.attachments || []).filter((a) => /^image\//.test(a.mime)).map((a) => ({ media_id: a.media_id, alt: a.alt || null, url: a.url })),
+            attachments: files,
             created_at: thread.created_at };
     }, 201));
 

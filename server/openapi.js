@@ -611,13 +611,14 @@ route('delete', '/api/v1/spaces/{space}/moderators/{subject}', {
 
 // ── /api/v1/posts — one forum post (server/forum/api.js) ────────────────────────────────────
 route('post', '/api/v1/posts', {
-    operationId: 'createPost', summary: 'Post a status with pictures, in the Feed at once', tags: ['posts'], security: PERSON,
-    description: 'People only. Pictures are Media objects the person owns, each with required alt text; the post is a thread in the Status space.',
+    operationId: 'createPost', summary: 'Post a status with pictures and files, in the Feed at once', tags: ['posts'], security: PERSON,
+    description: 'People only. Pictures are Media objects the person owns, each with required alt text. Other files are composer attachments from Media; the post is a thread in the Status space.',
     requestBody: body({ type: 'object', required: ['text'], properties: {
         text: str({ minLength: 1, maxLength: 2000 }),
         pictures: { type: 'array', maxItems: 4, items: { type: 'object', required: ['media_id', 'alt'], properties: {
-            media_id: str({ pattern: '^med_[0-9A-HJKMNP-TV-Z]{26}$' }), alt: str({ minLength: 1, maxLength: 300 }) } } } } }),
-    responses: { 201: json('The post and its pictures'), ...errors([400, 401, 409, 429]) },
+            media_id: str({ pattern: '^med_[0-9A-HJKMNP-TV-Z]{26}$' }), alt: str({ minLength: 1, maxLength: 300 }) } } },
+        attachments: { type: 'array', maxItems: 10, items: str({ pattern: '^att_[0-9A-HJKMNP-TV-Z]{26}$' }) } } }),
+    responses: { 201: json('The post, its pictures and files'), ...errors([400, 401, 409, 429, 502]) },
 });
 route('put', '/api/v1/posts/{id}', {
     operationId: 'editPost', summary: 'Edit a post (its author or a moderator)', tags: ['posts'], security: PERSON,

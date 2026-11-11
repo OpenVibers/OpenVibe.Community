@@ -330,7 +330,7 @@ async function createApp(opts = {}) {
     // and these deliveries carry token cutoffs and account deletions.
     app.use('/internal/events', pulseConsumer.router);
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers, limits }));
-    app.use('/api/v1/posts', createPostsApi({ forum, pulse, viewers, limits, baseUrl: config.baseUrl }));
+    app.use('/api/v1/posts', createPostsApi({ forum, pulse, viewers, limits, baseUrl: config.baseUrl, mediaUrl: config.mediaUrl }));
     app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers, limits }));
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
     // OpenVibe.Services reads a person's pastes and spaces here (community.resource.read, a service token on loopback;

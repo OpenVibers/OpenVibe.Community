@@ -1006,6 +1006,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             return { thread: await shapeThread(thread, space, v, projections, null), post: shapePost(post, v, projections, await attachmentsOf([post.id]), await pastesOf([post.id])) };
         },
 
+        /** Media's composer files have already been checked and kept for this person by the posts route. */
+        async attachComposerFiles(v, postId, files) {
+            if (!person(v) || !v.subject) fail(401, 'post.sign_in_required', 'Sign in to attach files');
+            const start = await db.prepare('SELECT COALESCE(MAX(position), -1) AS position FROM attachments WHERE post_id = ?').get(postId);
+            for (const [index, f] of files.entries()) {
+                await db.prepare(`INSERT INTO attachments (media_id, owner_subject, post_id, position, filename, mime, size_bytes, url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(f.id, v.subject, postId, Number(start.position) + index + 1, f.name, f.mime, f.size, f.url);
+            }
+        },
+
         /** Reply { body } → { post } */
         async reply(v, spaceSlug, threadSlug, body = {}) {
             const { space, thread } = await threadFor(v, spaceSlug, threadSlug);
