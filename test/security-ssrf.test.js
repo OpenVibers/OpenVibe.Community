@@ -32,6 +32,7 @@ const INVENTORY = {
     'server/identity/account-data.js': [2, 'Network /oauth/token and /internal/account-exports and /internal/account-deletions (fixed paths) with a service token'],
     'server/identity/profile-module.js': [3, 'Network modules API (community.profile) with a service token'],
     'server/comments/service.js': [1, 'OpenVibe.Pics GET /api/v1/pictures/<id> at the fixed https://openvibe.pics origin, no redirect, to ask whether a picture is public; the id must match the picture-ID shape and is encoded'],
+    'server/comments/forum-links.js': [1, 'Public item lookup at fixed OpenVibe.Live or OpenVibe.Pics origins; the validated item id is encoded in a fixed API path and redirects are rejected'],
     'server/media/files.js': [2, 'OV_MEDIA_INTERNAL_URL v1 file store, service token'],
     'server/media/objects.js': [3, 'OV_MEDIA_INTERNAL_URL Object API v2 and normalize-image paths, service token; fixed Media base, never a user URL'],
     'server/pastes/review.js': [2, 'OpenVibe.Vision /api/v1/review (OV_VISION_URL, fixed path) with a service token; only the paste\'s Media URL is sent'],
