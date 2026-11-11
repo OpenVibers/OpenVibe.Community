@@ -16,7 +16,7 @@ const FRAME = { cards: [
     ] },
     { site: 'news', title: 'Top stories', items: [{ title: 'Not a kind the feed shows', url: 'https://openvibe.news/a', image: { src: 'https://openvibe.media/t/n.webp' } }] },
 ] };
-const LIVE = { streams: [{ username: 'alex' }, { username: 'ada' }] };
+const LIVE = { streams: [{ username: 'alex', started_at: new Date().toISOString() }, { username: 'ada', started_at: new Date().toISOString() }] };
 const feedFetch = async (url) => {
     const u = String(url);
     return { ok: /\/api\/(frame|streams)/.test(u), json: async () => (/\/api\/streams/.test(u) ? LIVE : FRAME) };
@@ -96,7 +96,7 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(r.status, 200, r.text);
         const j = r.json();
         const kinds = new Set(j.items.map((x) => x.kind));
-        for (const k of ['live', 'clip', 'video', 'pic', 'paste', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
+        for (const k of ['stream', 'clip', 'video', 'pic', 'paste', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
         assert.ok('next_cursor' in j);
         for (const x of j.items) for (const k of ['id', 'kind', 'url', 'title', 'text', 'at', 'site', 'site_name', 'actor', 'media', 'counts']) assert.ok(k in x, `${k} on every card`);
         const c = j.items.find((x) => x.url === 'https://openvibe.live/clip/c1');
@@ -144,14 +144,17 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
     });
 
     await check('LIVE only for a channel that is live now', async () => {
-        const mk = (id, who) => t.get('/api/v1/pulse/items', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${netSvc}`, 'x-ov-subject': alex.subject_id },
-            body: JSON.stringify({ ref: { service: 'live', type: 'stream', id }, title: `${who} went live: a stream`, url: `https://openvibe.live/@${who}` }) });
+        const mk = (id, who, at = null) => t.get('/api/v1/pulse/items', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${netSvc}`, 'x-ov-subject': alex.subject_id },
+            body: JSON.stringify({ ref: { service: 'live', type: 'stream', id }, title: `${who} went live: ${at ? 'an older stream' : 'a stream'}`, url: `https://openvibe.live/@${who}`, ...(at ? { occurred_at: at } : {}) }) });
         assert.strictEqual((await mk('s1', 'ada')).status, 201);
         assert.strictEqual((await mk('s2', 'bo')).status, 201);
+        assert.strictEqual((await mk('s3', 'alex', new Date(Date.now() - 2 * 86_400_000).toISOString())).status, 201);
         const j = (await t.get('/api/v1/feed?site=live&limit=40')).json();
         const by = Object.fromEntries(j.items.map((x) => [x.url, [x.kind, x.live_now]]));
         assert.deepStrictEqual(by['https://openvibe.live/@ada'], ['live', true], 'ada is on the live list');
         assert.deepStrictEqual(by['https://openvibe.live/@bo'], ['stream', false], 'bo went live earlier: a stream that happened, never LIVE');
+        const older = j.items.find((x) => x.title === 'alex went live: an older stream');
+        assert.deepStrictEqual([older.kind, older.live_now], ['stream', false], 'an old broadcast stays ended while the same channel is live again');
         for (const kind of ['live', 'stream']) {
             const filtered = (await t.get(`/api/v1/feed?kind=${kind}&limit=40`)).json();
             assert.ok(filtered.items.length > 0, `${kind} has a card`);

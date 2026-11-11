@@ -14,6 +14,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
     const yesterday = day(Date.now() - 86_400_000);
     const badgeAt = iso(Date.now() - 3_600_000);
     const calls = [];
+    let liveStreams = [];
     let galleryRows = [
         { id: 'pic_01JAB2C3D4E5F6G7H8J9K0MNPQ', title: 'First photo', author: 'Alex', listed: true, published_at: badgeAt,
             links: { page: 'https://openvibe.pics/i/firstpic', thumb: 'https://openvibe.pics/i/firstpic/thumb.webp' }, width: 800, height: 600 },
@@ -37,6 +38,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         if (u.includes('/api/rundown/streams')) return { ok: true, json: async () => ({ streams: [{ stream_id: 123, live: false,
             title: 'Night stream', started_at: badgeAt, thumbnail_url: 'https://openvibe.media/night.webp',
             episode: { title: 'The night sky', logline: 'A recap', aired_at: badgeAt, audience: 'public' } }], next: null }) };
+        if (u.endsWith('/api/streams')) return { ok: true, json: async () => ({ streams: liveStreams }) };
         if (u.includes('/api/content/feed')) return { ok: true, json: async () => ({ items: [
             { id: 123, kind: 'vod', title: 'Night stream', href: 'https://openvibe.video/watch?v=night', thumbnail_url: 'https://openvibe.media/night.webp', created_at: badgeAt, channel: { username: 'alex', display_name: 'Alex' }, duration_seconds: 500 },
             { id: 124, kind: 'clip', title: 'Night clip', href: 'https://openvibe.video/clip/night', thumbnail_url: 'https://openvibe.media/clip.webp', created_at: badgeAt, channel: { username: 'alex', display_name: 'Alex' }, duration_seconds: 25 },
@@ -147,6 +149,19 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.deepStrictEqual(rows.map((r) => r.source_id), ['order_space', 'order_iso'], 'the evening one is newer');
         assert.ok(rows.every((r) => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(r.occurred_at)), rows.map((r) => r.occurred_at).join(', '));
         assert.strictEqual(store.pulseTime('2030-01-02T08:00:00+02:00'), '2030-01-02 06:00:00', 'an offset is read, not dropped');
+    });
+
+    await check('a current broadcast stays one Live item until it becomes a recording', async () => {
+        const db = t.app.locals.db;
+        const item = (type, id) => db.prepare('SELECT title FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?').get('live', type, String(id));
+        liveStreams = [{ id: 999, username: 'alex', display_name: 'Alex', title: 'Night stream', started_at: badgeAt }];
+        await t.app.locals.pulseSources.runOnce({ force: true });
+        assert.ok(await item('stream', 999));
+        assert.ok(!(await item('recording', 123)), 'a recording for the broadcast is suppressed while it is live');
+        liveStreams = [];
+        await t.app.locals.pulseSources.runOnce({ force: true });
+        assert.ok(!(await item('stream', 999)), 'the ended Live item leaves when the recording arrives');
+        assert.ok(await item('recording', 123));
     });
 
     await done(t);

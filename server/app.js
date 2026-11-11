@@ -816,7 +816,7 @@ async function createApp(opts = {}) {
                 const item = rows[index];
                 const card = feedTools.card(item);
                 if (card.kind === 'live') {
-                    card.live_now = live.has(feedTools.channelOf(card.url).toLowerCase());
+                    card.live_now = feedTools.isCurrentLive(card, live);
                     if (!card.live_now) card.kind = 'stream';
                 }
                 seen.push(card);
