@@ -65,7 +65,7 @@ const { boot, check, done } = require('./helpers/app');
         const thread = await t.db.prepare('SELECT id FROM comment_threads WHERE access_id = ?').get(resolved.json().thread.id);
         const first = await t.db.prepare("INSERT INTO comments (thread_id, author_subject, message, created_at) VALUES (?, ?, 'Older', '2025-01-01 01:00:00') RETURNING id").run(thread.id, person.subject_id);
         const second = await t.db.prepare("INSERT INTO comments (thread_id, author_subject, message, created_at) VALUES (?, ?, 'Newer', '2025-01-01 02:00:00') RETURNING id").run(thread.id, person.subject_id);
-        const sql = fs.readFileSync(path.join(__dirname, '../migrations/0033_comment_forum_backfill.sql'), 'utf8');
+        const sql = fs.readFileSync(path.join(__dirname, '../migrations/0034_comment_forum_backfill.sql'), 'utf8');
         await t.db.exec(sql);
         await t.db.exec(sql);
         const rows = await t.db.prepare('SELECT comment_id, created_at FROM posts WHERE comment_id IN (?, ?) ORDER BY id').all(first.lastInsertRowid, second.lastInsertRowid);
