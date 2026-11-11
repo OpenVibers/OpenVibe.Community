@@ -42,7 +42,7 @@ const sectionReactions = require('./section-reactions');
 const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
-const { discussionModerator: moderator } = require('../identity/capabilities');
+const { discussionModerator: moderator, checkCapability } = require('../identity/capabilities');
 const blocks = require('../identity/blocks');
 const commentAttachments = require('./attachments');
 const forumLinks = require('./forum-links');
@@ -160,22 +160,22 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         if (canViewPaste) return await canViewPaste(v, p);
         return !(p.visibility === 'private' && !(v && (v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject))));
     }
-    /** Whether the viewer may see the entity a thread belongs to (only Community's pastes can be checked here). */
-    async function publicPicture(id) {
+    /** An active Pics image is visible to anyone holding its unlisted link and id. */
+    async function activePicture(id) {
         if (!/^pic_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(id))) return false;
         try {
             const response = await fetchImpl(`https://openvibe.pics/api/v1/pictures/${encodeURIComponent(id)}`, { redirect: 'error', signal: AbortSignal.timeout(3000), headers: { Accept: 'application/json' } });
             if (!response.ok) return false;
             const picture = await response.json();
-            return picture.id === id && picture.listed === true && picture.state === 'active' && typeof picture.views === 'number';
+            return picture.id === id && picture.state === 'active' && typeof picture.slug === 'string';
         } catch { return false; }
     }
-    const entityVisible = async (v, t) => t.ref_service === 'pics' && t.ref_type === 'picture' ? publicPicture(t.ref_id)
+    const entityVisible = async (v, t) => t.ref_service === 'pics' && t.ref_type === 'picture' ? activePicture(t.ref_id)
         : !(t.ref_service === 'community' && t.ref_type === 'paste') || await pasteVisibleTo(v, t.ref_id);
 
     /** Community's own entities must exist (and be visible to the viewer) before anyone opens a thread on them. */
     async function checkCommunityRef(ref, v) {
-        if (ref.service === 'pics' && ref.type === 'picture' && !await publicPicture(ref.id)) fail(404, 'ref.not_found', 'No such public picture');
+        if (ref.service === 'pics' && ref.type === 'picture' && !await activePicture(ref.id)) fail(404, 'ref.not_found', 'No such active picture');
         if (ref.service !== 'community') return;
         if (ref.type === 'paste') {
             if (!await pasteVisibleTo(v, ref.id)) fail(404, 'ref.not_found', 'No such paste');
@@ -229,11 +229,16 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             return { thread: shapeThread(thread, v), created };
         },
 
-        /** Upload one attachment to Community, which owns Community paste comments. */
+        /** Stage an attachment received by the service that owns the item. */
         async uploadAttachment(v, ref, file) {
             if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to attach a file');
-            if (!ref || ref.service !== 'community' || ref.type !== 'paste') fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
-            await checkCommunityRef(ref, v);
+            const paste = ref && ref.service === 'community' && ref.type === 'paste';
+            const owner = ref && ((ref.service === 'live' && ['vod', 'clip'].includes(ref.type) && v.service === 'svc:live')
+                || (ref.service === 'pics' && ref.type === 'picture' && v.service === 'svc:media-hub'));
+            const picture = ref && ref.service === 'pics' && ref.type === 'picture' && v.kind === 'user';
+            if (!paste && !picture && !(owner && v.kind === 'service' && checkCapability(v.claims, 'community.comment.write').allowed))
+                fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
+            if (paste || picture) await checkCommunityRef(ref, v);
             if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail(400, 'attachment.missing', 'Choose a file');
             if (file.buffer.length > 16 * 1024 * 1024) fail(413, 'attachment.too_large', 'Files are limited to 16 MB');
             if (!media || !media.configured || typeof media.uploadImage !== 'function') fail(503, 'attachment.unavailable', 'Files cannot be attached right now');
@@ -338,7 +343,6 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (rawAttachments.length && !author) fail(401, 'auth.required', 'Sign in to attach a file');
             let attachmentIds = [];
             if (rawAttachments.length) {
-                if (t.ref_service !== 'community' || t.ref_type !== 'paste') fail(403, 'attachment.owner_service', 'Upload attachments through the service that owns the item');
                 const refs = rawAttachments.map((raw) => {
                     try { return commentAttachments.cleanReference(raw, author); }
                     catch (err) { fail(err.status || 400, err.code || 'comment.attachment_invalid', err.message); }
@@ -388,7 +392,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (!isAuthor && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
             await store.softDeleteComment(db, c.id, v.subject || v.service || null);
             for (const a of c.attachments || []) {
-                if (a.ref_service === 'community' && media && typeof media.deleteObject === 'function') {
+                if (media && typeof media.deleteObject === 'function') {
                     try { await media.deleteObject(a.media_id); }
                     catch (err) { console.warn(`[Comments] removed attachment ${a.media_id} from comment; Media cleanup failed: ${err.message}`); }
                 }
