@@ -119,7 +119,7 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.ok(r.text.includes('https://openvibe.video/v/1'), 'card link is in the response HTML');
         assert.ok(r.text.includes('schema.org') && r.text.includes('ItemList'), 'ItemList JSON-LD is present');
         assert.ok(r.text.includes('Older'), 'the page has a crawlable older-page link');
-        assert.ok(r.text.includes('id="feed-search"') && r.text.includes('Try:'), 'the page offers feed search and current examples');
+        assert.ok(r.text.includes('id="feed-search"') && r.text.includes('class="feed-try"'), 'the page offers feed search and current examples');
         const searched = await t.get('/feed?q=videos');
         assert.ok(searched.text.includes('A video') && searched.text.includes('name="q" value="videos"'), 'the page applies a natural kind search');
     });

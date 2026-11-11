@@ -11,7 +11,7 @@ const KIND_LOOK = {
     live: ['Live now', 'fa-tower-broadcast'], video: ['Recording', 'fa-film'], clip: ['Clip', 'fa-scissors'], pic: ['Picture', 'fa-image'],
     post: ['Post', 'fa-pen-nib'], paste: ['Paste', 'fa-paste'], meme: ['Meme', 'fa-face-laugh'], game: ['Game', 'fa-gamepad'],
     quest: ['Quest', 'fa-ranking-star'], member: ['New members', 'fa-user-plus'], update: ['Update', 'fa-bolt'], avatar: ['New picture', 'fa-user'],
-    banner: ['New banner', 'fa-panorama'], follow: ['Follow', 'fa-user-check'], site: ['New site', 'fa-globe'], space: ['Space', 'fa-shapes'],
+    banner: ['New banner', 'fa-image'], follow: ['Follow', 'fa-user-check'], site: ['New site', 'fa-globe'], space: ['Space', 'fa-shapes'],
     episode: ['Episode', 'fa-microphone'],
 };
 const lookOf = (kind) => KIND_LOOK[kind] || [String(kind || 'Update').replace(/^./, (c) => c.toUpperCase()), 'fa-circle-nodes'];
