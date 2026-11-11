@@ -263,6 +263,7 @@ async function createApp(opts = {}) {
     // gate. Created before comments so a thread on a paste nobody may see is never readable.
     const sharing = opts.sharing || createSharing({ db, media: pasteMedia, fetchImpl: opts.fetchImpl });
     const comments = createCommentService({ db, network, limits: opts.commentLimits, canViewPaste: (v, p) => sharing.canViewPaste(v, p), media: mediaObjects });
+    forum.setCommentService(comments);
     // Submissions (clips, art, ideas, reports for review): their own table, not tied to the forum.
     const submissions = createSubmissionService({ db, network, pulse, indexnow, config, limits: opts.submissionLimits });
     discovery.useForum(forum);

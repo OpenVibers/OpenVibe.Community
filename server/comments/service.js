@@ -89,7 +89,9 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
     function shapeThread(t, v) {
         const id = threadIdFor(t, v);
         if (t.visibility === 'hidden' && !moderator(v)) return { id, access_id: t.access_id, ref: refOf(t), visibility: 'hidden', comment_count: null };
-        return { id, access_id: t.access_id, ref: refOf(t), visibility: t.visibility, comment_count: t.comment_count, created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
+        return { id, access_id: t.access_id, ref: refOf(t), visibility: t.visibility, comment_count: t.comment_count,
+            forum_url: t.forum_thread_id && t.ref_service === 'community' && t.ref_type === 'paste' ? `/forum/pastes/item-${t.id}` : null,
+            created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
     }
 
     function shapeComment(c, v, projections, votes, threadId) {

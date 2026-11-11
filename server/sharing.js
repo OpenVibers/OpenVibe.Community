@@ -135,6 +135,8 @@ function createSharing({ db, media = null, fetchImpl = globalThis.fetch, log = c
             }
         }
         await tx.exec('UPDATE pastes SET visibility = $1, updated_at = ov_now() WHERE slug = $2 AND deleted_at IS NULL', [VISIBILITY[audience] || 'private', ref.id]);
+        await tx.exec(`UPDATE threads SET deleted_at = CASE WHEN $1 = 'public' THEN NULL ELSE ov_now() END
+            WHERE external_key = 'community:paste:' || $2 AND space_id = (SELECT id FROM spaces WHERE slug = 'pastes')`, [audience, ref.id]);
         tx.afterCommit(() => refreshSearch(ref.id));
     }
 

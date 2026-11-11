@@ -10,6 +10,7 @@
  * tombstone so the replies keep their context.
  */
 const { newThreadAccessId } = require('../db');
+const forumLinks = require('./forum-links');
 
 async function getThread(db, id) {
     return await db.prepare('SELECT * FROM comment_threads WHERE id = ?').get(id) || null;
@@ -112,6 +113,7 @@ async function insertComment(db, { thread_id, parent_id = null, author_subject =
         await db.prepare('UPDATE comment_threads SET comment_count = comment_count + 1, updated_at = ov_now() WHERE id = ?').run(thread_id);
         if (parent_id) await db.prepare('UPDATE comments SET reply_count = reply_count + 1 WHERE id = ?').run(parent_id);
         const comment = await getComment(db, info.lastInsertRowid);
+        await forumLinks.syncComment(db, comment);
         const cthread = await db.prepare('SELECT * FROM comment_threads WHERE id = ?').get(thread_id);
         if (cthread) await require('../events').commentCreated(comment, cthread, { itemPublic: await refIsPublic(db, cthread) });   // community.comment.created
         return comment;
@@ -121,7 +123,9 @@ async function insertComment(db, { thread_id, parent_id = null, author_subject =
 /** The author's new text; edited_at records that it changed. → the row */
 async function editComment(db, id, message) {
     await db.prepare('UPDATE comments SET message = ?, edited_at = ov_now(), updated_at = ov_now() WHERE id = ? AND deleted_at IS NULL').run(message, id);
-    return await getComment(db, id);
+    const comment = await getComment(db, id);
+    if (comment) await forumLinks.updatePost(db, comment);
+    return comment;
 }
 
 /** Soft delete; counters recomputed from the rows. → changes */
@@ -130,7 +134,9 @@ async function softDeleteComment(db, id, deletedBy = null) {
         const c = await getComment(db, id);
         if (!c || c.deleted_at) return 0;
         await db.prepare("UPDATE comments SET deleted_at = ov_now(), deleted_by = ?, message = '', updated_at = ov_now() WHERE id = ?").run(deletedBy, id);
+        await forumLinks.updatePost(db, await getComment(db, id));
         await db.prepare('DELETE FROM comment_attachments WHERE comment_id = ?').run(id);
+        if (c.forum_post_id) await db.prepare('DELETE FROM attachments WHERE post_id = ?').run(c.forum_post_id);
         await db.prepare('UPDATE comment_threads SET comment_count = (SELECT COUNT(*) FROM comments WHERE thread_id = ? AND deleted_at IS NULL), updated_at = ov_now() WHERE id = ?').run(c.thread_id, c.thread_id);
         if (c.parent_id) await db.prepare('UPDATE comments SET reply_count = (SELECT COUNT(*) FROM comments WHERE parent_id = ? AND deleted_at IS NULL) WHERE id = ?').run(c.parent_id, c.parent_id);
         return 1;

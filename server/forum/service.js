@@ -53,6 +53,7 @@ const { sniffImage } = require('../media/sniff-image');
 const reactions = require('./reactions');
 const moderation = require('./moderation');
 const blocks = require('../identity/blocks');
+const commentStore = require('../comments/store');
 const STYLES = ['feed', 'forum'];
 const SPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
@@ -97,6 +98,7 @@ const THREADS_PER_DAY = 20;
 const contentLabels = require('./labels');
 
 function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {}, config = {}, indexnow = null } = {}) {
+    let commentService = null;
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
@@ -275,6 +277,13 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         if (!postIds.length) return out;
         const rows = await db.prepare(`SELECT * FROM attachments WHERE post_id IN (${postIds.map(() => '?').join(', ')}) ORDER BY post_id, position`).all(...postIds);
         for (const r of rows) { if (!out.has(r.post_id)) out.set(r.post_id, []); out.get(r.post_id).push(shapeAttachment(r)); }
+        const linked = await db.prepare(`SELECT p.id AS post_id, a.media_id, a.filename, a.mime, a.size_bytes
+            FROM posts p JOIN comment_attachments a ON a.comment_id = p.comment_id
+            WHERE p.id IN (${postIds.map(() => '?').join(', ')}) ORDER BY p.id, a.created_at, a.media_id`).all(...postIds);
+        for (const r of linked) {
+            if (!out.has(r.post_id)) out.set(r.post_id, []);
+            if (!out.get(r.post_id).some((a) => a.media_id === r.media_id)) out.get(r.post_id).push(shapeAttachment({ ...r, url: `${String(config.mediaUrl || '').replace(/\/$/, '')}/o/${r.media_id}` }));
+        }
         return out;
     }
 
@@ -365,7 +374,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     async function attach(rows, postId) {
         const set = db.prepare('UPDATE attachments SET post_id = ?, position = ? WHERE media_id = ? AND post_id IS NULL');
-        for (const [i, r] of rows.entries()) await set.run(postId, i, r.media_id);
+        const linked = await db.prepare(`SELECT p.comment_id, ct.ref_service, ct.ref_type, ct.ref_id FROM posts p
+            JOIN comments c ON c.id = p.comment_id JOIN comment_threads ct ON ct.id = c.thread_id WHERE p.id = ?`).get(postId);
+        for (const [i, r] of rows.entries()) {
+            await set.run(postId, i, r.media_id);
+            if (linked) await db.prepare(`INSERT INTO comment_attachments
+                (media_id, ref_service, ref_type, ref_id, comment_id, owner_subject, filename, mime, size_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (media_id) DO NOTHING`)
+                .run(r.media_id, linked.ref_service, linked.ref_type, linked.ref_id, linked.comment_id, r.owner_subject,
+                    r.filename || 'image', r.mime, r.size_bytes);
+        }
     }
 
     function shapePost(p, v, projections, attachments = null, pastes = null, mod = moderator(v)) {
@@ -521,6 +539,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
 
     // ═════════════════════════════════════════════════════════
     return {
+        setCommentService(service) { commentService = service; },
         SORTS: store.SORTS,
         THREADS_PER_PAGE,
         POSTS_PER_PAGE,
@@ -973,6 +992,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
          */
         async createThread(v, spaceSlug, body = {}) {
             const space = await spaceFor(v, spaceSlug);
+            if (['pictures', 'videos', 'clips', 'pastes'].includes(space.slug)) fail(403, 'space.item_threads_only', 'Item discussions begin with a comment on the item');
             const w = writer(v);
             mayPostIn(v, space);
             await requireMembership(v, space);
@@ -1026,6 +1046,24 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             // Platform blocks: nobody replies in a thread whose author blocked them.
             await blocks.refuseIfBlocked(db, [thread.author_subject], w.author, 'reply in this thread');
             const text = cleanBody(body.body != null ? body.body : body.body_markdown);
+            const linked = await db.prepare('SELECT access_id FROM comment_threads WHERE forum_thread_id = ?').get(thread.id);
+            if (linked) {
+                if (!commentService) fail(503, 'comments.unavailable', 'Comments are unavailable');
+                const pictureRows = await preparePictures(w, body.pictures);
+                const listed = Array.isArray(body.attachments) ? body.attachments : (body.attachments == null ? [] : [body.attachments]);
+                const images = await claimable(w, [...listed, ...pictureRows.map((x) => x.media_id)]);
+                postLimiter.check(w.key, text);
+                const out = await commentService.add(v, linked.access_id, { message: text });
+                postLimiter.record(w.key, text);
+                const post = await store.getPost(db, (await commentStore.getComment(db, out.comment.id)).forum_post_id);
+                await attach(images, post.id);
+                const projections = await authors.projectionsFor([post.author_subject]);
+                const position = (await db.prepare('SELECT COUNT(*) AS c FROM posts WHERE thread_id = ? AND id <= ?').get(thread.id, post.id)).c;
+                const page = Math.max(Math.ceil(position / POSTS_PER_PAGE), 1);
+                pingThread(space, thread);
+                return { post: shapePost(post, v, projections, await attachmentsOf([post.id]), null), page,
+                    url: `${threadUrl(space, thread)}${page > 1 ? `?page=${page}` : ''}#post-${post.id}` };
+            }
             const pictureRows = await preparePictures(w, body.pictures);
             const listed = Array.isArray(body.attachments) ? body.attachments : (body.attachments == null ? [] : [body.attachments]);
             const images = await claimable(w, [...listed, ...pictureRows.map((x) => x.media_id)]);
@@ -1053,6 +1091,16 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const mod = await moderates(v, space);
             if (!mine && !mod) fail(403, 'post.not_yours', 'Only the author or a moderator edits a post');
             if (thread.locked && !mod) fail(403, 'thread.locked', 'This thread is locked');
+            if (post.comment_id) {
+                if (!mine) fail(403, 'comment.not_yours', 'Only the author can edit a comment');
+                const text = cleanBody(body.body != null ? body.body : body.body_markdown);
+                await store.editPost(db, post.id, text, v.subject || v.service || null);
+                await commentStore.editComment(db, post.comment_id, text);
+                const next = await store.getPost(db, post.id);
+                const projections = await authors.projectionsFor([next.author_subject]);
+                pingThread(space, thread);
+                return { post: shapePost(next, v, projections, null, null, mod) };
+            }
             const next = await store.editPost(db, post.id, cleanBody(body.body != null ? body.body : body.body_markdown), v.subject || v.service || null);
             if (relay && next && next.revision !== post.revision) await hook(async () => await relay.enqueueEdit(next));
             const projections = await authors.projectionsFor([next.author_subject]);
@@ -1075,6 +1123,15 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const mine = person(v) && post.author_subject === v.subject;
             if (!mine && !await moderates(v, space)) fail(403, 'post.not_yours', 'Only the author or a moderator deletes a post');
             if (post.is_opening) return await removeThread(v, thread, space, body);
+            if (post.comment_id) {
+                const refs = await db.prepare('SELECT media_id FROM comment_attachments WHERE comment_id = ?').all(post.comment_id);
+                await commentStore.softDeleteComment(db, post.comment_id, v.subject || v.service || null);
+                if (media && typeof media.deleteObject === 'function') for (const ref of refs) {
+                    try { await media.deleteObject(ref.media_id); } catch (err) { console.warn('[Forum] linked attachment cleanup failed:', err.message); }
+                }
+                pingThread(space, thread);
+                return { ok: true, id: post.id };
+            }
             const fields = moderation.fields(body);
             await db.tx(async () => {
                 await store.softDeletePost(db, post.id);
