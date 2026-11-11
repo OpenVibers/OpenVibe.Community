@@ -235,9 +235,10 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             const paste = ref && ref.service === 'community' && ref.type === 'paste';
             const owner = ref && ((ref.service === 'live' && ['vod', 'clip'].includes(ref.type) && v.service === 'svc:live')
                 || (ref.service === 'pics' && ref.type === 'picture' && v.service === 'svc:media-hub'));
-            if (!paste && !(owner && v.kind === 'service' && checkCapability(v.claims, 'community.comment.write').allowed))
+            const picture = ref && ref.service === 'pics' && ref.type === 'picture' && v.kind === 'user';
+            if (!paste && !picture && !(owner && v.kind === 'service' && checkCapability(v.claims, 'community.comment.write').allowed))
                 fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
-            if (paste) await checkCommunityRef(ref, v);
+            if (paste || picture) await checkCommunityRef(ref, v);
             if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail(400, 'attachment.missing', 'Choose a file');
             if (file.buffer.length > 16 * 1024 * 1024) fail(413, 'attachment.too_large', 'Files are limited to 16 MB');
             if (!media || !media.configured || typeof media.uploadImage !== 'function') fail(503, 'attachment.unavailable', 'Files cannot be attached right now');

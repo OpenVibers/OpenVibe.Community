@@ -39,6 +39,28 @@ const picture = (over = {}) => ({ id: PICTURE, slug: 'Abcdef23', state: 'active'
     await assert.rejects(service.resolve({ kind: 'anonymous' }, { ref: { service: 'pics', type: 'picture', id: PICTURE } }),
         (e) => e.code === 'ref.not_found', 'and Pics saying nothing fails closed');
 
+    let staged;
+    const mediaId = 'med_01JAB2C3D4E5F6G7H8J9K0MNP6';
+    const owner = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPQ';
+    const uploadService = createCommentService({
+        db: { prepare: (sql) => ({
+            run: async (...args) => { if (sql.includes('INSERT INTO comment_attachments')) staged = {
+                media_id: args[0], ref_service: args[1], ref_type: args[2], ref_id: args[3], owner_subject: args[4],
+                filename: args[5], mime: args[6], size_bytes: args[7], visibility: args[8],
+            }; return { changes: 1 }; },
+            get: async () => staged,
+        }) },
+        media: { configured: true, uploadImage: async () => ({ id: mediaId }), object: async () => ({
+            owner: { subject: owner }, lifecycle_status: 'ready', metadata: { filename: 'look.png' }, mime_type: 'image/png', size_bytes: 4,
+        }) },
+        fetchImpl: async () => ({ ok: true, json: async () => picture() }),
+    });
+    const uploaded = await uploadService.uploadAttachment({ kind: 'user', subject: owner }, { service: 'pics', type: 'picture', id: PICTURE },
+        { buffer: Buffer.from('look'), originalname: 'look.png', mimetype: 'image/png' });
+    assert.equal(uploaded.attachment.id, mediaId);
+    assert.equal(staged.ref_service, 'pics');
+    assert.equal(staged.owner_subject, owner);
+
     // A paste may embed a picture: the fixed origin, raster formats only.
     const embed = renderMarkdown('![forest](https://openvibe.pics/i/Abcdef23.png)');
     assert.ok(embed.includes('<img'), 'a Pics picture embeds as an image');
