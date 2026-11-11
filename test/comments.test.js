@@ -427,6 +427,35 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(byBrowser.status, 201, 'people with the access id may comment');
     });
 
+    await check('Live stages a file for its VOD; the author claims it once and removal retires it', async () => {
+        const ref = { service: 'live', type: 'vod', id: '7001' };
+        const form = new FormData();
+        form.set('ref', JSON.stringify(ref));
+        form.set('file', new Blob([Buffer.from('live picture')], { type: 'image/png' }), 'live.png');
+        const url = '/api/v1/comments/attachments';
+        const browser = await t.get(url, { method: 'POST', headers: { authorization: `Bearer ${alexJwt}` }, body: form });
+        assert.strictEqual(browser.status, 403);
+        const token = svc([WRITE], { sub: 'svc:live' });
+        const uploaded = await t.get(url, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'x-ov-subject': alex.subject_id }, body: form });
+        assert.strictEqual(uploaded.status, 201, uploaded.text);
+        const attachment = uploaded.json().attachment;
+        const added = await callL(`/api/v1/comments/threads/${liveVod.id}/comments`, {
+            method: 'POST', json: { message: 'A picture', attachments: [attachment] }, token,
+            headers: { 'x-ov-subject': alex.subject_id },
+        });
+        assert.strictEqual(added.status, 201, added.text);
+        assert.deepStrictEqual(added.json().comment.attachments.map((a) => a.id), [attachment.id]);
+        const stolen = await callL(`/api/v1/comments/threads/${liveVod.id}/comments`, {
+            method: 'POST', json: { message: 'Reused picture', attachments: [attachment] }, token,
+            headers: { 'x-ov-subject': alex.subject_id },
+        });
+        assert.strictEqual(stolen.status, 400);
+        const removed = await callL(`/api/v1/comments/${added.json().comment.id}`, { method: 'DELETE', token,
+            headers: { 'x-ov-subject': alex.subject_id } });
+        assert.strictEqual(removed.status, 200);
+        assert.ok(t.media.deletes.includes(attachment.id));
+    });
+
     await check('one comment with its thread (GET /:commentId): services only, so comment ids cannot be walked to refs', async () => {
         const c = (await callL(`/api/v1/comments/threads/${liveVod.id}/comments`, { method: 'POST', json: { message: 'look me up' }, ...asLive(sam.subject_id) })).json().comment;
         const r = await callL(`/api/v1/comments/${c.id}`, asLive(sam.subject_id));

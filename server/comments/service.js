@@ -42,7 +42,7 @@ const sectionReactions = require('./section-reactions');
 const { fail, isoTime } = require('../http/v1');
 const { createAuthors } = require('../identity/authors');
 const { createPersonLimiter } = require('../limits');
-const { discussionModerator: moderator } = require('../identity/capabilities');
+const { discussionModerator: moderator, checkCapability } = require('../identity/capabilities');
 const blocks = require('../identity/blocks');
 const commentAttachments = require('./attachments');
 const forumLinks = require('./forum-links');
@@ -229,11 +229,15 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             return { thread: shapeThread(thread, v), created };
         },
 
-        /** Upload one attachment to Community, which owns Community paste comments. */
+        /** Stage an attachment received by the service that owns the item. */
         async uploadAttachment(v, ref, file) {
             if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to attach a file');
-            if (!ref || ref.service !== 'community' || ref.type !== 'paste') fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
-            await checkCommunityRef(ref, v);
+            const paste = ref && ref.service === 'community' && ref.type === 'paste';
+            const owner = ref && ((ref.service === 'live' && ['vod', 'clip'].includes(ref.type) && v.service === 'svc:live')
+                || (ref.service === 'pics' && ref.type === 'picture' && v.service === 'svc:media-hub'));
+            if (!paste && !(owner && v.kind === 'service' && checkCapability(v.claims, 'community.comment.write').allowed))
+                fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
+            if (paste) await checkCommunityRef(ref, v);
             if (!file || !Buffer.isBuffer(file.buffer) || !file.buffer.length) fail(400, 'attachment.missing', 'Choose a file');
             if (file.buffer.length > 16 * 1024 * 1024) fail(413, 'attachment.too_large', 'Files are limited to 16 MB');
             if (!media || !media.configured || typeof media.uploadImage !== 'function') fail(503, 'attachment.unavailable', 'Files cannot be attached right now');
@@ -338,7 +342,6 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (rawAttachments.length && !author) fail(401, 'auth.required', 'Sign in to attach a file');
             let attachmentIds = [];
             if (rawAttachments.length) {
-                if (t.ref_service !== 'community' || t.ref_type !== 'paste') fail(403, 'attachment.owner_service', 'Upload attachments through the service that owns the item');
                 const refs = rawAttachments.map((raw) => {
                     try { return commentAttachments.cleanReference(raw, author); }
                     catch (err) { fail(err.status || 400, err.code || 'comment.attachment_invalid', err.message); }
@@ -388,7 +391,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (!isAuthor && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
             await store.softDeleteComment(db, c.id, v.subject || v.service || null);
             for (const a of c.attachments || []) {
-                if (a.ref_service === 'community' && media && typeof media.deleteObject === 'function') {
+                if (media && typeof media.deleteObject === 'function') {
                     try { await media.deleteObject(a.media_id); }
                     catch (err) { console.warn(`[Comments] removed attachment ${a.media_id} from comment; Media cleanup failed: ${err.message}`); }
                 }
