@@ -15,6 +15,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
     const badgeAt = iso(Date.now() - 3_600_000);
     const calls = [];
     let liveStreams = [];
+    let extraContent = [];
     let galleryRows = [
         { id: 'pic_01JAB2C3D4E5F6G7H8J9K0MNPQ', title: 'First photo', author: 'Alex', listed: true, published_at: badgeAt,
             links: { page: 'https://openvibe.pics/i/firstpic', thumb: 'https://openvibe.pics/i/firstpic/thumb.webp' }, width: 800, height: 600 },
@@ -42,6 +43,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         if (u.includes('/api/content/feed')) return { ok: true, json: async () => ({ items: [
             { id: 123, kind: 'vod', title: 'Night stream', href: 'https://openvibe.video/watch?v=night', thumbnail_url: 'https://openvibe.media/night.webp', created_at: badgeAt, channel: { username: 'alex', display_name: 'Alex' }, duration_seconds: 500 },
             { id: 124, kind: 'clip', title: 'Night clip', href: 'https://openvibe.video/clip/night', thumbnail_url: 'https://openvibe.media/clip.webp', created_at: badgeAt, channel: { username: 'alex', display_name: 'Alex' }, duration_seconds: 25 },
+            ...extraContent,
         ], next: null, sources: { vods: 'ok', clips: 'ok' }, partial: false }) };
         if (u.includes('/api/v1/apps/gallery')) return { ok: true, json: async () => ({ spaces: [{
             id: 'spc_01JAB2C3D4E5F6G7H8J9K0MNPQ', name: 'A shared map', description: 'A map of places',
@@ -155,6 +157,8 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         const db = t.app.locals.db;
         const item = (type, id) => db.prepare('SELECT title FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?').get('live', type, String(id));
         liveStreams = [{ id: 999, username: 'alex', display_name: 'Alex', title: 'Night stream', started_at: badgeAt }];
+        extraContent = [{ id: 125, kind: 'vod', title: 'Earlier broadcast', href: 'https://openvibe.video/watch?v=earlier',
+            created_at: iso(Date.parse(badgeAt) - 20 * 60_000), channel: { username: 'alex', display_name: 'Alex' } }];
         await t.app.locals.pulseSources.runOnce({ force: true });
         assert.ok(await item('stream', 999));
         assert.ok(!(await item('recording', 123)), 'a recording for the broadcast is suppressed while it is live');
