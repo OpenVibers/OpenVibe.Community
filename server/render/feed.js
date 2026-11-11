@@ -5,7 +5,7 @@ const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { card } = require('../pulse/feed');
 
-const KINDS = [['', 'For you'], ['live', 'Live'], ['clip', 'Clips'], ['video', 'Videos'], ['pic', 'Pics'], ['post', 'Posts'], ['meme', 'Memes'], ['game', 'Games'], ['update', 'Updates']];
+const KINDS = [['', 'For you'], ['live', 'Live'], ['clip', 'Clips'], ['video', 'Videos'], ['pic', 'Pics'], ['post', 'Posts'], ['paste', 'Pastes'], ['meme', 'Memes'], ['game', 'Games'], ['update', 'Updates']];
 const href = (kind, cursor = '', search = '') => { const q = new URLSearchParams(); if (kind) q.set('kind', kind); if (search) q.set('q', search); if (cursor) q.set('cursor', cursor); return `/feed${q.size ? `?${q}` : ''}`; };
 
 function feedPage({ items = [], kind = '', q = '', examples = [], cursor = null, nextCursor = null } = {}) {

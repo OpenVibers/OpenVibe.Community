@@ -96,7 +96,7 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(r.status, 200, r.text);
         const j = r.json();
         const kinds = new Set(j.items.map((x) => x.kind));
-        for (const k of ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
+        for (const k of ['live', 'clip', 'video', 'pic', 'paste', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
         assert.ok('next_cursor' in j);
         for (const x of j.items) for (const k of ['id', 'kind', 'url', 'title', 'text', 'at', 'site', 'site_name', 'actor', 'media', 'counts']) assert.ok(k in x, `${k} on every card`);
         const c = j.items.find((x) => x.url === 'https://openvibe.live/clip/c1');
@@ -125,8 +125,8 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
     await check('a paste and a screenshot paste carry their text and first picture; the counts are Community\'s', async () => {
         const j = (await t.get('/api/v1/feed?limit=40')).json();
         const p = j.items.find((x) => x.title === 'Public one');
-        assert.strictEqual(p.kind, 'post');
         assert.strictEqual(p.text, 'The first line of a public paste.');
+        assert.strictEqual(p.kind, 'paste');
         assert.deepStrictEqual(p.counts, { views: 7, likes: 3, comments: 2 });
         const s = j.items.find((x) => x.title === 'A shot');
         const stored = await db.prepare('SELECT screenshot_url FROM pastes WHERE slug = ?').get(shot.slug);

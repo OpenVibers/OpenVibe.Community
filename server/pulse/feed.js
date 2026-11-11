@@ -38,6 +38,7 @@ function kindOf(i) {
     if (t === 'follow') return 'follow';
     if (t === 'site') return 'site';
     if (t === 'space') return 'space';
+    if (t === 'paste') return 'paste';
     if (t === 'episode') return 'episode';
     if (t === 'clip' || t === 'moment') return 'clip';
     if (/^(vod|video|recording|upload)$/.test(t) || s === 'media-hub' || s === 'video') return 'video';
@@ -189,7 +190,7 @@ const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvib
 function searchMatches(item, query) {
     const q = clean(query, 80).toLowerCase();
     if (!q) return true;
-    const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'post', pastes: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
+    const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'paste', pastes: 'paste', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
     const kindWord = (q.match(/\b[a-z]+\b/g) || []).find((word) => aliases[word]);
     const kind = kindWord && aliases[kindWord];
     if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) return false;
