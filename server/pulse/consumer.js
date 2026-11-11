@@ -39,7 +39,7 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'mediahub.video.published', 'games.world.published', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.account.export_requested', 'network.account.deleted']);
+const TOPICS = Object.freeze(['live.stream.started', 'mediahub.video.published', 'games.world.published', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.user.updated', 'network.block.changed', 'network.module.updated', 'network.account.export_requested', 'network.account.deleted']);
 const GAME_NAMESPACE = 'games.progress.summary';
 const GAME_MILESTONE = 5;
 const GAME_URL = 'https://openvibe.games/';
@@ -107,6 +107,31 @@ function gameProgressOf(event) {
     const level = p.public && Number.isInteger(p.public.level) ? p.public.level : null;
     if (!subject || level == null || level < 0 || level > 100000) return 'ignored:payload';
     return { subject, level, at: event.occurred_at || event.timestamp || new Date().toISOString() };
+}
+
+/** Network's profile event carries a changed list; only an avatar edit can make an avatar card. */
+async function applyAvatar(db, event) {
+    if (event.source !== 'network') return 'ignored:source';
+    const p = event.payload || {};
+    const who = subjectOf(p.subject);
+    const revision = Number(p.revision);
+    if (!who || !Number.isSafeInteger(revision) || revision < 1) return 'ignored:payload';
+    const old = await db.prepare('SELECT revision FROM pulse_profile_revision WHERE subject = ?').get(who);
+    if (old && Number(old.revision) >= revision) return 'ignored:old_revision';
+    await db.prepare(`INSERT INTO pulse_profile_revision (subject, revision) VALUES (?, ?)
+        ON CONFLICT(subject) DO UPDATE SET revision = excluded.revision`).run(who, revision);
+    if (p.banned) { await store.removeItem(db, 'network', 'avatar', who); return 'avatar:removed'; }
+    if (!Array.isArray(p.changed) || !p.changed.includes('avatar_url')) return 'profile:updated';
+    await store.removeItem(db, 'network', 'avatar', who);
+    if (p.banned || !p.avatar_url) return 'avatar:removed';
+    const avatar = httpsUrl(p.avatar_url);
+    const username = clean(p.username, 64);
+    if (!avatar || !/^[a-zA-Z0-9_.-]{1,64}$/.test(username)) return 'ignored:payload';
+    await store.upsertItem(db, { source_service: 'network', source_type: 'avatar', source_id: who,
+        title: `${clean(p.display_name || username, 80)} uploaded a new avatar`,
+        url: `https://openvibe.network/@${encodeURIComponent(username)}`, picture_url: avatar,
+        actor_subject: who, origin: 'user', occurred_at: event.occurred_at || event.timestamp || new Date().toISOString() });
+    return 'pulse:created';
 }
 
 /** Record the level; a crossed milestone becomes a Pulse item. Inside the inbox claim. → outcome */
@@ -202,6 +227,17 @@ function createPulseConsumer({ db, secrets = [], vipCache = null, revocations = 
             if (typeof g === 'string') { stats.ignored++; return res.json({ event_id: event.event_id, duplicate: false, outcome: g }); }
             try {
                 const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await applyGameProgress(db, g) }));
+                if (r.duplicate) stats.duplicates++; else stats.applied++;
+                return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
+            } catch (err) {
+                stats.failed++;
+                log.error(`[Pulse consumer] ${event.event_id} (${event.event_type}) failed:`, err.message);
+                return problem(500, 'community.event_failed', 'processing failed; it will be retried');
+            }
+        }
+        if (event.event_type === 'network.user.updated') {
+            try {
+                const r = await inbox.once(CONSUMER, event.event_id, async () => ({ outcome: await applyAvatar(db, event) }));
                 if (r.duplicate) stats.duplicates++; else stats.applied++;
                 return res.json({ event_id: event.event_id, duplicate: r.duplicate, outcome: r.duplicate ? null : r.result.outcome });
             } catch (err) {

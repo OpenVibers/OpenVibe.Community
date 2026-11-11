@@ -26,6 +26,7 @@ const INVENTORY = {
     'server/auth/routes.js': [1, 'createAuthClient(config): Network\'s keys (openvibe-sdk/auth, OV_NETWORK_INTERNAL_URL); the OAuth token/revoke calls are openvibe-sdk/sso\'s now'],
     'server/chat-rooms.js': [1, 'OV_CHAT_INTERNAL_URL /api/chat/rooms/<slug>/attachments; the slug must match ROOM_SLUG and is encoded'],
     'server/events.js': [3, 'service token (Network) and the outbox publisher: EVENTS_URL'],
+    'server/forum/api.js': [1, 'Media composer attachment keep at the configured mediaUrl origin and a fixed path; the attachment id is validated as att_ plus a ULID'],
     'server/identity/network.js': [3, 'Network /internal/identity/resolve-batch and /internal/identity/resolve?username= with a service token (configured base, never a user URL)'],
     'server/render/pages.js': [1, 'not a call: the home page shows a fetch() sample as text (never executed)'],
     'server/identity/account-data.js': [2, 'Network /oauth/token and /internal/account-exports and /internal/account-deletions (fixed paths) with a service token'],

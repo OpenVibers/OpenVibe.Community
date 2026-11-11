@@ -38,6 +38,13 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
 
 (async () => {
     const t = await boot({ authority: 'community', pasteLimits: { cooldownSeconds: 0 }, appOpts: { feedFetch, startRelay: false, startSharingWorker: false, forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 } } });
+    await check('feed examples are generated from current Pulse cards and search accepts natural filters', async () => {
+        const examples = await t.get('/api/v1/feed/examples');
+        assert.strictEqual(examples.status, 200, examples.text);
+        assert.ok(Array.isArray(examples.json().examples));
+        const empty = await t.get('/api/v1/feed/search');
+        assert.strictEqual(empty.status, 400);
+    });
     const net = t.network;
     const db = t.app.locals.db;
     const pulse = t.app.locals.pulse;
@@ -67,14 +74,18 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         ['wiki', 'page', 'w1', 'Wiki: a page', 'https://openvibe.wiki/w/1', sam.subject_id, 'user', 19],
         ['quest', 'badge', 'q1', 'Finished a quest: First Post', 'https://openvibe.quest/', sam.subject_id, 'user', 20],
         ['chat', 'hour', 'general:2026-11-09T10', '#general: 12 messages this hour', 'https://openvibe.chat/rooms/general', null, 'system', 21],
-        ['today', 'event', 'e1', 'Event: A launch party', 'https://openvibe.today/e/e1', alex.subject_id, 'user', 22],
+        ['today', 'event', 'e1', 'Coming up: A launch party', 'https://openvibe.today/e/e1', alex.subject_id, 'user', 22],
         ['network', 'members', '2026-11-09', '5 people joined today', 'https://openvibe.network/stats', null, 'system', 23],
     ];
     for (const [service, type, id, title, url, actor, origin, minsAgo] of fixtures) {
         await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, text, picture_url)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?)`)
             .run(service, type, id, title, url, actor, origin, at(minsAgo), type === 'event' ? 'Come along' : '', null);
+        if (type === 'event') await db.prepare('UPDATE pulse_items SET starts_at = ? WHERE source_service = ? AND source_id = ?')
+            .run(new Date(Date.now() + 60 * 60_000).toISOString().replace('T', ' ').slice(0, 19), service, id);
     }
+    await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at)
+        VALUES ('pics', 'picture', 'p2', 'Another picture', 'https://openvibe.pics/p/2', ?, 'user', 'public', ?)`).run(alex.subject_id, at(15.5));
 
     // Make the paste's counts real so the card has Community's own views, likes and comments.
     await db.prepare('UPDATE pastes SET views = 7, likes = 3 WHERE slug = ?').run(textPaste.slug);
@@ -85,14 +96,18 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(r.status, 200, r.text);
         const j = r.json();
         const kinds = new Set(j.items.map((x) => x.kind));
-        for (const k of ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
+        for (const k of ['live', 'clip', 'video', 'pic', 'paste', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
         assert.ok('next_cursor' in j);
         for (const x of j.items) for (const k of ['id', 'kind', 'url', 'title', 'text', 'at', 'site', 'site_name', 'actor', 'media', 'counts']) assert.ok(k in x, `${k} on every card`);
-        const c = j.items.find((x) => x.title === 'Great clip');
+        const c = j.items.find((x) => x.url === 'https://openvibe.live/clip/c1');
         assert.strictEqual(c.site, 'live');
         assert.strictEqual(c.site_name, 'Live');
         assert.strictEqual(c.actor.name, 'Alex');
         assert.deepStrictEqual(c.media, { thumb: 'https://openvibe.media/c1.webp', preview: 'https://openvibe.media/c1.mp4', ratio: 1.5, length: 18 });
+        const photos = j.items.find((x) => x.kind === 'pic');
+        assert.strictEqual(photos.title, 'Alex added 2 photos');
+        assert.strictEqual(photos.group.count, 2);
+        assert.deepStrictEqual(photos.group.items.map((x) => x.url), ['https://openvibe.pics/p/1', 'https://openvibe.pics/p/2']);
     });
 
     await check('GET /feed is server rendered, kind chips keep the page crawlable and Older carries a cursor', async () => {
@@ -102,13 +117,16 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.ok(r.text.includes('https://openvibe.video/v/1'), 'card link is in the response HTML');
         assert.ok(r.text.includes('schema.org') && r.text.includes('ItemList'), 'ItemList JSON-LD is present');
         assert.ok(r.text.includes('Older'), 'the page has a crawlable older-page link');
+        assert.ok(r.text.includes('id="feed-search"') && r.text.includes('Try:'), 'the page offers feed search and current examples');
+        const searched = await t.get('/feed?q=videos');
+        assert.ok(searched.text.includes('A video') && searched.text.includes('name="q" value="videos"'), 'the page applies a natural kind search');
     });
 
     await check('a paste and a screenshot paste carry their text and first picture; the counts are Community\'s', async () => {
         const j = (await t.get('/api/v1/feed?limit=40')).json();
         const p = j.items.find((x) => x.title === 'Public one');
-        assert.strictEqual(p.kind, 'post');
         assert.strictEqual(p.text, 'The first line of a public paste.');
+        assert.strictEqual(p.kind, 'paste');
         assert.deepStrictEqual(p.counts, { views: 7, likes: 3, comments: 2 });
         const s = j.items.find((x) => x.title === 'A shot');
         const stored = await db.prepare('SELECT screenshot_url FROM pastes WHERE slug = ?').get(shot.slug);
@@ -189,12 +207,12 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
                 assert.strictEqual(r.status, 200, r.text);
                 const page = r.json();
                 assert.ok(page.items.length <= limit, 'trending counts toward the page limit');
-                seen.push(...page.items.filter((x) => x.id.startsWith('p:')).map((x) => x.id));
+                seen.push(...page.items.filter((x) => x.id.startsWith('p:')).flatMap((x) => x.group ? x.group.items.map((y) => y.id) : [x.id]));
                 cursor = page.next_cursor;
                 if (cursor) { assert.ok(!cursors.has(cursor), 'cursor advances'); cursors.add(cursor); }
                 assert.ok(cursors.size < 40, 'pagination terminates');
             } while (cursor);
-            assert.deepStrictEqual(seen, all.map((x) => x.id), `limit=${limit}: no missing or repeated rows`);
+            assert.deepStrictEqual([...seen].sort(), all.flatMap((x) => x.group ? x.group.items.map((y) => y.id) : [x.id]).sort(), `limit=${limit}: no missing or repeated rows`);
         }
     });
 
@@ -250,6 +268,31 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.ok(j.items[0].media.thumb.endsWith(`/o/${stored.key}`));
         const row = await db.prepare('SELECT alt FROM attachments WHERE media_id = ?').get(stored.key);
         assert.strictEqual(row.alt, 'Direct cat');
+    });
+
+    await check('a post keeps a PDF composer attachment and renders it as a download', async () => {
+        const id = 'att_01ABCDEFGHJKMNPQRSTVWXYZ01';
+        const original = global.fetch;
+        let kept = false;
+        global.fetch = (url, options) => {
+            if (String(url).endsWith(`/api/v1/attachments/${id}/keep`)) {
+                kept = options.method === 'POST' && options.headers.Authorization === `Bearer ${alexJwt}`;
+                return Promise.resolve(new Response(JSON.stringify({ id, kind: 'file', name: 'notes.pdf', mime: 'application/pdf', size: 123, url: `https://openvibe.media/a/${id}/notes.pdf` }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return original(url, options);
+        };
+        try {
+            const r = await json(alexJwt, '/api/v1/posts', { text: 'Here are my notes', attachments: [id] });
+            assert.strictEqual(r.status, 201, r.text);
+            assert.ok(kept, 'Media keeps the file using the person token');
+            assert.strictEqual(r.json().attachments[0].id, id);
+            const row = await db.prepare('SELECT filename, mime, url FROM attachments WHERE media_id = ?').get(id);
+            assert.strictEqual(row.filename, 'notes.pdf');
+            assert.strictEqual(row.mime, 'application/pdf');
+            assert.ok(row.url.endsWith('/notes.pdf'));
+            const page = await t.get(new URL(r.json().url).pathname);
+            assert.ok(page.text.includes('notes.pdf'), 'the post page links the file');
+        } finally { global.fetch = original; }
     });
 
     await check('a signed-out post, a text with extra fields and more than four pictures are refused', async () => {

@@ -22,8 +22,8 @@ const express = require('express');
 const contracts = require('openvibe-contracts');
 const { run, fail, isoTime, sqlTime, encodeCursor } = require('../http/v1');
 
-const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'];
-const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
+const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member', 'avatar', 'banner', 'paste', 'site', 'space', 'follow', 'episode'];
+const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', space: 'Space', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
 const MAX_PAGE_READS = 8;
 const https = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
 const clean = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
@@ -33,6 +33,13 @@ function kindOf(i) {
     const s = String((i.source && i.source.service) || '');
     const t = String((i.source && i.source.type) || '');
     if (/^(live|stream|went_live|broadcast)$/.test(t) || (s === 'live' && /\b(went live|is live|live now)\b/i.test(i.title || ''))) return 'live';
+    if (t === 'avatar') return 'avatar';
+    if (t === 'banner') return 'banner';
+    if (t === 'follow') return 'follow';
+    if (t === 'site') return 'site';
+    if (t === 'space') return 'space';
+    if (t === 'paste') return 'paste';
+    if (t === 'episode') return 'episode';
     if (t === 'clip' || t === 'moment') return 'clip';
     if (/^(vod|video|recording|upload)$/.test(t) || s === 'media-hub' || s === 'video') return 'video';
     if (/^(pic|picture|image|photo)$/.test(t) || s === 'pics') return 'pic';
@@ -49,7 +56,7 @@ function kindOf(i) {
 
 function card(i) {
     const site = String((i.source && i.source.service) || 'community');
-    const a = i.actor;
+    const a = i.actor || (i.actor_name ? { display_name: i.actor_name } : null);
     return {
         id: `p:${i.id}`,
         kind: kindOf(i),
@@ -57,11 +64,13 @@ function card(i) {
         title: clean(i.title, 300),
         text: clean(i.text, 280),
         at: isoTime(i.occurred_at) || i.occurred_at || null,
+        ...(i.starts_at ? { starts_at: isoTime(i.starts_at) || i.starts_at } : {}),
         site,
         site_name: SITE_NAMES[site] || site.replace(/^app:/, ''),
         actor: a ? { name: clean(a.display_name || a.username || '', 80) || null, avatar: https(a.avatar_url) } : null,
         media: i.picture_url && https(i.picture_url) ? { thumb: https(i.picture_url), ...(i.preview_url && https(i.preview_url) ? { preview: https(i.preview_url) } : {}), ratio: Number(i.media_ratio) > 0 ? Number(i.media_ratio) : 16 / 9, ...(Number(i.media_length) > 0 ? { length: Number(i.media_length) } : {}) } : null,
         counts: {},
+        ...(i.visibility === 'followers' ? { visibility: 'followers' } : {}),
         ...(i.label ? { label: i.label } : {}),
     };
 }
@@ -69,6 +78,25 @@ function card(i) {
 const svcOf = (i) => String((i.source && i.source.service) || i.source_service || '');
 const typeOf = (i) => String((i.source && i.source.type) || i.source_type || '');
 const idOf = (i) => String((i.source && i.source.id) || i.source_id || '');
+const BURST_MS = 15 * 60_000;
+const BURST_WORD = { pic: 'photos', clip: 'clips', video: 'videos', game: 'achievements', quest: 'quests', avatar: 'profile updates' };
+function foldBursts(pairs) {
+    const groups = [];
+    for (const p of pairs) {
+        const actor = p.row.actor_subject || (p.row.actor && p.row.actor.subject) || (p.row.actor_name && `name:${p.row.actor_name}`);
+        const at = Date.parse(p.card.at || '');
+        const prior = actor && Number.isFinite(at) && BURST_WORD[p.card.kind] && groups.find((g) =>
+            g.actor === actor && g.card.kind === p.card.kind && g.site === p.card.site && Math.abs(g.at - at) <= BURST_MS);
+        if (prior) { prior.cards.push(p.card); continue; }
+        groups.push({ actor, at, site: p.card.site, card: p.card, cards: [p.card] });
+    }
+    return groups.map((g) => {
+        if (g.cards.length < 2) return g.card;
+        const name = g.card.actor && g.card.actor.name || 'Someone';
+        return { ...g.card, title: `${name} added ${g.cards.length} ${BURST_WORD[g.card.kind]}`,
+            group: { count: g.cards.length, items: g.cards.map((c) => ({ id: c.id, url: c.url, title: c.title, media: c.media })) } };
+    });
+}
 
 /** Community's own views, likes and comments, in a few batched reads (never one query per card). */
 async function countsFor(db, rows) {
@@ -159,6 +187,32 @@ function createLiveNow({ liveUrl, fetchImpl }) {
 }
 const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvibe\.live$/.test(u.hostname) ? (/^\/@?([A-Za-z0-9_.-]{1,40})\/?$/.exec(u.pathname) || [])[1] || '' : ''; } catch { return ''; } };
 
+function searchMatches(item, query) {
+    const q = clean(query, 80).toLowerCase();
+    if (!q) return true;
+    const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'paste', pastes: 'paste', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
+    const kindWord = (q.match(/\b[a-z]+\b/g) || []).find((word) => aliases[word]);
+    const kind = kindWord && aliases[kindWord];
+    if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) return false;
+    const day = String(item.at || '').slice(0, 10);
+    if (/\btoday\b/.test(q) && day !== new Date().toISOString().slice(0, 10)) return false;
+    if (/\byesterday\b/.test(q) && day !== new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)) return false;
+    const date = /\b\d{4}-\d{2}-\d{2}\b/.exec(q);
+    if (date && day !== date[0]) return false;
+    const words = q.replace(/\b(clips?|videos?|recordings?|photos?|pics?|posts?|pastes?|streams?|live|games?|updates?|avatars?|banners?|sites?|spaces?|follows?|episodes?|from|today|yesterday|new)\b/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').trim();
+    return !words || [item.title, item.text, item.site, item.site_name, item.kind, item.actor && item.actor.name]
+        .some((v) => String(v || '').toLowerCase().includes(words));
+}
+
+function searchExamples(cards) {
+    const examples = [];
+    const add = (text, reason) => { if (!examples.some((x) => x.text === text)) examples.push({ text, reason }); };
+    for (const c of cards) if (c.actor && c.actor.name) add(c.actor.name, 'person');
+    for (const kind of [...new Set(cards.map((c) => c.kind))]) add(`new ${kind === 'pic' ? 'photos' : `${kind}s`}`, 'kind');
+    if (cards.some((c) => c.kind === 'clip' && String(c.at || '').slice(0, 10) === new Date().toISOString().slice(0, 10))) add('clips from today', 'date and kind');
+    return examples.slice(0, 8);
+}
+
 function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openvibe.network', liveUrl = 'https://openvibe.live', fetchImpl = globalThis.fetch }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
@@ -202,7 +256,9 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
                 mark([c], live);
                 if (kind && c.kind !== kind) continue;
                 if (site && c.site !== site) continue;
-                if (q && !(c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q))) continue;
+                if (q && !(c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)
+                    || String(c.actor && c.actor.name || '').toLowerCase().includes(q)
+                    || c.site_name.toLowerCase().includes(q) || c.kind.includes(q))) continue;
                 picked.push({ row: i, card: c });
                 if (picked.length >= pulseWant) {
                     // Resume after the last consumed row, including when Pulse's final page was only partly read.
@@ -219,15 +275,50 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         // The first page carries trending pictures and videos, one after every three Pulse items.
         const items = [];
         let k = 0;
-        picked.forEach((p, n) => {
-            items.push(p.card);
-            if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) items.push(t[k++]);
+        foldBursts(picked).forEach((c, n) => {
+            items.push(c);
+            if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) {
+                const extra = t[k++];
+                if (!items.some((x) => x.url === extra.url)) items.push(extra);
+            }
         });
-        while (items.length < want && k < t.length) items.push(t[k++]);
+        const seen = new Set(items.map((c) => c.url));
+        while (items.length < want && k < t.length) { const c = t[k++]; if (!seen.has(c.url)) { items.push(c); seen.add(c.url); } }
         return { items, next_cursor: next };
+    }));
+    router.get('/search', run(async (req) => {
+        const q = clean(req.query.q, 80).toLowerCase();
+        if (!q) fail(400, 'feed.search_required', 'Enter a search term');
+        const live = await liveNow();
+        const matched = [];
+        let cursor = clean(req.query.cursor, 500), next = null;
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 40);
+        for (let pages = 0; pages < MAX_PAGE_READS && matched.length < limit; pages++) {
+            const page = await pulse.list({ after: cursor || undefined, limit: 100 }, req.viewer);
+            next = page.next_cursor || null;
+            const rows = page.items || [];
+            for (let index = 0; index < rows.length; index++) {
+                const item = card(rows[index]);
+                mark([item], live);
+                if (!searchMatches(item, q)) continue;
+                matched.push({ row: rows[index], card: item });
+                if (matched.length >= limit) {
+                    if (index < rows.length - 1) next = encodeCursor([sqlTime(rows[index].occurred_at), rows[index].id]);
+                    break;
+                }
+            }
+            if (!next) break;
+            cursor = next;
+        }
+        return { items: foldBursts(matched), next_cursor: next };
+    }));
+    router.get('/examples', run(async (req) => {
+        const page = await pulse.list({ limit: 100 }, req.viewer);
+        const cards = (page.items || []).map(card);
+        return { examples: searchExamples(cards) };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, searchMatches, searchExamples, foldBursts };
