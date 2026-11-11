@@ -173,19 +173,30 @@ function createTrending({ networkUrl, fetchImpl }) {
 
 /** Who is live on Live right now (GET /api/streams, cached a minute): a "went live" card says LIVE only for them. */
 function createLiveNow({ liveUrl, fetchImpl }) {
-    let cache = new Set(); let at = 0;
+    let cache = new Map(); let at = 0;
     return async function liveNow() {
         if (Date.now() - at < 60_000) return cache;
         at = Date.now();
         try {
             const r = await fetchImpl(`${liveUrl}/api/streams`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(3000) });
             const j = r.ok ? await r.json() : null;
-            cache = new Set(((j && j.streams) || []).map((x) => String((x && x.username) || '').toLowerCase()).filter(Boolean));
+            cache = new Map(((j && j.streams) || []).map((x) => {
+                const name = String((x && x.username) || '').toLowerCase();
+                const raw = String((x && x.started_at) || '');
+                const stamp = /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(raw) ? `${raw.replace(' ', 'T')}Z` : raw;
+                return [name, Date.parse(stamp)];
+            }).filter(([name]) => name));
         } catch { /* keep the last answer */ }
         return cache;
     };
 }
 const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvibe\.live$/.test(u.hostname) ? (/^\/@?([A-Za-z0-9_.-]{1,40})\/?$/.exec(u.pathname) || [])[1] || '' : ''; } catch { return ''; } };
+const isCurrentLive = (card, live) => {
+    const name = channelOf(card.url).toLowerCase();
+    if (!live.has(name)) return false;
+    const started = live.get(name), recorded = Date.parse(card.at || '');
+    return !Number.isFinite(started) || !Number.isFinite(recorded) || Math.abs(started - recorded) <= 10 * 60_000;
+};
 
 function searchMatches(item, query) {
     const q = clean(query, 80).toLowerCase();
@@ -221,7 +232,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     const trending = createTrending({ networkUrl, fetchImpl });
     const liveNow = createLiveNow({ liveUrl, fetchImpl });
     // A "went live" item is live now only while that channel is on Live's live list.
-    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') { c.live_now = live.has(channelOf(c.url).toLowerCase()); if (!c.live_now) c.kind = 'stream'; } });
+    const mark = (cards, live) => cards.forEach((c) => { if (c.kind === 'live') { c.live_now = isCurrentLive(c, live); if (!c.live_now) c.kind = 'stream'; } });
 
     router.get('/', run(async (req) => {
         const kind = KINDS.includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
@@ -321,4 +332,4 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, searchMatches, searchExamples, foldBursts };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, isCurrentLive, searchMatches, searchExamples, foldBursts };
