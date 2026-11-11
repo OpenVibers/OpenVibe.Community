@@ -112,13 +112,18 @@ async function removeItem(db, service, type, id) {
  * again within six hours, so one line and its newest time remain.
  *   opts.origin   'user' | 'ai' | 'system'
  *   opts.before   [occurred_at, id] of the last item already seen
+ *   opts.excludeSubjects  test accounts (Network's is_test): their items never reach a public read
  * → { rows, hasMore }
  */
-async function listItems(db, { origin = null, before = null, limit = 30, followed = [], viewerSubject = null, hour = null } = {}) {
+async function listItems(db, { origin = null, before = null, limit = 30, followed = [], viewerSubject = null, hour = null, excludeSubjects = [] } = {}) {
     const priority = "CASE WHEN @hour::text IS NOT NULL AND i.occurred_at >= @hour AND jsonb_exists(@followed::jsonb, i.actor_subject) THEN 1 ELSE 0 END";
     const rows = await db.prepare(`
         SELECT i.*, ${priority} AS feed_priority FROM pulse_items i
         WHERE (@origin::text IS NULL OR i.origin = @origin)
+          AND (@exclude::text[] IS NULL OR i.actor_subject IS NULL OR i.actor_subject = @viewerSubject::text
+               OR NOT (i.actor_subject = ANY(@exclude::text[])))
+          AND (i.actor_subject = @viewerSubject::text
+               OR NOT EXISTS (SELECT 1 FROM subject_projection sp WHERE sp.subject_id = i.actor_subject AND sp.is_test = 1))
           AND (i.visibility = 'public' OR (i.visibility = 'followers' AND i.actor_subject IS NOT NULL
                AND (i.actor_subject = @viewerSubject::text OR jsonb_exists(@followed::jsonb, i.actor_subject))))
           AND (i.source_service <> 'today' OR i.source_type <> 'event' OR (i.starts_at IS NOT NULL AND i.starts_at > to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')))
@@ -147,6 +152,7 @@ async function listItems(db, { origin = null, before = null, limit = 30, followe
                OR (i.source_type = 'submission' AND EXISTS (SELECT 1 FROM submissions su WHERE su.slug = i.source_id AND su.status = 'accepted')))
         ORDER BY feed_priority DESC, i.occurred_at DESC, i.id DESC
         LIMIT @limit`).all({ origin, followed: JSON.stringify(followed), viewerSubject, hour,
+            exclude: Array.isArray(excludeSubjects) && excludeSubjects.length ? excludeSubjects : null,
             priority: before ? before[0] : null, at: before ? before[1] : null, id: before ? before[2] : null, limit: limit + 1 });
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();

@@ -35,7 +35,7 @@ function start({ clientSecret = 'shh' } = {}) {
         directory.users.push(user);
         return user;
     }
-    const projection = (u) => (u ? { subject: { type: 'user', id: u.subject_id }, network_user_id: u.network_user_id, username: u.username, display_name: u.display_name, avatar_url: u.avatar_url, banned: false } : null);
+    const projection = (u) => (u ? { subject: { type: 'user', id: u.subject_id }, network_user_id: u.network_user_id, username: u.username, display_name: u.display_name, avatar_url: u.avatar_url, banned: !!u.banned, is_test: !!u.is_test } : null);
 
     const server = http.createServer((req, res) => {
         const chunks = [];
@@ -90,6 +90,15 @@ function start({ clientSecret = 'shh' } = {}) {
                 catch { return json(401, { error: 'unauthorized' }); }
                 const found = lockerKeys[subject];
                 return found ? json(200, found) : json(404, { code: 'locker.no_keys', error: 'no keys' });
+            }
+            if (req.url === '/internal/identity/test-subjects' && req.method === 'GET') {
+                const auth = String(req.headers.authorization || '');
+                const v = serviceAuth.verifyServiceToken(auth.slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.network' });
+                if (!v.ok) return json(401, { code: v.code, error: v.reason });
+                if (!(v.claims.cap || []).includes('identity.subject.resolve')) return json(403, { code: 'capability.denied', error: 'not granted' });
+                resolveCalls.push({ test_subjects: true });
+                if (directory.down) return json(503, { error: 'down' });
+                return json(200, { subjects: directory.users.filter((u) => u.is_test).map(projection) });
             }
             if (req.url === '/internal/identity/resolve-batch' && req.method === 'POST') {
                 const auth = String(req.headers.authorization || '');

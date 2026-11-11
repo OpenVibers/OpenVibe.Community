@@ -32,7 +32,7 @@ const sqlFrom = (v, fallback) => {
 };
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 
-function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now = () => Date.now(), log = console } = {}) {
+function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now = () => Date.now(), log = console, testSubjects = null } = {}) {
     const todayApi = String(config.todayInternalUrl || config.todayUrl || 'https://openvibe.today').replace(/\/+$/, '');
     const todaySite = String(config.todayUrl || 'https://openvibe.today').replace(/\/+$/, '');
     const networkApi = String(config.networkInternalUrl || config.networkUrl || 'https://openvibe.network').replace(/\/+$/, '');
@@ -121,12 +121,15 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
             WHERE i.actor_subject IS NOT NULL AND i.origin = 'user' AND i.occurred_at >= ?
               AND (q.subject IS NULL OR q.checked_at < ?)
             ORDER BY i.actor_subject LIMIT 25`).all(since, checkedBefore);
+        // A test account never gets a quest-badge item; the identity list says which subjects are test accounts.
+        let excluded = new Set();
+        if (testSubjects) { try { excluded = new Set(await testSubjects()); } catch { /* the list is optional */ } }
         let n = 0;
         const MAX_CREATED = 25;
         for (const p of people) {
             if (n >= MAX_CREATED) break;
             const who = subject(p.subject);
-            if (!who) continue;
+            if (!who || excluded.has(who)) continue;
             try {
                 const res = await fetchImpl(`${questApi}/api/v1/profiles/${encodeURIComponent(who)}/badges`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
                 if (res.ok) {

@@ -154,7 +154,7 @@ async function createApp(opts = {}) {
     // Public activity without an Events topic (Today's calendar, Network's open stats, Quest badges): a due-based
     // job that fills Pulse, started by server/index.js and never called while a feed request is being answered.
     const pulseSources = require('./pulse/sources').createPulseSources({
-        db, config, fetchImpl: opts.sourcesFetch || opts.fetchImpl || globalThis.fetch, ...(opts.pulseSources || {}),
+        db, config, fetchImpl: opts.sourcesFetch || opts.fetchImpl || globalThis.fetch, testSubjects: () => pulse.testSubjectIds(), ...(opts.pulseSources || {}),
     });
     app.locals.pulseSources = pulseSources;
     const relay = opts.relay || createDiscordRelay({

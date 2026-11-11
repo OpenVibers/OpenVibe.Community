@@ -70,7 +70,28 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
         await store.upsertProjection(db, {
             subject_id: p.subject.id, username: p.username || null, display_name: p.display_name || p.username || null,
             avatar_url: absAvatar(p.avatar_url), profile_color: p.profile_color || null,
+            is_test: p.is_test ? 1 : 0,
         });
+    }
+
+    /**
+     * Every account the Network marks is_test (identity.subject.resolve, GET /internal/identity/test-subjects).
+     * Remembered in the projection cache with the flag, so Pulse can leave their activity out at read time.
+     */
+    async function testSubjects(retried = false) {
+        const res = await fetchImpl(`${base}/internal/identity/test-subjects`, {
+            headers: { Accept: 'application/json', ...(await tokens.authHeaders()) },
+            signal: AbortSignal.timeout(8000),
+        });
+        if (res.status === 401 && !retried) { tokens.invalidate(); return await testSubjects(true); }
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !Array.isArray(data.subjects)) {
+            const err = new Error(`test-subjects ${res.status}: ${(data && (data.detail || data.error)) || 'bad response'}`);
+            err.status = res.status;
+            throw err;
+        }
+        for (const p of data.subjects) await remember(p);
+        return data.subjects;
     }
 
     /** Subject ids → projections (and cache them). */
@@ -158,7 +179,7 @@ function createNetworkIdentity({ config, db, fetchImpl = globalThis.fetch } = {}
         return map;
     }
 
-    return { resolveSubjects, resolveLegacy, subjectForUsername, rememberClaims, projections, tokens };
+    return { resolveSubjects, resolveLegacy, subjectForUsername, rememberClaims, projections, testSubjects, tokens };
 }
 
 module.exports = { createNetworkIdentity, PROJECTION_TTL_MS };
