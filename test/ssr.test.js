@@ -81,8 +81,9 @@ const { boot, check, done } = require('./helpers/app');
         const faq = [...r.text.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].flatMap((m) => [].concat(JSON.parse(m[1]))).find((x) => x['@type'] === 'FAQPage');
         const shown = [...r.text.matchAll(/<span class="cm-faq-q">([^<]*)<\/span>/g)].map((m) => m[1].replace(/&#39;/g, "'"));
         assert.deepStrictEqual(faq.mainEntity.map((q) => q.name), shown, 'every question in the FAQPage is on the page');
-        // Verbiage: never "free"/"no cost".
-        assert.ok(!/\bfree\b(?! speech)/i.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'no "free" claims outside "free speech"');
+        // Verbiage: never "free"/"no cost". The shared footer's "Free tools" group and the phrase "free speech" are
+        // not pricing claims, so they are the only "free" the page may use.
+        assert.ok(!/\bfree\b(?!\s+(?:speech|tools))/i.test(r.text.replace(/<script[\s\S]*?<\/script>/g, '')), 'no "free" claims outside "free speech" and the shared "Free tools" group');
     });
 
     await check('the home head comes whole from openvibe-shared/shell plus this site\'s extras', async () => {
