@@ -480,7 +480,7 @@ async function createApp(opts = {}) {
                 (SELECT COUNT(*) FROM pulse_items) AS pulse`).get(), {}),
         ]);
         const value = {
-            spaces: spaces.filter((sp) => sp.slug !== 'roadmap' && !sp.members_only_owner),
+            spaces: spaces.filter((sp) => sp.slug !== 'roadmap' && sp.group_slug !== 'openvibe-items' && !sp.members_only_owner),
             roadmap, activity,
             counts: {
                 pastes: Number(counts.pastes) || 0, pulse: Number(counts.pulse) || 0,
