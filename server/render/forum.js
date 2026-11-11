@@ -360,7 +360,7 @@ function newThreadPage({ space, user, values = {}, error = null, categories = []
   ${labelsUi.picker({ current: values.labels || [], id: 'new-labels' })}
   <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">
-    <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
+    <button class="btn btn-primary" type="submit" data-ov-guide="community.thread"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
     <span class="muted small">Posting as <strong>${esc(user.display_name || user.username || 'you')}</strong>. By posting you agree to the <a href="/terms">rules</a>.</span>
   </div>
 </form>` : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/forum/${space.slug}/new`)}">Sign in with your OpenVibe account</a> to start a thread. Reading needs no account.</p>`;

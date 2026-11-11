@@ -73,6 +73,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
 
         const page = await t.get(target, as(alexJwt));
         assert.strictEqual(page.status, 200);
+        has(page.text, 'data-ov-guide="community.thread"', 'the signed-in thread form has the guide target');
         has(page.text, `value="${esc(title)}"`, 'the title is escaped in the form value');
         has(page.text, `>${esc(body)}</textarea>`, 'the body is escaped in the textarea');
         assert.ok(!page.text.includes('<script>alert("title")</script>') && !page.text.includes('<script>alert("body")</script>'), 'no raw draft HTML');
