@@ -448,17 +448,19 @@ async function getProjections(db, subjectIds) {
 /** Upsert what we were told about a subject. Fields left undefined keep their stored value. */
 async function upsertProjection(db, p) {
     if (!p || !p.subject_id) return;
-    await db.prepare(`INSERT INTO subject_projection (subject_id, username, display_name, avatar_url, profile_color, refreshed_at)
-                VALUES (@subject_id, @username, @display_name, @avatar_url, @profile_color, ov_now())
+    await db.prepare(`INSERT INTO subject_projection (subject_id, username, display_name, avatar_url, profile_color, is_test, refreshed_at)
+                VALUES (@subject_id, @username, @display_name, @avatar_url, @profile_color, @is_test, ov_now())
                 ON CONFLICT(subject_id) DO UPDATE SET
                     username = COALESCE(excluded.username, subject_projection.username),
                     display_name = COALESCE(excluded.display_name, subject_projection.display_name),
                     avatar_url = COALESCE(excluded.avatar_url, subject_projection.avatar_url),
                     profile_color = COALESCE(excluded.profile_color, subject_projection.profile_color),
+                    is_test = GREATEST(subject_projection.is_test, excluded.is_test),
                     refreshed_at = ov_now()`)
         .run({
             subject_id: p.subject_id, username: p.username ?? null, display_name: p.display_name ?? null,
             avatar_url: p.avatar_url ?? null, profile_color: p.profile_color ?? null,
+            is_test: p.is_test ? 1 : 0,
         });
 }
 

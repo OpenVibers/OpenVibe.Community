@@ -32,6 +32,21 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
     const authors = createAuthors({ db, network });
     const base = (config.baseUrl || '').replace(/\/$/, '');
     let originsCache = { at: 0, list: null };
+    // The probe and test accounts, from the identity authority (GET /internal/identity/test-subjects). Cached a
+    // little; the projection cache also carries the flag, and list() filters on both so a new probe cannot stay.
+    let testCache = { at: 0, ids: [] };
+    async function testSubjectIds() {
+        if (testCache.at && Date.now() - testCache.at < 10 * 60_000) return testCache.ids;
+        if (!network || typeof network.testSubjects !== 'function') { testCache = { at: Date.now(), ids: [] }; return testCache.ids; }
+        try {
+            const list = await network.testSubjects();
+            testCache = { at: Date.now(), ids: list.map((p) => p && p.subject && p.subject.id).filter(Boolean) };
+        } catch (err) {
+            console.warn('[Pulse] test-account list failed:', err.message);
+            testCache = { at: Date.now(), ids: testCache.ids };
+        }
+        return testCache.ids;
+    }
     const followsCache = new Map();
     const appWrites = new Map();
 
@@ -112,6 +127,9 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             await recordLocal('status', thread.id, { title: text.slice(0, 300), path: `/forum/status/${thread.slug}`,
                 actor, origin: 'user', at: thread.created_at, text, pictureUrl });
         },
+
+        /** The test-account subject ids, so the Pulse sources skip them too. */
+        testSubjectIds,
 
         // ── hooks for Community's own writes ─────────────────
         async pasteCreated(p) {
@@ -256,10 +274,16 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             }
             const followed = viewer && viewer.kind === 'user' && viewer.token ? await followedSubjects(viewer) : [];
             const hour = mine ? (before ? before[0] : sqlTime(Date.now() - 60 * 60_000)) : null;
-            const { rows, hasMore } = await store.listItems(db, { origin, before: before && (mine ? before.slice(1) : [0, ...before]), limit, followed, viewerSubject: viewer && viewer.kind === 'user' ? viewer.subject : null, hour });
+            const excluded = await testSubjectIds();
+            const { rows, hasMore } = await store.listItems(db, { origin, before: before && (mine ? before.slice(1) : [0, ...before]), limit, followed, viewerSubject: viewer && viewer.kind === 'user' ? viewer.subject : null, hour, excludeSubjects: excluded });
             const projections = await authors.projectionsFor(rows.map((r) => r.actor_subject));
+            // The projection is authority too: a test account resolved now is left out even if the cached list was
+            // fetched before it existed (the list refreshes on a timer).
+            const meSubject = viewer && viewer.kind === 'user' ? viewer.subject : null;
+            const visible = rows.filter((r) => !(r.actor_subject && r.actor_subject !== meSubject
+                && projections.get(r.actor_subject) && projections.get(r.actor_subject).is_test));
             const last = rows[rows.length - 1];
-            return { items: rows.map((r) => shape(r, projections)), next_cursor: hasMore && last
+            return { items: visible.map((r) => shape(r, projections)), next_cursor: hasMore && last
                 ? encodeCursor(mine ? [hour, last.feed_priority, last.occurred_at, last.id] : [last.occurred_at, last.id]) : null,
                 // What this reader may do here: the menu's Feed shows its composer only when this says so (openvibe-shared
                 // ov-home.js), so it never offers a post the status route would refuse.

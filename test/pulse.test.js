@@ -217,6 +217,21 @@ const { boot, check, done } = require('./helpers/app');
         }
     });
 
+    await check('a test account (Network is_test) never reaches the public Pulse or feed', async () => {
+        const probe = net.addUser({ network_user_id: 30, username: 'ovprobe_merge_keep', display_name: 'ovprobe_merge_keep', is_test: true });
+        const asProbe = { kind: 'user', subject: probe.subject_id, staff: false, origin: 'user' };
+        const slug = (await pastes.createText(asProbe, { title: 'Probe paste', content: 'probe' })).slug;
+        assert.ok(await bySource('paste', slug), 'the activity is recorded, so this is a read-time filter and not a lost write');
+        for (const path of ['/api/v1/pulse?limit=100', '/api/v1/feed?limit=100']) {
+            const body = (await t.get(path)).text;
+            assert.ok(!body.includes('ovprobe_merge_keep'), `${path} leaves the test account out`);
+            assert.ok(!body.includes('Probe paste'), `${path} leaves its item out`);
+        }
+        // A test account's own signed-in read still works: the filter is for public surfaces, not for the account itself.
+        const own = (await t.get('/api/v1/pulse?for=me&limit=100', { cookies: [`ov_token=${net.sign({ id: 30, subject_id: probe.subject_id, username: 'ovprobe_merge_keep', role: 'user' })}`] })).json();
+        assert.ok(own.items.some((i) => i.title === 'Probe paste'), 'the probe can still read its own activity as itself');
+    });
+
     await t.close();
     done();
 })();
