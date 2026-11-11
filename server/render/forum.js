@@ -449,7 +449,7 @@ function moderationLogPage({ space, entries }) {
 </header>
 ${entries.length ? `<table class="board-table mod-log"><caption class="sr-only">Moderation actions in ${esc(space.name)}</caption>
   <thead><tr><th scope="col">When</th><th scope="col">What</th><th scope="col">Action</th><th scope="col">Rule</th><th scope="col">Reason</th><th scope="col">By</th></tr></thead>
-  <tbody>${rows}</tbody></table>` : '<p class="empty">No moderation actions in this forum yet.</p>'}
+  <tbody>${rows}</tbody></table>` : kit.empty({ icon: 'shield', title: 'No moderation actions yet', text: 'Nothing has been moderated in this forum yet.' })}
 <footer class="space-foot"><a class="small" href="/forum/${esc(space.slug)}">Back to ${esc(space.name)}</a>${space.visibility === 'public' && !space.members_only ? `<span class="sep"> · </span><a class="small" href="/forum/${esc(space.slug)}/feed.xml">RSS</a>` : ''}</footer>`;
     return renderPage({
         title: `Moderation log · ${space.name}`,
@@ -459,6 +459,7 @@ ${entries.length ? `<table class="board-table mod-log"><caption class="sr-only">
         active: 'spaces',
         footerVariant: 'compact',
         pageCss: ['modlog.css'],
+        styles: ['kit.css'],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }, { name: space.name, url: `/forum/${space.slug}` }, { name: 'Moderation log', url: `/forum/${space.slug}/log` }])],
         body,
     });

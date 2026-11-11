@@ -135,8 +135,11 @@ function pasteCard(p, { eager = false } = {}) {
   </div>
 </article>`;
 }
-function cardGrid(pastes, empty = 'Nothing here yet.') {
-    if (!pastes || !pastes.length) return `<p class="empty">${esc(empty)}</p>`;
+function cardGrid(pastes, empty = null) {
+    if (!pastes || !pastes.length) {
+        const e = empty || { title: 'Nothing here yet', text: 'No pastes here yet.' };
+        return kit.empty({ icon: e.icon || 'grid', title: e.title, text: e.text, action: e.action || null });
+    }
     // The first picture in the grid is the one above the fold: it loads at high priority, the rest stay lazy.
     const firstShot = pastes.findIndex((p) => p.type === 'screenshot' && p.screenshot_url && !p.locked);
     return `<div class="grid">${pastes.map((p, i) => pasteCard(p, { eager: i === firstShot })).join('\n')}</div>`;
@@ -414,7 +417,7 @@ function browsePage(result, languages) {
   ${(q || lang || sort !== 'new' || from !== 'people') ? `<a class="btn btn-ghost" href="/pastes">Clear</a>` : ''}
 </form>
 <section id="results" data-results>
-  ${cardGrid(pastes, q ? 'No pastes match that search.' : 'No pastes yet.')}
+  ${cardGrid(pastes, q ? { title: 'No matches', text: 'No pastes match that search.', action: { href: '/pastes', label: 'See all pastes', icon: 'grid' } } : { title: 'No pastes yet', text: 'No paste has been shared here yet.', action: { href: '/new', label: 'Make a paste', icon: 'plus' } })}
   ${pager}
 </section>`;
     return renderPage({
@@ -424,6 +427,7 @@ function browsePage(result, languages) {
         agentLayer: true,   // the public page has a Markdown twin (server/agent-pages.js)
         robots: q ? 'noindex,follow' : 'index,follow',
         active: 'pastes',
+        styles: ['kit.css'],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }])],
         body,
     });
@@ -555,7 +559,7 @@ ${p.burn_after_read ? '' : `<section class="section">
 </section>`}
 ${!locked && related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
-  ${cardGrid(related)}
+  ${cardGrid(related, { title: 'No related pastes yet', text: 'Related pastes appear here when this one is linked with others.' })}
 </section>` : ''}
 <script src="${ovServe.url('ov-share.js')}" defer></script>${locked ? `
 <script>window.OpenVibeLockerConfig = { network: ${JSON.stringify(config.networkUrl)} };</script>
@@ -753,11 +757,11 @@ function myPage({ user, pastes, total, error }) {
     const body = `
 <header class="page-head">
   <h1>My pastes</h1>
-  <p class="muted">${esc(user.display_name || user.username)} · ${num(total || (pastes || []).length)} ${total === 1 ? 'paste' : 'pastes'} · <a href="/new">new paste</a> · <a href="${NETWORK_URL}/my" rel="noopener">account</a></p>
+  <p class="muted">${esc(user.display_name || user.username)} · ${num(total || (pastes || []).length)} ${total === 1 ? 'paste' : 'pastes'} · ${kit.button({ href: '/new', label: 'New paste', icon: 'plus', kind: 'quiet', small: true })} · <a href="${NETWORK_URL}/my" rel="noopener">account</a></p>
 </header>
 ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
 <section data-results>
-  ${cardGrid(pastes, 'You have not posted anything yet. Your public, unlisted and private pastes all show up here.')}
+  ${cardGrid(pastes, { title: 'No pastes yet', text: 'You have not posted anything yet. Your public, unlisted and private pastes all show up here.', action: { href: '/new', label: 'Make a paste', icon: 'plus' } })}
 </section>`;
     return renderPage({
         title: 'My pastes',
@@ -766,6 +770,7 @@ ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
         robots: 'noindex,nofollow',
         active: 'my',
         footerVariant: 'compact',
+        styles: ['kit.css'],
         body,
     });
 }

@@ -11,6 +11,7 @@ const { escapeHtml: esc } = require('./highlight');
 const { renderMarkdown, markdownToText } = require('./markdown');
 const { timeTag } = require('./pages');
 const { who } = require('./forum');
+const kit = require('openvibe-shared/kit');
 
 const KIND_LABELS = { clip: 'Clip', art: 'Art', idea: 'Idea', report: 'Report' };
 const STATUS_LABELS = { pending: 'Pending review', accepted: 'Accepted', rejected: 'Not accepted', withdrawn: 'Withdrawn' };
@@ -37,8 +38,8 @@ function itemHtml(s) {
   </li>`;
 }
 
-function listBlock(items, { empty, prev, next }) {
-    return `${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : `<p class="empty">${esc(empty)}</p>`}
+function listBlock(items, { empty, action = null, prev, next }) {
+    return `${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : kit.empty({ icon: 'mail', title: empty.title, text: empty.text, action })}
   ${prev || next ? `<nav class="pager" aria-label="Pages">${prev ? `<a href="${esc(prev)}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newest</a>` : '<span></span>'}<span></span>${next ? `<a rel="next" href="${esc(next)}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}`;
 }
 
@@ -72,7 +73,11 @@ function submissionsPage({ items, kind = '', mine = false, after = null, nextCur
 </header>
 <nav class="tabs sort-tabs" aria-label="Filter by kind">${tabs}</nav>
 <section data-results>
-  ${listBlock(items, { empty: mine ? 'You have not submitted anything yet.' : 'Nothing accepted yet.', prev: after ? listHref({ kind, mine }) : null, next: nextCursor ? listHref({ kind, mine, after: nextCursor }) : null })}
+  ${listBlock(items, {
+      empty: mine ? { title: 'No submissions yet', text: 'You have not submitted anything yet.' } : { title: 'Nothing accepted yet', text: 'No submission has been accepted here yet.' },
+      action: user ? { href: '#submit', label: 'Submit something', icon: 'plus' } : { href: '/auth/login?next=%2Fsubmissions', label: 'Sign in to submit', icon: 'plus' },
+      prev: after ? listHref({ kind, mine }) : null, next: nextCursor ? listHref({ kind, mine, after: nextCursor }) : null,
+  })}
 </section>
 ${submitForm({ user, values, error })}`;
     return renderPage({
@@ -81,6 +86,7 @@ ${submitForm({ user, values, error })}`;
         canonicalPath: listHref({ kind, after }),
         robots: mine || after ? 'noindex,follow' : 'index,follow',
         active: 'submissions',
+        styles: ['kit.css'],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Submissions', url: '/submissions' }])],
         body,
     });
@@ -141,9 +147,9 @@ function reviewQueuePage({ items, after = null, nextCursor = null }) {
   <p class="muted">Submissions waiting for a decision, newest first. Open one to accept or reject it.</p>
 </header>
 <section data-results>
-  ${listBlock(items, { empty: 'Nothing is waiting for review.', prev: after ? '/submissions/review' : null, next: nextCursor ? listHref({ after: nextCursor }, '/submissions/review') : null })}
+  ${listBlock(items, { empty: { title: 'Nothing to review', text: 'Nothing is waiting for review.' }, action: { href: '/submissions', label: 'See submissions', icon: 'grid' }, prev: after ? '/submissions/review' : null, next: nextCursor ? listHref({ after: nextCursor }, '/submissions/review') : null })}
 </section>`;
-    return renderPage({ title: 'Review queue', description: 'Submissions waiting for review.', canonicalPath: '/submissions/review', robots: 'noindex,nofollow', active: 'submissions', footerVariant: 'compact', body });
+    return renderPage({ title: 'Review queue', description: 'Submissions waiting for review.', canonicalPath: '/submissions/review', robots: 'noindex,nofollow', active: 'submissions', footerVariant: 'compact', styles: ['kit.css'], body });
 }
 
 module.exports = { submissionsPage, submissionPage, reviewQueuePage, KIND_LABELS, STATUS_LABELS };
