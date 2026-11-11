@@ -85,6 +85,7 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             title: i.title,
             url: i.url,
             origin: i.origin,
+            ...(i.visibility === 'followers' ? { visibility: 'followers' } : {}),
             label: ai ? 'AI' : (i.origin === 'system' ? 'System' : null),
             ...(i.source_service.startsWith('app:') ? { via: `via ${i.app_name || i.source_service.slice(4)}` } : {}),
             ...(i.picture_url ? { picture_url: i.picture_url } : {}),
@@ -153,7 +154,7 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             if (!ref || typeof ref !== 'object' || !contracts.validate('common.entity-ref@1', ref).valid) fail(400, 'ref.invalid', 'ref must be an EntityRef {service, type, id}');
             const own = serviceNameOf(v.service);
             if (ref.service !== own) fail(403, 'pulse.foreign_ref', `A service publishes Pulse items about its own entities (${own}), not ${ref.service}'s`);
-            if (body.visibility != null && body.visibility !== 'public') fail(400, 'pulse.not_public', 'Only public activity enters Pulse');
+            if (body.visibility != null && !['public', 'followers'].includes(body.visibility)) fail(400, 'pulse.not_public', 'Only public or followers activity enters Pulse');
             const title = String(body.title == null ? '' : body.title).replace(/\s+/g, ' ').trim();
             if (!title || title.length > 300) fail(400, 'pulse.invalid_title', 'title is required (at most 300 characters)');
             const url = String(body.url || '');
@@ -163,6 +164,7 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             let origin = body.origin == null ? v.origin : body.origin;
             if (!ORIGINS.includes(origin)) fail(400, 'pulse.invalid_origin', `origin must be one of ${ORIGINS.join(', ')}`);
             if (v.origin === 'ai') origin = 'ai'; // X-OV-Origin: ai wins over a body that says otherwise
+            if (body.visibility === 'followers' && (origin !== 'user' || !v.subject)) fail(400, 'pulse.followers_subject_required', 'Followers activity needs the person who shared it');
             const when = body.occurred_at == null ? new Date() : new Date(body.occurred_at);
             if (Number.isNaN(when.getTime()) || when.getTime() > Date.now() + FUTURE_SKEW_MS || when.getUTCFullYear() < 2000) fail(400, 'pulse.invalid_time', 'occurred_at must be an ISO time, not in the future');
             const media = body.media && typeof body.media === 'object' && !Array.isArray(body.media) ? body.media : {};
@@ -179,7 +181,7 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
                 source_service: ref.service, source_type: ref.type, source_id: ref.id,
                 title, url: parsed.toString(),
                 actor_subject: origin === 'user' ? (v.subject || null) : null,
-                origin, occurred_at: sqlTime(when), picture_url: thumb, preview_url: preview, media_ratio: ratio, media_length: length,
+                origin, visibility: body.visibility || 'public', occurred_at: sqlTime(when), picture_url: thumb, preview_url: preview, media_ratio: ratio, media_length: length,
             });
             const projections = await authors.projectionsFor([out.item.actor_subject]);
             return { item: shape(out.item, projections), created: out.created };
@@ -252,9 +254,9 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
                 || ![0, 1].includes(before[1]) || typeof before[2] !== 'string' || !Number.isSafeInteger(before[3]))) {
                 fail(400, 'request.invalid_cursor', 'That cursor is not one this API issued');
             }
-            const followed = mine ? await followedSubjects(viewer) : [];
+            const followed = viewer && viewer.kind === 'user' && viewer.token ? await followedSubjects(viewer) : [];
             const hour = mine ? (before ? before[0] : sqlTime(Date.now() - 60 * 60_000)) : null;
-            const { rows, hasMore } = await store.listItems(db, { origin, before: before && (mine ? before.slice(1) : [0, ...before]), limit, followed, hour });
+            const { rows, hasMore } = await store.listItems(db, { origin, before: before && (mine ? before.slice(1) : [0, ...before]), limit, followed, viewerSubject: viewer && viewer.kind === 'user' ? viewer.subject : null, hour });
             const projections = await authors.projectionsFor(rows.map((r) => r.actor_subject));
             const last = rows[rows.length - 1];
             return { items: rows.map((r) => shape(r, projections)), next_cursor: hasMore && last

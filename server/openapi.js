@@ -374,7 +374,7 @@ route('post', '/api/v1/pulse/items', {
     } }, { type: 'object', required: ['ref', 'title', 'url'], properties: {
         ref: { type: 'object', required: ['service', 'type', 'id'], properties: { service: str(), type: str(), id: str() } },
         title: str(), url: str({ format: 'uri' }), origin: { type: 'string', enum: ['user', 'ai', 'system'] },
-        occurred_at: str({ format: 'date-time' }), visibility: { type: 'string', enum: ['public'] },
+        occurred_at: str({ format: 'date-time' }), visibility: { type: 'string', enum: ['public', 'followers'] },
     } }] }),
     responses: { 200: json('Already there', { type: 'object', properties: { item: ref('PulseItem'), created: { const: false } } }),
         201: json('Created', { type: 'object', properties: { item: ref('PulseItem'), created: { const: true } } }), ...errors() },
@@ -396,7 +396,7 @@ route('get', '/api/v1/feed', {
     responses: { 200: json('Cards and the next cursor', { type: 'object', required: ['items', 'next_cursor'], properties: {
         items: arrayOf({ type: 'object', required: ['id', 'kind', 'url', 'title', 'text', 'site', 'site_name', 'counts'], properties: {
             id: str(), kind: str(), url: str(), title: str({ maxLength: 300 }), text: str({ maxLength: 280 }), at: nullable('string', { format: 'date-time' }),
-            site: str(), site_name: str(), media: nullable('object'), counts: { type: 'object' }, starts_at: str({ format: 'date-time' }), group: { type: 'object' },
+            site: str(), site_name: str(), media: nullable('object'), counts: { type: 'object' }, starts_at: str({ format: 'date-time' }), group: { type: 'object' }, visibility: { type: 'string', enum: ['followers'] },
             actor: nullable('object', { properties: { name: nullable('string'), avatar: nullable('string') } }) } }),
         next_cursor: nullable('string') } }), ...errors([400, 401, 429]) },
 });

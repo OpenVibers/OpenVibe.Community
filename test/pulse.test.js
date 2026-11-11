@@ -198,6 +198,25 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(relative.includes('/data/avatars/alex.png"') && !relative.includes('/data/avatars/alex.png?w='), 'a non-Media avatar is used unchanged');
     });
 
+    await check('followers-only items reach the author and followers, never anonymous readers or strangers', async () => {
+        const sam = net.addUser({ network_user_id: 19, username: 'sam', display_name: 'Sam' });
+        const lee = net.addUser({ network_user_id: 20, username: 'lee', display_name: 'Lee' });
+        const samJwt = net.sign({ id: 19, subject_id: sam.subject_id, username: 'sam', display_name: 'Sam', role: 'user' });
+        const leeJwt = net.sign({ id: 20, subject_id: lee.subject_id, username: 'lee', display_name: 'Lee', role: 'user' });
+        net.addFollow(sam.subject_id, 'channel', alex.subject_id);
+        const body = { ref: { service: 'live', type: 'post', id: 'followers-clip' }, title: 'For followers',
+            url: 'https://openvibe.live/clip/followers-clip', visibility: 'followers' };
+        assert.strictEqual((await call('/api/v1/pulse/items', { method: 'POST', token: svc([PULSE]), json: body })).json().code, 'pulse.followers_subject_required');
+        assert.strictEqual((await call('/api/v1/pulse/items', { method: 'POST', token: svc([PULSE]), headers: { 'x-ov-subject': alex.subject_id }, json: body })).status, 201);
+        const titles = async (path, cookie) => (await t.get(path, cookie ? { cookies: [`ov_token=${cookie}`] } : {})).json().items.map((x) => x.title);
+        for (const path of ['/api/v1/pulse', '/api/v1/feed']) {
+            assert.ok(!(await titles(path)).includes('For followers'));
+            assert.ok(!(await titles(path, leeJwt)).includes('For followers'));
+            assert.ok((await titles(path, samJwt)).includes('For followers'));
+            assert.ok((await titles(path, alexJwt)).includes('For followers'));
+        }
+    });
+
     await t.close();
     done();
 })();
