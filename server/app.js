@@ -801,13 +801,15 @@ async function createApp(opts = {}) {
     const feedLiveNow = feedTools.createLiveNow({ liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch });
     app.get('/feed', viewers.middleware({ services: false }), wrap(async (req, res) => {
         const kind = ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update'].includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
+        const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 80);
         const cursor = req.query.cursor ? String(req.query.cursor) : '';
         const live = await feedLiveNow();
         const items = [];
+        const seen = [];
         let after = cursor;
         let nextCursor = null;
         for (let pages = 0; pages < 8 && items.length < 12; pages++) {
-            const out = await pulse.list({ limit: 12, after: after || undefined });
+            const out = await pulse.list({ limit: 12, after: after || undefined }, req.viewer);
             const rows = out.items || [];
             for (let index = 0; index < rows.length; index++) {
                 const item = rows[index];
@@ -816,7 +818,8 @@ async function createApp(opts = {}) {
                     card.live_now = live.has(feedTools.channelOf(card.url).toLowerCase());
                     if (!card.live_now) card.kind = 'stream';
                 }
-                if (!kind || card.kind === kind) items.push(card);
+                seen.push(card);
+                if ((!kind || card.kind === kind) && feedTools.searchMatches(card, q)) items.push({ row: item, card });
                 if (items.length >= 12) {
                     nextCursor = index < rows.length - 1
                         ? v1.encodeCursor([v1.sqlTime(item.occurred_at), item.id])
@@ -828,7 +831,7 @@ async function createApp(opts = {}) {
             after = out.next_cursor;
             nextCursor = after;
         }
-        html(res, feedPage({ items, kind, cursor: cursor || null, nextCursor }));
+        html(res, feedPage({ items: feedTools.foldBursts(items), kind, q, examples: feedTools.searchExamples(seen), cursor: cursor || null, nextCursor }));
     }));
 
     app.get('/my', withUser, wrap(async (req, res) => {

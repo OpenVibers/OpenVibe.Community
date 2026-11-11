@@ -186,6 +186,32 @@ function createLiveNow({ liveUrl, fetchImpl }) {
 }
 const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvibe\.live$/.test(u.hostname) ? (/^\/@?([A-Za-z0-9_.-]{1,40})\/?$/.exec(u.pathname) || [])[1] || '' : ''; } catch { return ''; } };
 
+function searchMatches(item, query) {
+    const q = clean(query, 80).toLowerCase();
+    if (!q) return true;
+    const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'post', pastes: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
+    const kindWord = (q.match(/\b[a-z]+\b/g) || []).find((word) => aliases[word]);
+    const kind = kindWord && aliases[kindWord];
+    if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) return false;
+    const day = String(item.at || '').slice(0, 10);
+    if (/\btoday\b/.test(q) && day !== new Date().toISOString().slice(0, 10)) return false;
+    if (/\byesterday\b/.test(q) && day !== new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)) return false;
+    const date = /\b\d{4}-\d{2}-\d{2}\b/.exec(q);
+    if (date && day !== date[0]) return false;
+    const words = q.replace(/\b(clips?|videos?|recordings?|photos?|pics?|posts?|pastes?|streams?|live|games?|updates?|avatars?|banners?|sites?|spaces?|follows?|episodes?|from|today|yesterday|new)\b/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').trim();
+    return !words || [item.title, item.text, item.site, item.site_name, item.kind, item.actor && item.actor.name]
+        .some((v) => String(v || '').toLowerCase().includes(words));
+}
+
+function searchExamples(cards) {
+    const examples = [];
+    const add = (text, reason) => { if (!examples.some((x) => x.text === text)) examples.push({ text, reason }); };
+    for (const c of cards) if (c.actor && c.actor.name) add(c.actor.name, 'person');
+    for (const kind of [...new Set(cards.map((c) => c.kind))]) add(`new ${kind === 'pic' ? 'photos' : `${kind}s`}`, 'kind');
+    if (cards.some((c) => c.kind === 'clip' && String(c.at || '').slice(0, 10) === new Date().toISOString().slice(0, 10))) add('clips from today', 'date and kind');
+    return examples.slice(0, 8);
+}
+
 function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openvibe.network', liveUrl = 'https://openvibe.live', fetchImpl = globalThis.fetch }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
@@ -262,14 +288,6 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     router.get('/search', run(async (req) => {
         const q = clean(req.query.q, 80).toLowerCase();
         if (!q) fail(400, 'feed.search_required', 'Enter a search term');
-        const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'post', pastes: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
-        const terms = q.match(/\b[a-z]+\b/g) || [];
-        const kindWord = terms.find((word) => aliases[word]);
-        const kind = kindWord && aliases[kindWord];
-        const today = /\btoday\b/.test(q);
-        const yesterday = /\byesterday\b/.test(q);
-        const date = /\b\d{4}-\d{2}-\d{2}\b/.exec(q);
-        const words = q.replace(/\b(clips?|videos?|recordings?|photos?|pics?|posts?|pastes?|streams?|live|games?|updates?|avatars?|banners?|sites?|spaces?|follows?|episodes?|from|today|yesterday|new)\b/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').trim();
         const live = await liveNow();
         const matched = [];
         let cursor = clean(req.query.cursor, 500), next = null;
@@ -281,13 +299,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
             for (let index = 0; index < rows.length; index++) {
                 const item = card(rows[index]);
                 mark([item], live);
-                if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) continue;
-                const day = String(item.at || '').slice(0, 10);
-                if (today && day !== new Date().toISOString().slice(0, 10)) continue;
-                if (yesterday && day !== new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)) continue;
-                if (date && day !== date[0]) continue;
-                if (words && ![item.title, item.text, item.site, item.site_name, item.kind, item.actor && item.actor.name]
-                    .some((v) => String(v || '').toLowerCase().includes(words))) continue;
+                if (!searchMatches(item, q)) continue;
                 matched.push({ row: rows[index], card: item });
                 if (matched.length >= limit) {
                     if (index < rows.length - 1) next = encodeCursor([sqlTime(rows[index].occurred_at), rows[index].id]);
@@ -302,19 +314,10 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     router.get('/examples', run(async (req) => {
         const page = await pulse.list({ limit: 100 }, req.viewer);
         const cards = (page.items || []).map(card);
-        const examples = [];
-        const add = (text, reason) => { if (!examples.some((x) => x.text === text)) examples.push({ text, reason }); };
-        const actors = new Map();
-        for (const c of cards) {
-            if (c.actor && c.actor.name) actors.set(c.actor.name, (actors.get(c.actor.name) || 0) + 1);
-        }
-        for (const [name] of actors) add(name, 'person');
-        for (const kind of [...new Set(cards.map((c) => c.kind))]) add(`new ${kind === 'pic' ? 'photos' : `${kind}s`}`, 'kind');
-        if (cards.some((c) => c.kind === 'clip' && String(c.at || '').slice(0, 10) === new Date().toISOString().slice(0, 10))) add('clips from today', 'date and kind');
-        return { examples: examples.slice(0, 8) };
+        return { examples: searchExamples(cards) };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, searchMatches, searchExamples, foldBursts };
