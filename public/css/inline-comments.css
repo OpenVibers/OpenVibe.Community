@@ -7,5 +7,9 @@
 .ovc-replies { margin-left: 24px; }
 .ovc-actions form { display: inline; }
 .ovc-attach { display: inline-block; margin: 4px 8px 4px 0; }
+.ovc-attach--file { border: 1px solid currentColor; border-radius: 999px; padding: 4px 12px; }
 .ovc-attach img { max-width: 120px; max-height: 90px; object-fit: cover; }
-.ovc-order .is-active { font-weight: 700; }
+.ovc-order { display: inline-flex; gap: 0; border: 1px solid currentColor; border-radius: 8px; overflow: hidden; }
+.ovc-order a { border: 0; border-radius: 0; }
+.ovc-order a + a { border-left: 1px solid currentColor; }
+.ovc-order .is-active { font-weight: 700; background: color-mix(in srgb, currentColor 12%, transparent); }

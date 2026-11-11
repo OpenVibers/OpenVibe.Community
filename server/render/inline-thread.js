@@ -44,7 +44,7 @@ function renderThread({ answer, base, post, remove, signedIn, attachmentsAllowed
         if (!MEDIA_ID.test(String(a.id || ''))) return '';
         const url = `https://openvibe.media/o/${a.id}`;
         const title = esc(a.name || 'Attached file');
-        return `<a class="ovc-attach" href="${url}" target="_blank" rel="noopener noreferrer">${String(a.media_type || '').startsWith('image/')
+        return `<a class="ovc-attach${String(a.media_type || '').startsWith('image/') ? ' ovc-attach--image' : ' ovc-attach--file'}" href="${url}" target="_blank" rel="noopener noreferrer">${String(a.media_type || '').startsWith('image/')
             ? `<img src="${url}" alt="${title}" loading="lazy" width="120">` : title}</a>`;
     }).join('');
     const comment = (c, root = null) => {
