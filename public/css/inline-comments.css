@@ -1,15 +1,23 @@
+/* The inline thread on a paste page (the same look as Video and Pics): a quiet head (the title, then Top and Newest only when
+   there is something to order), the composer or one sign-in line, the comments, and a small link to the discussion. */
 .ovc-thread { margin: 24px 0; }
-.ovc-head, .ovc-order, .ovc-comment header, .ovc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ovc-head { justify-content: space-between; }
+.ovc-head, .ovc-comment header, .ovc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ovc-head { justify-content: space-between; min-height: 40px; margin-bottom: 8px; }
+.ovc-head h2 { margin: 0; font-size: 1.125rem; }
+.ovc-signin, .ovc-none { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 0; }
+.ovc-none { margin-top: 12px; opacity: .75; }
 .ovc-comment { padding: 12px 0; border-bottom: 1px solid var(--border, #5555); }
 .ovc-comment header img { border-radius: 50%; object-fit: cover; }
-.ovc-comment time, .ovc-community { font-size: .875em; opacity: .8; }
+.ovc-comment time { font-size: .875em; opacity: .8; }
 .ovc-replies { margin-left: 24px; }
 .ovc-actions form { display: inline; }
 .ovc-attach { display: inline-block; margin: 4px 8px 4px 0; }
 .ovc-attach--file { border: 1px solid currentColor; border-radius: 999px; padding: 4px 12px; }
 .ovc-attach img { max-width: 120px; max-height: 90px; object-fit: cover; }
-.ovc-order { display: inline-flex; gap: 0; border: 1px solid currentColor; border-radius: 8px; overflow: hidden; }
-.ovc-order a { border: 0; border-radius: 0; }
-.ovc-order a + a { border-left: 1px solid currentColor; }
-.ovc-order .is-active { font-weight: 700; background: color-mix(in srgb, currentColor 12%, transparent); }
+.ovc-order { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: color-mix(in srgb, currentColor 8%, transparent); }
+.ovc-order a { min-height: 36px; padding: 4px 14px; border: 0; border-radius: 999px; font-size: .875rem; }
+.ovc-order .is-active { font-weight: 700; background: color-mix(in srgb, currentColor 16%, transparent); }
+.ovc-community { margin: 12px 0 0; font-size: .875em; }
+.ovc-community a { color: inherit; opacity: .8; text-decoration: none; }
+.ovc-community a::after { content: ' \2192'; }
+.ovc-community a:hover, .ovc-community a:focus-visible { opacity: 1; text-decoration: underline; }
