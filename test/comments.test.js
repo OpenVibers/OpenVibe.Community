@@ -442,6 +442,16 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(byBrowser.status, 201, 'people with the access id may comment');
     });
 
+    await check('MediaHub upload threads require service resolve and a signed-in commenter', async () => {
+        const ref = { service: 'media-hub', type: 'video', id: 'vup_01JAB2C3D4E5F6G7H8J9K0MNPQ' };
+        assert.strictEqual((await callL('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref } })).status, 403);
+        const opened = await callL('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref }, token: svc([WRITE]) });
+        assert.strictEqual(opened.status, 201, opened.text);
+        const id = opened.json().thread.id;
+        assert.strictEqual((await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json: { message: 'drive-by' } })).status, 401);
+        assert.strictEqual((await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json: { message: 'hi' }, cookie: alexJwt })).status, 201);
+    });
+
     await check('Live stages a file for its VOD; the author claims it once and removal retires it', async () => {
         const ref = { service: 'live', type: 'vod', id: '7001' };
         const form = new FormData();

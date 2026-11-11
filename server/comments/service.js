@@ -65,6 +65,7 @@ const BROWSER_REF_TYPES = {
 /** Threads that take comments from people only — no anonymous comments (Live's rule for VODs and clips). */
 const SIGNED_IN_ONLY = {
     live: ['vod', 'clip'],
+    'media-hub': ['video'],
 };
 const VISIBILITIES = ['public', 'hidden', 'locked'];
 const MAX_MESSAGE = 5000;
