@@ -193,6 +193,39 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(r.json().code, 'feed.sign_in_required');
     });
 
+    await check('feed ranking puts live and fresh activity first, then uses engagement and follows', async () => {
+        net.addFollow(sam.subject_id, 'channel', alex.subject_id);
+        const rankPaste = async (actor, title, minutesAgo, stats = {}) => {
+            const { paste } = await t.app.locals.pastes.createText(actor, { title, content: title });
+            await db.prepare("UPDATE pulse_items SET occurred_at = ? WHERE source_service = 'community' AND source_type = 'paste' AND source_id = ?")
+                .run(at(minutesAgo), paste.slug);
+            await db.prepare('UPDATE pastes SET views = ?, likes = ? WHERE slug = ?')
+                .run(stats.views || 0, stats.likes || 0, paste.slug);
+        };
+        await rankPaste(asAlex, 'FreshRank recent', 10);
+        await rankPaste(asAlex, 'FreshRank older', 2 * 24 * 60);
+        await rankPaste(asAlex, 'EngagementRank low', 30);
+        await rankPaste(asAlex, 'EngagementRank high', 30, { views: 10000, likes: 100 });
+        await rankPaste(asAlex, 'FollowRank followed', 25);
+        await rankPaste({ ...asAlex, subject: sam.subject_id }, 'FollowRank plain', 25);
+        await rankPaste(asAlex, 'StaleRank recent', 4 * 60);
+        await rankPaste(asAlex, 'StaleRank old', 10 * 24 * 60, { views: 100000, likes: 1000 });
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at)
+            VALUES ('live', 'stream', 'rank-live', 'LiveRank current', 'https://openvibe.live/@alex', ?, 'user', 'public', ?),
+                   ('live', 'stream', 'rank-offline', 'LiveRank offline', 'https://openvibe.live/@offline', ?, 'user', 'public', ?)`)
+            .run(alex.subject_id, at(1), alex.subject_id, at(1));
+
+        const titles = async (q, options = {}) => (await t.get(`/api/v1/feed?q=${q}&limit=40`, options)).json().items.map((x) => x.title);
+        assert.deepStrictEqual(await titles('FreshRank'), ['FreshRank recent', 'FreshRank older']);
+        assert.deepStrictEqual(await titles('EngagementRank'), ['EngagementRank high', 'EngagementRank low']);
+        assert.deepStrictEqual(await titles('FollowRank', { cookies: [`ov_token=${samJwt}`] }), ['FollowRank followed', 'FollowRank plain']);
+        assert.deepStrictEqual(await titles('StaleRank'), ['StaleRank recent', 'StaleRank old']);
+        const live = await t.get('/api/v1/feed?q=LiveRank&limit=40');
+        assert.deepStrictEqual(live.json().items.map((x) => [x.title, x.kind, x.live_now]), [
+            ['LiveRank current', 'live', true], ['LiveRank offline', 'stream', false],
+        ]);
+    });
+
     await check('cross-site: any OpenVibe site reads it from the browser (CORS, no credentials)', async () => {
         const r = await t.get('/api/v1/feed', { headers: { origin: 'https://openvibe.video' } });
         assert.strictEqual(r.status, 200);

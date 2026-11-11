@@ -203,6 +203,38 @@ const isCurrentLive = (card, live) => {
         || Math.abs(started - recorded) <= 10 * 60_000);
 };
 
+const DAY_MS = 24 * 60 * 60_000;
+const engagement = (card) => {
+    const counts = card.counts || {};
+    return Math.log1p(Math.max(0, Number(counts.likes) || 0)
+        + 2 * Math.max(0, Number(counts.comments) || 0)
+        + 0.2 * Math.max(0, Number(counts.views) || 0)) * 2;
+};
+
+/** Rank the current page's Pulse candidates: on-air first, then recent activity, engagement and followed creators. */
+function compareRankedCards(a, b, followedIds = new Set(), now = Date.now()) {
+    const liveOrder = Number(b.kind === 'live' && b.live_now === true) - Number(a.kind === 'live' && a.live_now === true);
+    if (liveOrder) return liveOrder;
+    const ageDays = (card) => {
+        const at = Date.parse(card.at || '');
+        return Number.isFinite(at) ? Math.max(0, (now - at) / DAY_MS) : Infinity;
+    };
+    const aAge = ageDays(a), bAge = ageDays(b);
+    // Old items remain available, but cannot lead ahead of activity from the last seven days.
+    const staleOrder = Number(aAge > 7) - Number(bAge > 7);
+    if (staleOrder) return staleOrder;
+    const score = (card, age) => (Number.isFinite(age) ? Math.max(0, 7 - age) : 0)
+        + engagement(card) + (followedIds.has(card.id) ? 4 : 0);
+    const scoreOrder = score(b, bAge) - score(a, aAge);
+    if (scoreOrder) return scoreOrder;
+    const timeOrder = (Date.parse(b.at || '') || 0) - (Date.parse(a.at || '') || 0);
+    return timeOrder || String(a.id).localeCompare(String(b.id));
+}
+
+function rankCards(cards, followedIds = new Set(), now = Date.now()) {
+    return cards.slice().sort((a, b) => compareRankedCards(a, b, followedIds, now));
+}
+
 function searchMatches(item, query) {
     const q = clean(query, 80).toLowerCase();
     if (!q) return true;
@@ -246,7 +278,8 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         const following = /^(1|true|yes|on)$/i.test(String(req.query.following || ''));
         const want = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 40);
         if (following && (!req.viewer || req.viewer.kind !== 'user' || !req.viewer.token)) fail(401, 'feed.sign_in_required', 'Sign in to see the people you follow');
-        const followed = following ? new Set(await pulse.followedFor(req.viewer)) : null;
+        const followedSubjects = req.viewer && req.viewer.kind === 'user' && req.viewer.token
+            ? new Set(await pulse.followedFor(req.viewer)) : new Set();
 
         const live = await liveNow();
         // Copy cached trending cards before marking them: a channel can go live again during the cache TTL.
@@ -267,7 +300,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
             for (let index = 0; index < rows.length; index++) {
                 const i = rows[index];
                 const actorSubject = i.actor_subject || (i.actor && i.actor.subject) || null;
-                if (followed && !(actorSubject && followed.has(actorSubject))) continue;
+                if (following && !(actorSubject && followedSubjects.has(actorSubject))) continue;
                 const c = card(i);
                 mark([c], live);
                 if (kind && c.kind !== kind) continue;
@@ -287,6 +320,9 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         }
         const counts = await countsFor(db, picked.map((p) => p.row));
         for (const p of picked) p.card.counts = counts.get(`${typeOf(p.row)}:${idOf(p.row)}`) || {};
+        const followedIds = new Set(picked.filter((p) => followedSubjects.has(p.row.actor_subject || (p.row.actor && p.row.actor.subject)))
+            .map((p) => p.card.id));
+        picked.splice(0, picked.length, ...rankCards(picked.map((p) => p.card), followedIds).map((c) => picked.find((p) => p.card.id === c.id)));
 
         // The first page carries trending pictures and videos, one after every three Pulse items.
         const items = [];
@@ -300,6 +336,8 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         });
         const seen = new Set(items.map((c) => c.url));
         while (items.length < want && k < t.length) { const c = t[k++]; if (!seen.has(c.url)) { items.push(c); seen.add(c.url); } }
+        // Frame cards keep their existing placement, while an actual on-air channel always leads the response.
+        items.sort((a, b) => Number(b.kind === 'live' && b.live_now === true) - Number(a.kind === 'live' && a.live_now === true));
         return { items, next_cursor: next };
     }));
     router.get('/search', run(async (req) => {
@@ -337,4 +375,4 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, isCurrentLive, searchMatches, searchExamples, foldBursts };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, isCurrentLive, searchMatches, searchExamples, foldBursts, engagement, compareRankedCards, rankCards };
