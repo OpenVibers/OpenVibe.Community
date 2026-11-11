@@ -69,7 +69,8 @@ function createSearchDocuments({ db }) {
                                      s.members_only_owner AS space_members_only, c.slug AS category_slug
                               FROM threads t JOIN spaces s ON s.id = t.space_id LEFT JOIN categories c ON c.id = t.category_id
                               WHERE t.id = ?`).get(threadId);
-        if (!t || t.deleted_at || t.space_visibility !== 'public' || t.space_members_only || t.members_only_owner) return { deleted: true };
+        if (!t || t.deleted_at || t.space_visibility !== 'public' || t.space_members_only || t.members_only_owner
+            || /^(live|pics):/.test(t.external_key || '')) return { deleted: true };
         const posts = await db.prepare('SELECT body_markdown, is_opening FROM posts WHERE thread_id = ? AND deleted_at IS NULL ORDER BY is_opening DESC, id ASC').all(t.id);
         const opening = posts.find((p) => p.is_opening);
         const facets = { space: t.space_slug, kind: t.kind || 'discussion', replies: Number(t.reply_count) || 0, score: Number(t.score) || 0 };

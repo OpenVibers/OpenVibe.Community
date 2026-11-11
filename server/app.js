@@ -190,7 +190,7 @@ async function createApp(opts = {}) {
     // (nothing mounted, nothing sent). The key file is served at /<key>.txt and the paste and forum
     // services ping the engines when a public, indexable page appears, changes or goes away.
     const indexnow = opts.indexnow || createIndexNow({ host: config.baseUrl, key: config.indexnow.key, ...(opts.fetchImpl ? { fetch: opts.fetchImpl } : {}) });
-    const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, chatRooms, limits: opts.forumLimits, config, indexnow });
+    const forum = createForumService({ db, network, pulse, relay, vip, media: mediaObjects, chatRooms, limits: opts.forumLimits, config, indexnow, fetchImpl: opts.fetchImpl });
     // Screenshot bytes: OpenVibe.Media's Object API v2 (a private med_ object owned by the person when
     // signed in), or the v1 community file store (legacy:community:file:<key>) without Community's
     // service principal. A private object is reachable only with Community's token, so every read goes
@@ -262,7 +262,7 @@ async function createApp(opts = {}) {
     // Sharing (openvibe-sdk/share): the one access check for a paste, its members, transfers and the
     // gate. Created before comments so a thread on a paste nobody may see is never readable.
     const sharing = opts.sharing || createSharing({ db, media: pasteMedia, fetchImpl: opts.fetchImpl });
-    const comments = createCommentService({ db, network, limits: opts.commentLimits, canViewPaste: (v, p) => sharing.canViewPaste(v, p), media: mediaObjects });
+    const comments = createCommentService({ db, network, limits: opts.commentLimits, canViewPaste: (v, p) => sharing.canViewPaste(v, p), media: mediaObjects, fetchImpl: opts.fetchImpl });
     forum.setCommentService(comments);
     // Submissions (clips, art, ideas, reports for review): their own table, not tied to the forum.
     const submissions = createSubmissionService({ db, network, pulse, indexnow, config, limits: opts.submissionLimits });

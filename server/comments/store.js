@@ -99,7 +99,7 @@ async function refIsPublic(db, t) {
 }
 
 /** Insert a comment and keep the thread's and parent's counters in step. */
-async function insertComment(db, { thread_id, parent_id = null, author_subject = null, anon_name = null, origin = 'user', message, attachment_ids = [] }) {
+async function insertComment(db, { thread_id, parent_id = null, author_subject = null, anon_name = null, origin = 'user', message, attachment_ids = [], forum_item = null }) {
     return await db.tx(async () => {
         const thread = await getThread(db, thread_id);
         const staged = await stagedAttachments(db, attachment_ids, author_subject, thread && { service: thread.ref_service, type: thread.ref_type, id: thread.ref_id });
@@ -113,7 +113,7 @@ async function insertComment(db, { thread_id, parent_id = null, author_subject =
         await db.prepare('UPDATE comment_threads SET comment_count = comment_count + 1, updated_at = ov_now() WHERE id = ?').run(thread_id);
         if (parent_id) await db.prepare('UPDATE comments SET reply_count = reply_count + 1 WHERE id = ?').run(parent_id);
         const comment = await getComment(db, info.lastInsertRowid);
-        await forumLinks.syncComment(db, comment);
+        await forumLinks.syncComment(db, comment, forum_item);
         const cthread = await db.prepare('SELECT * FROM comment_threads WHERE id = ?').get(thread_id);
         if (cthread) await require('../events').commentCreated(comment, cthread, { itemPublic: await refIsPublic(db, cthread) });   // community.comment.created
         return comment;

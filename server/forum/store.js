@@ -34,6 +34,7 @@ async function lastPosts(db, spaceIds) {
     const q = db.prepare(`SELECT t.slug AS thread_slug, t.title AS thread_title, p.author_subject, p.origin, p.created_at, p.id AS post_id
                           FROM posts p JOIN threads t ON t.id = p.thread_id
                           WHERE t.space_id = ? AND t.deleted_at IS NULL AND p.deleted_at IS NULL AND t.members_only_owner IS NULL
+                            AND (t.external_key IS NULL OR (t.external_key NOT LIKE 'live:%' AND t.external_key NOT LIKE 'pics:%'))
                           ORDER BY p.id DESC LIMIT 1`);
     for (const id of spaceIds) { const r = await q.get(id); if (r) out.set(id, r); }
     return out;
@@ -209,6 +210,7 @@ async function recentThreads(db, { visibilities = ['public'], limit = 50, spaceS
     return await db.prepare(`SELECT t.*, s.slug AS space_slug, s.name AS space_name FROM threads t JOIN spaces s ON s.id = t.space_id
                        WHERE t.deleted_at IS NULL AND s.visibility IN (${visibilities.map(() => '?').join(', ')}) AND (?::text IS NULL OR s.slug = ?)
                          AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL
+                         AND (t.external_key IS NULL OR (t.external_key NOT LIKE 'live:%' AND t.external_key NOT LIKE 'pics:%'))
                        ORDER BY t.created_at DESC, t.id DESC LIMIT ?`).all(...visibilities, spaceSlug, spaceSlug, limit);
 }
 
@@ -219,6 +221,7 @@ async function hotThisWeek(db, { since, limit = 6 } = {}) {
                        JOIN posts p ON p.thread_id = t.id AND p.is_opening = 0 AND p.deleted_at IS NULL AND p.created_at >= ?
                        WHERE t.deleted_at IS NULL AND t.members_only_owner IS NULL
                          AND s.visibility = 'public' AND s.members_only_owner IS NULL
+                         AND (t.external_key IS NULL OR (t.external_key NOT LIKE 'live:%' AND t.external_key NOT LIKE 'pics:%'))
                        GROUP BY t.id, t.slug, t.title, s.slug, t.content_labels
                        ORDER BY replies DESC, last_at DESC, t.id DESC LIMIT ?`).all(since, limit);
 }

@@ -54,6 +54,7 @@ const reactions = require('./reactions');
 const moderation = require('./moderation');
 const blocks = require('../identity/blocks');
 const commentStore = require('../comments/store');
+const forumLinks = require('../comments/forum-links');
 const STYLES = ['feed', 'forum'];
 const SPACE_SLUG = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
@@ -97,7 +98,7 @@ const THREADS_PER_DAY = 20;
 
 const contentLabels = require('./labels');
 
-function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {}, config = {}, indexnow = null } = {}) {
+function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {}, config = {}, indexnow = null, fetchImpl = globalThis.fetch } = {}) {
     let commentService = null;
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
@@ -213,7 +214,14 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         const space = await spaceFor(v, spaceSlug);
         const thread = await store.getThreadBySlug(db, space.id, threadSlug);
         if (!thread) fail(404, 'thread.not_found', 'No such thread');
+        if (!await mappedItemPublic(thread)) fail(404, 'thread.not_found', 'No such thread');
         return { space, thread };
+    }
+
+    async function mappedItemPublic(thread) {
+        if (!thread || !thread.external_key || !/^(live:(vod|clip)|pics:picture):/.test(thread.external_key)) return true;
+        const [service, type, ...rest] = thread.external_key.split(':');
+        return !!await forumLinks.publicExternalItem({ service, type, id: rest.join(':') }, fetchImpl);
     }
 
     async function postFor(v, postId) {
@@ -221,6 +229,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         const thread = post ? await store.getThread(db, post.thread_id) : null;
         const space = thread ? await store.getSpaceById(db, thread.space_id) : null;
         if (!post || !thread || !space || post.deleted_at) fail(404, 'post.not_found', 'No such post');
+        if (!await mappedItemPublic(thread)) fail(404, 'post.not_found', 'No such post');
         // A post in a staff space looks exactly like a missing one (not space.not_found, which would confirm it).
         try { await spaceFor(v, space.slug); } catch (err) { if (err.status === 404) fail(404, 'post.not_found', 'No such post'); throw err; }
         return { post, thread, space };
@@ -609,6 +618,11 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const projections = await authors.projectionsFor([...rows.map((r) => r.members_only_owner), ...[...last.values()].map((l) => l.author_subject)]);
             const shaped = await Promise.all(rows.map(async (r) => {
                 const sp = await shapeSpace(r, await membersOnly(r.members_only_owner, projections));
+                if (['videos', 'clips', 'pictures'].includes(r.slug)) {
+                    // The database cannot know a remote item's current audience. No stale
+                    // count or activity hint may disclose a newly private item here.
+                    sp.thread_count = null; sp.post_count = null; sp.last_activity_at = null;
+                }
                 const l = last.get(r.id);
                 sp.last_post = l ? { id: l.post_id, thread: { slug: l.thread_slug, title: l.thread_title, url: threadPath(r.slug, l.thread_slug) }, author: authors.author(l.author_subject, l.origin, projections), created_at: isoTime(l.created_at) } : null;
                 return sp;
@@ -729,7 +743,12 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (q.category && !category) fail(404, 'category.not_found', 'No such category in this forum');
             const statuses = STATUSES[space.thread_kind] || [];
             if (q.status && !statuses.includes(q.status)) fail(400, 'thread.invalid_status', statuses.length ? `status is one of ${statuses.join(', ')}` : 'Threads in this forum have no status');
-            const { rows, total } = await store.listThreads(db, space.id, { sort, limit: perPage, offset: (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
+            const externalBoard = ['videos', 'clips', 'pictures'].includes(space.slug);
+            const { rows, total: storedTotal } = await store.listThreads(db, space.id, { sort, limit: externalBoard ? 1000 : perPage,
+                offset: externalBoard ? 0 : (page - 1) * perPage, now: q.now || new Date(), categoryId: category ? category.id : null, status: q.status || null });
+            const visibleRows = externalBoard ? (await Promise.all(rows.map(async (row) => await mappedItemPublic(row) ? row : null))).filter(Boolean) : rows;
+            const total = externalBoard ? visibleRows.length : storedTotal;
+            const publicRows = externalBoard ? visibleRows.slice((page - 1) * perPage, page * perPage) : visibleRows;
             const index = await this.listSpaces(v);
             const self = index.spaces.find((x) => x.slug === space.slug) || {};
             const mod = await moderates(v, space);
@@ -741,7 +760,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
                 moderators: mod ? await moderatorList(space) : undefined,
                 children: index.spaces.filter((c) => c.parent && c.parent.slug === space.slug),
                 groups: moderator(v) ? (await store.listGroups(db)).map((g) => ({ slug: g.slug, name: g.name })) : undefined,
-                threads: await shapeThreads(rows, () => space, v),
+                threads: await shapeThreads(publicRows, () => space, v),
             };
         },
 
