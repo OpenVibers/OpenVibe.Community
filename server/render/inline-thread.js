@@ -1,7 +1,6 @@
 'use strict';
 
 /** Plain, server-rendered Community thread for the Video and Pics item pages. */
-const kit = require('openvibe-shared/kit');
 const thread = require('openvibe-shared/thread');
 const { escapeHtml: esc } = require('./highlight');
 
@@ -34,7 +33,9 @@ function renderThread({ answer, base, post, remove, signedIn, attachmentsAllowed
     const threadUrl = safeHttps(answer && answer.thread && answer.thread.url) || (/^cth_[A-Za-z0-9_-]{22}$/.test(accessId) ? `https://openvibe.community/c/${accessId}` : null);
     const validReply = ID.test(String(replyId || '')) ? String(replyId) : null;
     const validExpanded = ID.test(String(expandedId || '')) ? String(expandedId) : null;
-    const signIn = `<p class="ovc-signin">Sign in to comment. <a class="ovk-btn ovk-btn--primary" href="/auth/login?next=${encodeURIComponent(query(base, sort))}">Sign in</a></p>`;
+    // Signed out, the composer's spot is one line; with no comments yet that line is the whole empty state (no second
+    // box saying the same thing).
+    const signIn = `<p class="ovc-signin">${comments.length ? 'Sign in to comment.' : 'Be the first to comment.'} <a class="ovk-btn ovk-btn--primary" href="/auth/login?next=${encodeURIComponent(query(base, sort))}">Sign in</a></p>`;
     const composer = (parent = null) => signedIn ? thread.composer({ action: post, name: 'message', label: 'Comment', placeholder: parent ? 'Write a reply…' : 'Add a comment…', value: draft, maxlength: 2000,
         sendLabel: parent ? 'Reply' : 'Comment', hidden: parent ? { parent_id: parent } : {},
         attach: attachmentsAllowed ? { name: 'files', accept: 'image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain' } : null,
@@ -68,9 +69,10 @@ function renderThread({ answer, base, post, remove, signedIn, attachmentsAllowed
         return `<article class="ovc-comment" id="comment-${id}"><header>${avatar ? `<img src="${esc(avatar)}" alt="" width="32" height="32" loading="lazy">` : ''}${profile ? `<a href="${profile}">${esc(name(c))}</a>` : `<span>${esc(name(c))}</span>`}${when.short ? `<time datetime="${esc(c.created_at)}" title="${esc(when.full)}">${esc(when.short)}</time>` : ''}</header>${target}${gone ? '<p>Comment removed</p>' : `<p>${esc(c.message || '')}</p>${attachments(c)}`}${controls}${validReply === id ? `<div data-ovc-composer-slot>${composer(id)}</div>` : ''}${replies}</article>`;
     };
     const hasReplySlot = validReply && comments.some((c) => String(c.id) === validReply || (validExpanded === String(c.id) && Array.isArray(expandedReplies) ? expandedReplies : c.replies || []).some((r) => String(r.id) === validReply));
-    const order = `<nav class="ovc-order" aria-label="Comment order">${[['top', 'Top'], ['new', 'Newest']].map(([key, label]) => `<a class="ovk-btn ovk-btn--quiet${sort === key ? ' is-active' : ''}" href="${query(base, key)}"${sort === key ? ' aria-current="page"' : ''} data-ovc-order>${label}</a>`).join('')}</nav>`;
+    // Top and Newest only when there is something to put in order.
+    const order = comments.length < 2 && !(answer && answer.next_cursor) ? '' : `<nav class="ovc-order" aria-label="Comment order">${[['top', 'Top'], ['new', 'Newest']].map(([key, label]) => `<a class="ovk-btn ovk-btn--quiet${sort === key ? ' is-active' : ''}" href="${query(base, key)}"${sort === key ? ' aria-current="page"' : ''} data-ovc-order>${label}</a>`).join('')}</nav>`;
     const next = answer && answer.next_cursor ? `<a class="ovk-btn ovk-btn--quiet ovc-more" href="${query(base, sort, { after: answer.next_cursor })}" data-ovc-order>More comments</a>` : '';
-    return `<section class="ovc-thread" id="comments" data-ovc-thread><div class="ovc-head"><h2>Comments</h2>${order}</div>${error ? `<p role="alert">${esc(error)}</p>` : ''}${!hasReplySlot ? `<div data-ovc-composer-slot>${composer()}</div>` : ''}${comments.length ? `<div class="ovc-list">${comments.map((c) => comment(c)).join('')}</div>` : kit.empty({ title: 'Be the first to comment' })}${next}${threadUrl ? `<p class="ovc-community"><a href="${esc(threadUrl)}">Discuss on OpenVibe.Community</a></p>` : ''}</section>`;
+    return `<section class="ovc-thread" id="comments" data-ovc-thread><div class="ovc-head"><h2>Comments</h2>${order}</div>${error ? `<p role="alert">${esc(error)}</p>` : ''}${!hasReplySlot ? `<div data-ovc-composer-slot>${composer()}</div>` : ''}${comments.length ? `<div class="ovc-list">${comments.map((c) => comment(c)).join('')}</div>` : (signedIn ? '<p class="ovc-none">Be the first to comment.</p>' : '')}${next}${threadUrl ? `<p class="ovc-community"><a href="${esc(threadUrl)}">Discuss on OpenVibe.Community</a></p>` : ''}</section>`;
 }
 
 module.exports = { renderThread, MEDIA_ID, ID };
