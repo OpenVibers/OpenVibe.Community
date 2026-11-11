@@ -287,7 +287,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         for (let page = 0; page < 100; page++) {
             const url = new URL('/api/content/feed', liveApi);
             url.searchParams.set('sort', 'new');
-            url.searchParams.set('window', 'week');
+            url.searchParams.set('window', 'all');
             url.searchParams.set('limit', '30');
             if (cursor) url.searchParams.set('cursor', cursor);
             const out = await getJson(url.toString());
