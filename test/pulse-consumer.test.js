@@ -184,6 +184,18 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     await post(chat(7)); await post(chat(8)); await post(chat(9)); await post(chat(10));
     assert.strictEqual((await db.prepare("SELECT title FROM pulse_items WHERE source_service = 'chat'").get()).title, '#general: 10 messages this hour');
 
+    const profile = (revision, changed, avatar_url, banned = false) => evt({ event_type: 'network.user.updated', source: 'network', visibility: 'internal',
+        subject: { type: 'user', id: USR }, actor: { type: 'user', id: USR },
+        payload: { subject: { type: 'user', id: USR }, revision, changed, username: 'goosely', display_name: 'Goosely', avatar_url, banned } });
+    r = await post(profile(1, ['avatar_url'], 'https://openvibe.media/avatar1.webp'));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    assert.strictEqual((await db.prepare("SELECT picture_url FROM pulse_items WHERE source_service = 'network' AND source_type = 'avatar'").get()).picture_url, 'https://openvibe.media/avatar1.webp');
+    r = await post(profile(3, ['avatar_url'], null));
+    assert.strictEqual(r.json.outcome, 'avatar:removed');
+    assert.strictEqual((await db.prepare("SELECT COUNT(*)::int AS n FROM pulse_items WHERE source_service = 'network' AND source_type = 'avatar'").get()).n, 0);
+    r = await post(profile(2, ['avatar_url'], 'https://openvibe.media/old.webp'));
+    assert.strictEqual(r.json.outcome, 'ignored:old_revision', 'an older event cannot restore an avatar');
+
     srv.close();
     console.log('pulse consumer: all checks passed');
     process.exit(0);

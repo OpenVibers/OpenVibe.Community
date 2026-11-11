@@ -40,6 +40,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
     const questApi = String(config.questInternalUrl || config.questUrl || 'https://openvibe.quest').replace(/\/+$/, '');
     const questSite = String(config.questUrl || 'https://openvibe.quest').replace(/\/+$/, '');
     const memeApi = String(config.memeInternalUrl || config.memeUrl || 'https://openvibe.meme').replace(/\/+$/, '');
+    const liveApi = String(config.liveUrl || 'https://openvibe.live').replace(/\/+$/, '');
     let timer = null;
     let running = null;
 
@@ -52,21 +53,24 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
     /** OpenVibe.Today's public calendar → one event row per scheduled stream or event. */
     async function todayEvents() {
         const at = now();
-        const from = new Date(at - 2 * 60 * MINUTE).toISOString();
+        const from = new Date(at).toISOString();
         const to = new Date(at + 60 * DAY).toISOString();
         const out = await getJson(`${todayApi}/api/v1/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=100`);
         let n = 0;
         for (const e of (Array.isArray(out.events) ? out.events : [])) {
             if (!e || typeof e.id !== 'string' || !e.id || typeof e.title !== 'string' || !e.title.trim()) continue;
             if (e.visibility !== 'public' || e.status === 'cancelled') continue;
+            const starts = Date.parse(String(e.starts_at || ''));
+            if (!Number.isFinite(starts) || starts <= at) continue;
             const owner = subject(e.owner_subject);
-            const text = clean(e.description, 280) || (e.starts_at ? `Starts ${String(e.starts_at).replace('T', ' ').slice(0, 16)} UTC` : '');
+            const whenLabel = `Starts ${new Date(starts).toISOString().replace('T', ' ').slice(0, 16)} UTC`;
+            const text = [whenLabel, clean(e.description, 220)].filter(Boolean).join(' · ');
             const when = sqlFrom(e.created_at, sqlTime(at));
             const out2 = await store.upsertItem(db, {
                 source_service: 'today', source_type: 'event', source_id: e.id,
-                title: `${e.kind === 'stream' ? 'Live' : 'Event'}: ${clean(e.title, 140)}`,
+                title: `Coming up: ${clean(e.title, 140)}`,
                 url: https(e.url) || `${todaySite}/e/${encodeURIComponent(e.id)}`,
-                actor_subject: owner, origin: owner ? 'user' : 'system', occurred_at: when, text,
+                actor_subject: owner, origin: owner ? 'user' : 'system', occurred_at: when, starts_at: e.starts_at, text,
             });
             if (out2.created) n++;
         }
@@ -176,11 +180,43 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         return created;
     }
 
+    /** The anonymous Rundown browse response contains only episodes visible to everyone. */
+    async function rundownEpisodes() {
+        let before = null, created = 0;
+        const seen = new Set();
+        for (let page = 0; page < 50; page++) {
+            const url = new URL('/api/rundown/streams', liveApi);
+            if (before) url.searchParams.set('before', before);
+            const out = await getJson(url.toString());
+            for (const s of (Array.isArray(out.streams) ? out.streams : [])) {
+                if (!s || s.live || !s.episode || !Number.isSafeInteger(Number(s.stream_id)) || Number(s.stream_id) < 1) continue;
+                const id = String(s.stream_id);
+                const title = clean(s.episode.title || s.title, 160);
+                if (!title) continue;
+                seen.add(id);
+                const prior = await db.prepare("SELECT actor_subject FROM pulse_items WHERE source_service = 'live' AND source_type = 'stream' AND source_id = ?").get(id);
+                const r = await store.upsertItem(db, { source_service: 'live', source_type: 'episode', source_id: id,
+                    title: `Rundown: ${title}`, url: `${liveApi}/rundown/e/${id}`,
+                    actor_subject: prior && prior.actor_subject || null, origin: prior && prior.actor_subject ? 'user' : 'system',
+                    occurred_at: sqlFrom(s.episode.aired_at || s.started_at, sqlTime(now())),
+                    text: clean(s.episode.logline, 280), picture_url: https(s.thumbnail_url) });
+                if (r.created) created++;
+            }
+            before = typeof out.next === 'string' && out.next ? out.next : null;
+            if (!before) break;
+        }
+        if (before) throw new Error('Rundown pagination exceeded 50 pages; retaining prior episodes');
+        const stale = await db.prepare("SELECT source_id FROM pulse_items WHERE source_service = 'live' AND source_type = 'episode'").all();
+        for (const row of stale) if (!seen.has(row.source_id)) await store.removeItem(db, 'live', 'episode', row.source_id);
+        return created;
+    }
+
     const SOURCES = [
         { name: 'today-events', every: 10 * MINUTE, run: todayEvents },
         { name: 'network-members', every: 60 * MINUTE, run: networkMembers },
         { name: 'quest-badges', every: 15 * MINUTE, run: questBadges },
         { name: 'meme-entries', every: 10 * MINUTE, run: memeEntries },
+        { name: 'rundown-episodes', every: 10 * MINUTE, run: rundownEpisodes },
     ];
 
     async function remember(name, { nextRun, lastRun, error = null }) {

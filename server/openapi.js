@@ -400,6 +400,15 @@ route('get', '/api/v1/feed', {
             actor: nullable('object', { properties: { name: nullable('string'), avatar: nullable('string') } }) } }),
         next_cursor: nullable('string') } }), ...errors([400, 401, 429]) },
 });
+route('get', '/api/v1/feed/search', {
+    operationId: 'searchFeed', summary: 'Search feed activity by words, person, site, kind and date', tags: ['feed'], security: ANONYMOUS,
+    parameters: [query('q', str({ maxLength: 80 }), 'For example, clips from today or a person\'s name')],
+    responses: { 200: json('Matching feed cards', { type: 'object', properties: { items: arrayOf({ type: 'object' }), next_cursor: nullable('string') } }), ...errors([400, 429]) },
+});
+route('get', '/api/v1/feed/examples', {
+    operationId: 'feedSearchExamples', summary: 'Search examples based on current feed items', tags: ['feed'], security: ANONYMOUS,
+    responses: { 200: json('Suggested searches', { type: 'object', properties: { examples: arrayOf({ type: 'object', properties: { text: str(), reason: str() } }) } }), ...errors([429]) },
+});
 route('post', '/api/v1/me/status', {
     operationId: 'postStatus', summary: 'Post a public status to your profile and Pulse', tags: ['pulse'], security: PERSON,
     requestBody: body({ type: 'object', required: ['text'], properties: { text: str({ minLength: 1, maxLength: 500 }), link: str({ format: 'uri' }) } }),

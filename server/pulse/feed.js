@@ -22,7 +22,7 @@ const express = require('express');
 const contracts = require('openvibe-contracts');
 const { run, fail, isoTime, sqlTime, encodeCursor } = require('../http/v1');
 
-const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'];
+const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member', 'avatar', 'banner', 'paste', 'site', 'space', 'follow', 'episode'];
 const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
 const MAX_PAGE_READS = 8;
 const https = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
@@ -33,6 +33,12 @@ function kindOf(i) {
     const s = String((i.source && i.source.service) || '');
     const t = String((i.source && i.source.type) || '');
     if (/^(live|stream|went_live|broadcast)$/.test(t) || (s === 'live' && /\b(went live|is live|live now)\b/i.test(i.title || ''))) return 'live';
+    if (t === 'avatar') return 'avatar';
+    if (t === 'banner') return 'banner';
+    if (t === 'follow') return 'follow';
+    if (t === 'site') return 'site';
+    if (t === 'space') return 'space';
+    if (t === 'episode') return 'episode';
     if (t === 'clip' || t === 'moment') return 'clip';
     if (/^(vod|video|recording|upload)$/.test(t) || s === 'media-hub' || s === 'video') return 'video';
     if (/^(pic|picture|image|photo)$/.test(t) || s === 'pics') return 'pic';
@@ -57,6 +63,7 @@ function card(i) {
         title: clean(i.title, 300),
         text: clean(i.text, 280),
         at: isoTime(i.occurred_at) || i.occurred_at || null,
+        ...(i.starts_at ? { starts_at: isoTime(i.starts_at) || i.starts_at } : {}),
         site,
         site_name: SITE_NAMES[site] || site.replace(/^app:/, ''),
         actor: a ? { name: clean(a.display_name || a.username || '', 80) || null, avatar: https(a.avatar_url) } : null,
@@ -69,6 +76,25 @@ function card(i) {
 const svcOf = (i) => String((i.source && i.source.service) || i.source_service || '');
 const typeOf = (i) => String((i.source && i.source.type) || i.source_type || '');
 const idOf = (i) => String((i.source && i.source.id) || i.source_id || '');
+const BURST_MS = 15 * 60_000;
+const BURST_WORD = { pic: 'photos', clip: 'clips', video: 'videos', game: 'achievements', quest: 'quests', avatar: 'profile updates' };
+function foldBursts(pairs) {
+    const groups = [];
+    for (const p of pairs) {
+        const actor = p.row.actor_subject || (p.row.actor && p.row.actor.subject);
+        const at = Date.parse(p.card.at || '');
+        const prior = actor && Number.isFinite(at) && BURST_WORD[p.card.kind] && groups.find((g) =>
+            g.actor === actor && g.card.kind === p.card.kind && g.site === p.card.site && Math.abs(g.at - at) <= BURST_MS);
+        if (prior) { prior.cards.push(p.card); continue; }
+        groups.push({ actor, at, site: p.card.site, card: p.card, cards: [p.card] });
+    }
+    return groups.map((g) => {
+        if (g.cards.length < 2) return g.card;
+        const name = g.card.actor && g.card.actor.name || 'Someone';
+        return { ...g.card, title: `${name} added ${g.cards.length} ${BURST_WORD[g.card.kind]}`,
+            group: { count: g.cards.length, items: g.cards.map((c) => ({ id: c.id, url: c.url, title: c.title, media: c.media })) } };
+    });
+}
 
 /** Community's own views, likes and comments, in a few batched reads (never one query per card). */
 async function countsFor(db, rows) {
@@ -221,29 +247,52 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         // The first page carries trending pictures and videos, one after every three Pulse items.
         const items = [];
         let k = 0;
-        picked.forEach((p, n) => {
-            items.push(p.card);
-            if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) items.push(t[k++]);
+        foldBursts(picked).forEach((c, n) => {
+            items.push(c);
+            if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) {
+                const extra = t[k++];
+                if (!items.some((x) => x.url === extra.url)) items.push(extra);
+            }
         });
-        while (items.length < want && k < t.length) items.push(t[k++]);
+        const seen = new Set(items.map((c) => c.url));
+        while (items.length < want && k < t.length) { const c = t[k++]; if (!seen.has(c.url)) { items.push(c); seen.add(c.url); } }
         return { items, next_cursor: next };
     }));
     router.get('/search', run(async (req) => {
         const q = clean(req.query.q, 80).toLowerCase();
         if (!q) fail(400, 'feed.search_required', 'Enter a search term');
-        const page = await pulse.list({ limit: 100 }, req.viewer);
-        let rows = (page.items || []).map((row) => ({ row, item: card(row) }));
         const kindMatch = /\b(clips?|videos?|photos?|pics?|posts?|streams?|live|games?|updates?)\b/.exec(q);
         const kind = kindMatch && ({ clip: 'clip', clips: 'clip', video: 'video', videos: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update' })[kindMatch[1]];
         const today = /\btoday\b/.test(q);
         const words = q.replace(/\b(clips?|videos?|photos?|pics?|posts?|streams?|live|games?|updates?|from|today|new)\b/g, '').trim();
-        if (kind) rows = rows.filter(({ item }) => item.kind === kind || (kind === 'stream' && item.kind === 'live'));
-        if (today) { const day = new Date().toISOString().slice(0, 10); rows = rows.filter(({ item }) => String(item.at || '').slice(0, 10) === day); }
-        if (words) rows = rows.filter(({ item }) => [item.title, item.text, item.site_name, item.kind, item.actor && item.actor.name].some((v) => String(v || '').toLowerCase().includes(words)));
-        return { items: rows.slice(0, 40).map(({ item }) => item), next_cursor: null };
+        const live = await liveNow();
+        const matched = [];
+        let cursor = clean(req.query.cursor, 500), next = null;
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 40);
+        for (let pages = 0; pages < MAX_PAGE_READS && matched.length < limit; pages++) {
+            const page = await pulse.list({ after: cursor || undefined, limit: 100 }, req.viewer);
+            next = page.next_cursor || null;
+            const rows = page.items || [];
+            for (let index = 0; index < rows.length; index++) {
+                const item = card(rows[index]);
+                mark([item], live);
+                if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) continue;
+                if (today && String(item.at || '').slice(0, 10) !== new Date().toISOString().slice(0, 10)) continue;
+                if (words && ![item.title, item.text, item.site, item.site_name, item.kind, item.actor && item.actor.name]
+                    .some((v) => String(v || '').toLowerCase().includes(words))) continue;
+                matched.push({ row: rows[index], card: item });
+                if (matched.length >= limit) {
+                    if (index < rows.length - 1) next = encodeCursor([sqlTime(rows[index].occurred_at), rows[index].id]);
+                    break;
+                }
+            }
+            if (!next) break;
+            cursor = next;
+        }
+        return { items: foldBursts(matched), next_cursor: next };
     }));
-    router.get('/examples', run(async () => {
-        const page = await pulse.list({ limit: 100 });
+    router.get('/examples', run(async (req) => {
+        const page = await pulse.list({ limit: 100 }, req.viewer);
         const cards = (page.items || []).map(card);
         const examples = [];
         const add = (text, reason) => { if (!examples.some((x) => x.text === text)) examples.push({ text, reason }); };
@@ -253,7 +302,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         }
         for (const [name] of actors) add(name, 'person');
         for (const kind of [...new Set(cards.map((c) => c.kind))]) add(`new ${kind === 'pic' ? 'photos' : `${kind}s`}`, 'kind');
-        add('clips from today', 'date and kind');
+        if (cards.some((c) => c.kind === 'clip' && String(c.at || '').slice(0, 10) === new Date().toISOString().slice(0, 10))) add('clips from today', 'date and kind');
         return { examples: examples.slice(0, 8) };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));

@@ -85,16 +85,16 @@ async function upsertItem(db, it) {
             // what the first record said. A source that sends no text (undefined) keeps the text already there.
             if (it.text === undefined) it = { ...it, text: had.text };
             if (it.touch) {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), it.occurred_at, ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.occurred_at, ...key);
             } else {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, ...key);
             }
             return { item: await find.get(...key), created: false };
         }
-        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, preview_url, media_ratio, media_length, app_name, text)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?, ?, ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300));
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, preview_url, media_ratio, media_length, app_name, text, starts_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?, ?, ?, ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null);
         return { item: await find.get(...key), created: true };
     });
 }
@@ -119,6 +119,9 @@ async function listItems(db, { origin = null, before = null, limit = 30, followe
     const rows = await db.prepare(`
         SELECT i.*, ${priority} AS feed_priority FROM pulse_items i
         WHERE (@origin::text IS NULL OR i.origin = @origin)
+          AND (i.source_service <> 'today' OR i.source_type <> 'event' OR (i.starts_at IS NOT NULL AND i.starts_at > to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')))
+          AND NOT (i.source_service = 'live' AND i.source_type = 'stream' AND EXISTS (
+                   SELECT 1 FROM pulse_items e WHERE e.source_service = 'live' AND e.source_type = 'episode' AND e.source_id = i.source_id))
           AND (@at::text IS NULL OR ${priority} < @priority::integer
                OR (${priority} = @priority::integer AND (i.occurred_at < @at OR (i.occurred_at = @at AND i.id < @id::bigint))))
           AND NOT (i.source_service = 'live' AND i.source_type = 'stream' AND EXISTS (

@@ -74,14 +74,18 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         ['wiki', 'page', 'w1', 'Wiki: a page', 'https://openvibe.wiki/w/1', sam.subject_id, 'user', 19],
         ['quest', 'badge', 'q1', 'Finished a quest: First Post', 'https://openvibe.quest/', sam.subject_id, 'user', 20],
         ['chat', 'hour', 'general:2026-11-09T10', '#general: 12 messages this hour', 'https://openvibe.chat/rooms/general', null, 'system', 21],
-        ['today', 'event', 'e1', 'Event: A launch party', 'https://openvibe.today/e/e1', alex.subject_id, 'user', 22],
+        ['today', 'event', 'e1', 'Coming up: A launch party', 'https://openvibe.today/e/e1', alex.subject_id, 'user', 22],
         ['network', 'members', '2026-11-09', '5 people joined today', 'https://openvibe.network/stats', null, 'system', 23],
     ];
     for (const [service, type, id, title, url, actor, origin, minsAgo] of fixtures) {
         await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, text, picture_url)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?)`)
             .run(service, type, id, title, url, actor, origin, at(minsAgo), type === 'event' ? 'Come along' : '', null);
+        if (type === 'event') await db.prepare('UPDATE pulse_items SET starts_at = ? WHERE source_service = ? AND source_id = ?')
+            .run(new Date(Date.now() + 60 * 60_000).toISOString().replace('T', ' ').slice(0, 19), service, id);
     }
+    await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at)
+        VALUES ('pics', 'picture', 'p2', 'Another picture', 'https://openvibe.pics/p/2', ?, 'user', 'public', ?)`).run(alex.subject_id, at(15.5));
 
     // Make the paste's counts real so the card has Community's own views, likes and comments.
     await db.prepare('UPDATE pastes SET views = 7, likes = 3 WHERE slug = ?').run(textPaste.slug);
@@ -95,11 +99,15 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         for (const k of ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member']) assert.ok(kinds.has(k), `kind ${k} (${[...kinds]})`);
         assert.ok('next_cursor' in j);
         for (const x of j.items) for (const k of ['id', 'kind', 'url', 'title', 'text', 'at', 'site', 'site_name', 'actor', 'media', 'counts']) assert.ok(k in x, `${k} on every card`);
-        const c = j.items.find((x) => x.title === 'Great clip');
+        const c = j.items.find((x) => x.url === 'https://openvibe.live/clip/c1');
         assert.strictEqual(c.site, 'live');
         assert.strictEqual(c.site_name, 'Live');
         assert.strictEqual(c.actor.name, 'Alex');
         assert.deepStrictEqual(c.media, { thumb: 'https://openvibe.media/c1.webp', preview: 'https://openvibe.media/c1.mp4', ratio: 1.5, length: 18 });
+        const photos = j.items.find((x) => x.kind === 'pic');
+        assert.strictEqual(photos.title, 'Alex added 2 photos');
+        assert.strictEqual(photos.group.count, 2);
+        assert.deepStrictEqual(photos.group.items.map((x) => x.url), ['https://openvibe.pics/p/1', 'https://openvibe.pics/p/2']);
     });
 
     await check('GET /feed is server rendered, kind chips keep the page crawlable and Older carries a cursor', async () => {
@@ -196,12 +204,12 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
                 assert.strictEqual(r.status, 200, r.text);
                 const page = r.json();
                 assert.ok(page.items.length <= limit, 'trending counts toward the page limit');
-                seen.push(...page.items.filter((x) => x.id.startsWith('p:')).map((x) => x.id));
+                seen.push(...page.items.filter((x) => x.id.startsWith('p:')).flatMap((x) => x.group ? x.group.items.map((y) => y.id) : [x.id]));
                 cursor = page.next_cursor;
                 if (cursor) { assert.ok(!cursors.has(cursor), 'cursor advances'); cursors.add(cursor); }
                 assert.ok(cursors.size < 40, 'pagination terminates');
             } while (cursor);
-            assert.deepStrictEqual(seen, all.map((x) => x.id), `limit=${limit}: no missing or repeated rows`);
+            assert.deepStrictEqual([...seen].sort(), all.flatMap((x) => x.group ? x.group.items.map((y) => y.id) : [x.id]).sort(), `limit=${limit}: no missing or repeated rows`);
         }
     });
 

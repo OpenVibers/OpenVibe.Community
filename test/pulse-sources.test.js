@@ -25,6 +25,9 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         ] }) };
         if (u.includes('/api/v1/stats')) return { ok: true, json: async () => ({ accounts: { total: 1234, daily: [{ day: today, n: 5 }, { day: yesterday, n: 3 }, { day: '2026-01-01', n: 0 }] } }) };
         if (u.includes('/api/v1/entries')) return { ok: true, json: async () => ({ entries: [{ slug: 'open-source-meme', title: 'Open source meme', summary: 'A public entry', published_at: iso(Date.now() - 120_000) }], next_cursor: null }) };
+        if (u.includes('/api/rundown/streams')) return { ok: true, json: async () => ({ streams: [{ stream_id: 123, live: false,
+            title: 'Night stream', started_at: badgeAt, thumbnail_url: 'https://openvibe.media/night.webp',
+            episode: { title: 'The night sky', logline: 'A recap', aired_at: badgeAt } }], next: null }) };
         if (u.includes('/badges')) return { ok: true, json: async () => ({ badges: [
             { id: 'first-post', name: 'First Post', awarded_at: badgeAt },
             { id: 'old-badge', name: 'Old Badge', awarded_at: iso(Date.now() - 90 * 86_400_000) },
@@ -46,10 +49,11 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.strictEqual(by['network-members'].items, 2);
         assert.strictEqual(by['quest-badges'].items, 1);
         assert.strictEqual(by['meme-entries'].items, 1);
+        assert.strictEqual(by['rundown-episodes'].items, 1);
         const feed = (await t.get('/api/v1/feed?limit=40')).json();
         const ev = feed.items.find((x) => x.kind === 'event');
-        assert.strictEqual(ev.title, 'Event: Launch party');
-        assert.strictEqual(ev.text, 'Come along');
+        assert.strictEqual(ev.title, 'Coming up: Launch party');
+        assert.match(ev.text, /^Starts .* UTC · Come along$/);
         assert.strictEqual(ev.actor.name, 'Alex');
         const members = feed.items.filter((x) => x.kind === 'member');
         assert.deepStrictEqual(members.map((x) => x.title).sort(), [`3 people joined on ${yesterday}`, '5 people joined today']);
@@ -61,6 +65,9 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.strictEqual(meme.title, 'Open source meme');
         assert.strictEqual(meme.text, 'A public entry');
         assert.strictEqual(meme.url, 'https://openvibe.meme/m/open-source-meme');
+        const episode = feed.items.find((x) => x.kind === 'episode');
+        assert.strictEqual(episode.title, 'Rundown: The night sky');
+        assert.strictEqual(episode.url, 'https://openvibe.live/rundown/e/123');
         assert.ok(!feed.items.some((x) => /Cancelled|Private|Old Badge/.test(x.title)), feed.items.map((x) => x.title).join(' | '));
     });
 
@@ -68,8 +75,8 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         const quiet = await t.app.locals.pulseSources.runOnce();
         assert.deepStrictEqual(quiet, []);
         const status = await t.app.locals.pulseSources.status();
-        assert.deepStrictEqual(status.sources.sort(), ['meme-entries', 'network-members', 'quest-badges', 'today-events']);
-        assert.strictEqual(status.runs.length, 4);
+        assert.deepStrictEqual(status.sources.sort(), ['meme-entries', 'network-members', 'quest-badges', 'rundown-episodes', 'today-events']);
+        assert.strictEqual(status.runs.length, 5);
         assert.ok(status.runs.every((r) => r.next_run_at && r.last_run_at && !r.last_error));
     });
 
