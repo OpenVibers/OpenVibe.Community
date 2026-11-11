@@ -28,14 +28,14 @@ function query(base, sort, extra = {}, anchor = 'comments') {
     return `${base}${base.includes('?') ? '&' : '?'}${q.toString()}#${anchor}`;
 }
 
-function renderThread({ answer, base, post, remove, signedIn, attachmentsAllowed = true, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null }) {
+function renderThread({ answer, base, post, remove, signedIn, attachmentsAllowed = true, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null, draft = '' }) {
     const comments = Array.isArray(answer && answer.comments) ? answer.comments : [];
     const accessId = answer && answer.thread && String(answer.thread.access_id || answer.thread.id || '');
     const threadUrl = safeHttps(answer && answer.thread && answer.thread.url) || (/^cth_[A-Za-z0-9_-]{22}$/.test(accessId) ? `https://openvibe.community/c/${accessId}` : null);
     const validReply = ID.test(String(replyId || '')) ? String(replyId) : null;
     const validExpanded = ID.test(String(expandedId || '')) ? String(expandedId) : null;
     const signIn = `<p class="ovc-signin">Sign in to comment. <a class="ovk-btn ovk-btn--primary" href="/auth/login?next=${encodeURIComponent(query(base, sort))}">Sign in</a></p>`;
-    const composer = (parent = null) => signedIn ? thread.composer({ action: post, name: 'message', label: 'Comment', placeholder: parent ? 'Write a reply…' : 'Add a comment…', maxlength: 2000,
+    const composer = (parent = null) => signedIn ? thread.composer({ action: post, name: 'message', label: 'Comment', placeholder: parent ? 'Write a reply…' : 'Add a comment…', value: draft, maxlength: 2000,
         sendLabel: parent ? 'Reply' : 'Comment', hidden: parent ? { parent_id: parent } : {},
         attach: attachmentsAllowed ? { name: 'files', accept: 'image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain' } : null,
         note: attachmentsAllowed ? 'Up to four files, 16 MB each. JPEG, PNG, GIF, WebP, PDF or text.' : '',

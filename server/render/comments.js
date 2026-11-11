@@ -71,12 +71,12 @@ function repliesHtml(c) {
  * sorting links, where sign-in returns), action: where the form posts. sort: 'new' or 'old' when the
  * page offers both orders (null: newest first, no sort links). note: HTML after "Commenting as …".
  */
-function commentPanel({ page, user, base, action = base, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null }) {
+function commentPanel({ page, user, base, action = base, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null, draft = '' }) {
     return require('./inline-thread').renderThread({
         answer: page || { thread: null, comments: [], viewer: { can_comment: true } },
         base, post: action, remove: `${action}/delete`, signedIn: !!user && (!page || page.viewer.can_comment !== false),
         attachmentsAllowed: !page || ['community/paste', 'pics/picture'].includes(`${page.thread.ref.service}/${page.thread.ref.type}`),
-        sort, replyId, expandedId, expandedReplies, error,
+        sort, replyId, expandedId, expandedReplies, error, draft,
     });
 }
 
@@ -91,7 +91,7 @@ function threadPage({ accessId, page, user, after = null, sort = 'top', replyId 
     const label = ref.label || `a ${what} on ${product}`;
     const src = sourceUrl(ref);
     const base = `/c/${accessId}`;
-    const panel = commentPanel({ page, user, base, action: base, sort, replyId, expandedId, expandedReplies, error });
+    const panel = commentPanel({ page, user, base, action: base, sort, replyId, expandedId, expandedReplies, error, draft });
 
     const body = `
 <article class="thread comment-thread">
