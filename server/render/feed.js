@@ -37,7 +37,7 @@ function feedCard(c, now) {
     const ratio = c.media && Number(c.media.ratio) > 0 ? Math.min(2.4, Math.max(0.5, Number(c.media.ratio))) : 16 / 9;
     const media = c.media ? `<a class="feed-media${ratio < 1 ? ' is-tall' : ''}" href="${esc(c.url)}" tabindex="-1" aria-hidden="true" style="aspect-ratio:${ratio.toFixed(3)}"><img src="${esc(c.media.thumb)}" alt="" loading="lazy" decoding="async">${c.media.length ? `<span class="feed-len">${esc(clock(c.media.length))}</span>` : ''}${c.kind === 'live' ? '<span class="feed-live">LIVE</span>' : ''}</a>` : '';
     return `<li class="feed-item is-${esc(c.kind || 'update')}"><span class="feed-ic" aria-hidden="true"><i class="fa-solid ${icon}"></i></span><div class="feed-body">`
-        + `<p class="feed-top">${who}<span class="feed-what">${esc(what)}</span>${c.site_name && c.site_name !== what ? `<span class="feed-site">${esc(c.site_name)}</span>` : ''}${when}</p>`
+        + `<p class="feed-top">${who}<span class="feed-what">${esc(what)}</span>${c.site_name && !String(what).toLowerCase().startsWith(String(c.site_name).toLowerCase()) && !String(what).toLowerCase().endsWith(String(c.site_name).toLowerCase()) ? `<span class="feed-site">${esc(c.site_name)}</span>` : ''}${when}</p>`
         + `<a class="feed-title" href="${esc(c.url)}">${esc(c.title)}</a>${c.text ? `<p class="feed-text">${esc(c.text)}</p>` : ''}${media}</div></li>`;
 }
 
