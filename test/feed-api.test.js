@@ -252,6 +252,31 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(row.alt, 'Direct cat');
     });
 
+    await check('a post keeps a PDF composer attachment and renders it as a download', async () => {
+        const id = 'att_01ABCDEFGHJKMNPQRSTVWXYZ01';
+        const original = global.fetch;
+        let kept = false;
+        global.fetch = (url, options) => {
+            if (String(url).endsWith(`/api/v1/attachments/${id}/keep`)) {
+                kept = options.method === 'POST' && options.headers.Authorization === `Bearer ${alexJwt}`;
+                return Promise.resolve(new Response(JSON.stringify({ id, kind: 'file', name: 'notes.pdf', mime: 'application/pdf', size: 123, url: `https://openvibe.media/a/${id}/notes.pdf` }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return original(url, options);
+        };
+        try {
+            const r = await json(alexJwt, '/api/v1/posts', { text: 'Here are my notes', attachments: [id] });
+            assert.strictEqual(r.status, 201, r.text);
+            assert.ok(kept, 'Media keeps the file using the person token');
+            assert.strictEqual(r.json().attachments[0].id, id);
+            const row = await db.prepare('SELECT filename, mime, url FROM attachments WHERE media_id = ?').get(id);
+            assert.strictEqual(row.filename, 'notes.pdf');
+            assert.strictEqual(row.mime, 'application/pdf');
+            assert.ok(row.url.endsWith('/notes.pdf'));
+            const page = await t.get(new URL(r.json().url).pathname);
+            assert.ok(page.text.includes('notes.pdf'), 'the post page links the file');
+        } finally { global.fetch = original; }
+    });
+
     await check('a signed-out post, a text with extra fields and more than four pictures are refused', async () => {
         assert.strictEqual((await t.get('/api/v1/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'x' }) })).status, 401);
         let r = await json(alexJwt, '/api/v1/posts', { text: 'x', secret: 1 });
