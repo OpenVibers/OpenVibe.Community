@@ -450,6 +450,16 @@ const { checkCapability } = require('../server/identity/capabilities');
         const id = opened.json().thread.id;
         assert.strictEqual((await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json: { message: 'drive-by' } })).status, 401);
         assert.strictEqual((await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json: { message: 'hi' }, cookie: alexJwt })).status, 201);
+        const file = new FormData();
+        file.set('ref', JSON.stringify(ref));
+        file.set('file', new Blob([Buffer.from('video comment image')], { type: 'image/png' }), 'video.png');
+        const token = svc([WRITE], { sub: 'svc:media-hub' });
+        const staged = await t.get('/api/v1/comments/attachments', { method: 'POST',
+            headers: { authorization: `Bearer ${token}`, 'x-ov-subject': alex.subject_id }, body: file });
+        assert.strictEqual(staged.status, 201, staged.text);
+        const attached = await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', token,
+            headers: { 'x-ov-subject': alex.subject_id }, json: { message: 'with attachment', attachments: [staged.json().attachment] } });
+        assert.strictEqual(attached.status, 201, attached.text);
     });
 
     await check('Live stages a file for its VOD; the author claims it once and removal retires it', async () => {
@@ -518,7 +528,7 @@ const { checkCapability } = require('../server/identity/capabilities');
     });
 
     await check('the thread\'s own page /c/:accessId shows the same comments as the API; people comment there; hidden and guessed ids are 404', async () => {
-        const api = (await callL(`/api/v1/comments/threads/${liveVod.id}?sort=new&limit=100`, asLive())).json();
+        const api = (await callL(`/api/v1/comments/threads/${liveVod.id}?sort=top&limit=100`, asLive())).json();
         const page = await callL(`/c/${liveVod.access_id}`);
         assert.strictEqual(page.status, 200, page.text.slice(0, 300));
         assert.match(page.headers.get('content-type'), /text\/html/);
@@ -529,13 +539,13 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.ok(live.length >= 3);
         for (const m of live) assert.ok(page.text.includes(m), `page shows "${m}"`);
         const order = live.map((m) => page.text.indexOf(m));
-        assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), 'newest first, like the API with sort=new');
-        assert.match(page.text, /Sign in with your OpenVibe account/, 'anonymous visitors are asked to sign in');
+        assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), 'Top order matches the API');
+        assert.match(page.text, /Sign in to comment/, 'anonymous visitors are asked to sign in');
 
         const form = (body, who) => t.get(`/c/${liveVod.access_id}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': ip2(), ...(who.origin ? { origin: who.origin } : {}) }, body, cookies: who.cookie ? [`ov_token=${who.cookie}`] : [] });
         const empty = await form('message=+', { cookie: samJwt, origin: 'https://openvibe.community' });
         assert.strictEqual(empty.status, 400);
-        assert.match(empty.text, /class="alert alert-error"[^>]*>Comment cannot be empty/, 'the page again, with the error');
+        assert.match(empty.text, /A comment is 1 to 2,000 characters/, 'the page explains the error');
         const made = await form('message=said+on+Community', { cookie: samJwt });
         assert.strictEqual(made.status, 303, made.text.slice(0, 200));
         assert.match(made.headers.get('location'), new RegExp(`^/c/${liveVod.access_id}#comment-\\d+$`));

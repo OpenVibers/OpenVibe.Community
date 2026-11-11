@@ -46,6 +46,7 @@ const v1 = require('./http/v1');
 const { createCommentService } = require('./comments/service');
 const { createSharing, describeRef } = require('./sharing');
 const { createCommentsApi } = require('./comments/api');
+const commentForm = require('./comments/form');
 const { createCommentPages } = require('./comments/routes');
 const { createForumService } = require('./forum/service');
 const { createVipGate } = require('./vip');
@@ -630,12 +631,23 @@ async function createApp(opts = {}) {
         // comments API show, sorted (?sort=old|new) and paged (?after=<last comment id>) as there; null while
         // nobody has commented. The comment service applies the paste's visibility again.
         // A burn-after-read paste is gone once shown, so it has no comment panel.
-        const after = /^\d{1,15}$/.test(String(query.after || '')) ? String(query.after) : null;
-        const sort = query.sort === 'old' ? 'old' : 'new';
+        const after = /^(?:-?\d{1,12}:)?\d{1,15}$/.test(String(query.after || '')) ? String(query.after) : null;
+        const sort = query.sort === 'new' ? 'new' : 'top';
         const thread = paste.burn_after_read ? null : await comments.forRef(viewer, pasteRef(paste.slug), { sort, after, limit: 30 });
+        const expandedId = /^\d{1,15}$/.test(String(query.replies || '')) ? String(query.replies) : null;
+        let expandedReplies = null;
+        if (thread && expandedId && thread.comments.some((c) => String(c.id) === expandedId)) {
+            expandedReplies = [];
+            let cursor = null;
+            do {
+                const page = await comments.get(viewer, thread.thread.access_id, { parent: expandedId, after: cursor, limit: 100 });
+                expandedReplies.push(...page.comments);
+                cursor = page.next_cursor;
+            } while (cursor);
+        }
         return {
             status: 200, slug: paste.slug, canonical: paste.canonical_slug || paste.slug,
-            body: pages.pastePage({ paste, related, user, comments: thread, commentSort: sort, commentsAfter: after, share }),
+            body: pages.pastePage({ paste, related, user, comments: thread, commentSort: sort, commentsAfter: after, replyId: query.reply, expandedId, expandedReplies, share }),
         };
     }
 
@@ -656,7 +668,7 @@ async function createApp(opts = {}) {
 
     // No-JS comment form: signed in, the cookie (SameSite=Lax) and no Origin from another site, as on /c/:accessId.
     // The thread opens on the first comment; the comment service decides the rest (visibility, lock, blocks, limits).
-    app.post('/p/:slug/comments', withUser, express.urlencoded({ extended: false, limit: '64kb' }), wrap(async (req, res, next) => {
+    app.post('/p/:slug/comments', withUser, express.urlencoded({ extended: false, limit: '64kb' }), commentForm.parse, wrap(async (req, res, next) => {
         const { slug } = req.params;
         const origin = req.get('origin');
         if (origin && origin !== 'null' && origin !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
@@ -670,8 +682,8 @@ async function createApp(opts = {}) {
             back = `/p/${encodeURIComponent(found.canonical_slug || stable)}`;
             if (!req.viewer || !req.viewer.subject) return res.redirect(303, `/auth/login?next=${encodeURIComponent(back)}`);
             const { thread } = await comments.resolve(req.viewer, { ref: pasteRef(stable) });
-            const b = req.body || {};
-            const out = await comments.add(req.viewer, thread.id, { message: String(b.message || '').slice(0, 5000), parent_id: b.parent_id || null });
+            const body = await commentForm.bodyFor(comments, req.viewer, pasteRef(stable), req);
+            const out = await comments.add(req.viewer, thread.id, body);
             return res.redirect(303, `${back}#comment-${out.comment.id}`);
         } catch (err) {
             if (!(err instanceof v1.ApiError) && !(err && err.name === 'PasteError')) return next(err);
@@ -679,6 +691,17 @@ async function createApp(opts = {}) {
             if (err.status === 404) return html(res, pages.errorPage({ status: 404, title: 'Paste not found', message: 'It may have been deleted, burned after reading, or never existed.' }), 404);
             return html(res, pages.errorPage({ status: err.status, title: err.status === 429 ? 'Slow down' : 'That did not work', message: err.message }), err.status);
         }
+    }));
+
+    app.post('/p/:slug/comments/delete', withUser, express.urlencoded({ extended: false, limit: '4kb' }), wrap(async (req, res, next) => {
+        if (req.get('origin') && req.get('origin') !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
+        try {
+            const found = await source.getPaste(req.params.slug, { ...ctxOf(req), noView: true });
+            const id = String((req.body || {}).comment_id || '');
+            if (!/^\d{1,15}$/.test(id)) throw new v1.ApiError(400, 'comment.invalid', 'Invalid comment');
+            await comments.remove(req.viewer, id, pasteRef(found.slug));
+            return res.redirect(303, `/p/${encodeURIComponent(found.canonical_slug || found.slug)}#comments`);
+        } catch (err) { return next(err); }
     }));
 
     // Raw text is served here, the screenshot link is the stored Media URL.

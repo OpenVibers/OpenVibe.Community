@@ -8,7 +8,7 @@
 const config = require('../config');
 const ovServe = require('openvibe-shared/serve');
 const ld = require('./jsonld');
-const { renderPage, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
+const { renderPage, asset, SITE_NAME, DEFAULT_OG_IMAGE } = require('./layout');
 const frame = require('openvibe-shared/frame');
 const showcase = require('openvibe-shared/showcase');
 const kit = require('openvibe-shared/kit');
@@ -444,7 +444,7 @@ function withoutTitle(content, title) {
     return m && bare(m[1]) && bare(m[1]) === bare(title) ? text.slice(m[0].length) : text;
 }
 
-function pastePage({ paste: p, related, user, comments = null, commentSort = 'new', commentsAfter = null, share = null }) {
+function pastePage({ paste: p, related, user, comments = null, commentSort = 'top', commentsAfter = null, replyId = null, expandedId = null, expandedReplies = null, share = null }) {
     const isShot = p.type === 'screenshot';
     // A locked paste (Locker design 2026-11-06, the pilot): Community holds an envelope and never the plaintext. The
     // title is here only if its owner chose to show it; the page opens the envelope in the browser.
@@ -541,10 +541,9 @@ ${offer}
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
 </article>
-${p.burn_after_read ? '' : `<section class="section" id="comments">
+${p.burn_after_read ? '' : `<section class="section">
   ${locked ? '<p class="muted small">Comments are not locked: anyone who can open this paste can read them, and so can OpenVibe.</p>' : ''}
-  <div class="section-head"><h2>Comments${comments && comments.thread.comment_count ? ` <span class="muted small">${num(comments.thread.comment_count)}</span>` : ''}</h2></div>
-  ${require('./comments').commentPanel({ page: comments, user, base: `/p/${pageSlug}`, action: `/p/${pageSlug}/comments`, after: commentsAfter, sort: commentSort })}
+  ${require('./comments').commentPanel({ page: comments, user, base: `/p/${pageSlug}`, action: `/p/${pageSlug}/comments`, sort: commentSort, replyId, expandedId, expandedReplies })}
 </section>`}
 ${!locked && related && related.length ? `<section class="section" id="related">
   <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
@@ -621,7 +620,8 @@ window.addEventListener('DOMContentLoaded', function () {
             ld.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
             ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${pageSlug}` }]),
         ],
-        body,
+        styles: ['kit.css', 'thread.css'], pageCss: ['inline-comments.css'],
+        body: `${body}<script src="${asset('js/inline-comments.js')}" defer></script>`,
     });
 }
 
