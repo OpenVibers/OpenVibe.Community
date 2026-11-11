@@ -160,22 +160,22 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         if (canViewPaste) return await canViewPaste(v, p);
         return !(p.visibility === 'private' && !(v && (v.staff || (v.subject && p.owner_subject && v.subject === p.owner_subject))));
     }
-    /** Whether the viewer may see the entity a thread belongs to (only Community's pastes can be checked here). */
-    async function publicPicture(id) {
+    /** An active Pics image is visible to anyone holding its unlisted link and id. */
+    async function activePicture(id) {
         if (!/^pic_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(id))) return false;
         try {
             const response = await fetchImpl(`https://openvibe.pics/api/v1/pictures/${encodeURIComponent(id)}`, { redirect: 'error', signal: AbortSignal.timeout(3000), headers: { Accept: 'application/json' } });
             if (!response.ok) return false;
             const picture = await response.json();
-            return picture.id === id && picture.listed === true && picture.state === 'active' && typeof picture.views === 'number';
+            return picture.id === id && picture.state === 'active' && typeof picture.slug === 'string';
         } catch { return false; }
     }
-    const entityVisible = async (v, t) => t.ref_service === 'pics' && t.ref_type === 'picture' ? publicPicture(t.ref_id)
+    const entityVisible = async (v, t) => t.ref_service === 'pics' && t.ref_type === 'picture' ? activePicture(t.ref_id)
         : !(t.ref_service === 'community' && t.ref_type === 'paste') || await pasteVisibleTo(v, t.ref_id);
 
     /** Community's own entities must exist (and be visible to the viewer) before anyone opens a thread on them. */
     async function checkCommunityRef(ref, v) {
-        if (ref.service === 'pics' && ref.type === 'picture' && !await publicPicture(ref.id)) fail(404, 'ref.not_found', 'No such public picture');
+        if (ref.service === 'pics' && ref.type === 'picture' && !await activePicture(ref.id)) fail(404, 'ref.not_found', 'No such active picture');
         if (ref.service !== 'community') return;
         if (ref.type === 'paste') {
             if (!await pasteVisibleTo(v, ref.id)) fail(404, 'ref.not_found', 'No such paste');
