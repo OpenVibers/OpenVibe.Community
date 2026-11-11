@@ -202,7 +202,9 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
                 mark([c], live);
                 if (kind && c.kind !== kind) continue;
                 if (site && c.site !== site) continue;
-                if (q && !(c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q))) continue;
+                if (q && !(c.title.toLowerCase().includes(q) || c.text.toLowerCase().includes(q)
+                    || String(c.actor && c.actor.name || '').toLowerCase().includes(q)
+                    || c.site_name.toLowerCase().includes(q) || c.kind.includes(q))) continue;
                 picked.push({ row: i, card: c });
                 if (picked.length >= pulseWant) {
                     // Resume after the last consumed row, including when Pulse's final page was only partly read.
@@ -225,6 +227,34 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         });
         while (items.length < want && k < t.length) items.push(t[k++]);
         return { items, next_cursor: next };
+    }));
+    router.get('/search', run(async (req) => {
+        const q = clean(req.query.q, 80).toLowerCase();
+        if (!q) fail(400, 'feed.search_required', 'Enter a search term');
+        const page = await pulse.list({ limit: 100 }, req.viewer);
+        let rows = (page.items || []).map((row) => ({ row, item: card(row) }));
+        const kindMatch = /\b(clips?|videos?|photos?|pics?|posts?|streams?|live|games?|updates?)\b/.exec(q);
+        const kind = kindMatch && ({ clip: 'clip', clips: 'clip', video: 'video', videos: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update' })[kindMatch[1]];
+        const today = /\btoday\b/.test(q);
+        const words = q.replace(/\b(clips?|videos?|photos?|pics?|posts?|streams?|live|games?|updates?|from|today|new)\b/g, '').trim();
+        if (kind) rows = rows.filter(({ item }) => item.kind === kind || (kind === 'stream' && item.kind === 'live'));
+        if (today) { const day = new Date().toISOString().slice(0, 10); rows = rows.filter(({ item }) => String(item.at || '').slice(0, 10) === day); }
+        if (words) rows = rows.filter(({ item }) => [item.title, item.text, item.site_name, item.kind, item.actor && item.actor.name].some((v) => String(v || '').toLowerCase().includes(words)));
+        return { items: rows.slice(0, 40).map(({ item }) => item), next_cursor: null };
+    }));
+    router.get('/examples', run(async () => {
+        const page = await pulse.list({ limit: 100 });
+        const cards = (page.items || []).map(card);
+        const examples = [];
+        const add = (text, reason) => { if (!examples.some((x) => x.text === text)) examples.push({ text, reason }); };
+        const actors = new Map();
+        for (const c of cards) {
+            if (c.actor && c.actor.name) actors.set(c.actor.name, (actors.get(c.actor.name) || 0) + 1);
+        }
+        for (const [name] of actors) add(name, 'person');
+        for (const kind of [...new Set(cards.map((c) => c.kind))]) add(`new ${kind === 'pic' ? 'photos' : `${kind}s`}`, 'kind');
+        add('clips from today', 'date and kind');
+        return { examples: examples.slice(0, 8) };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;

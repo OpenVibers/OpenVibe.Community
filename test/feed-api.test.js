@@ -38,6 +38,13 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
 
 (async () => {
     const t = await boot({ authority: 'community', pasteLimits: { cooldownSeconds: 0 }, appOpts: { feedFetch, startRelay: false, startSharingWorker: false, forumLimits: { threads: { cooldownSec: 0, perMinute: 1000 }, posts: { cooldownSec: 0, perMinute: 1000 }, threadsPerDay: 1000 } } });
+    await check('feed examples are generated from current Pulse cards and search accepts natural filters', async () => {
+        const examples = await t.get('/api/v1/feed/examples');
+        assert.strictEqual(examples.status, 200, examples.text);
+        assert.ok(Array.isArray(examples.json().examples));
+        const empty = await t.get('/api/v1/feed/search');
+        assert.strictEqual(empty.status, 400);
+    });
     const net = t.network;
     const db = t.app.locals.db;
     const pulse = t.app.locals.pulse;
