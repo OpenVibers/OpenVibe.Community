@@ -209,6 +209,9 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .space-link:hover { text-decoration: none; }
 .sort-tabs { margin: 8px 0 14px; }
 .sort-tabs .tab { text-decoration: none; }
+.feed-kind-tabs { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+body:has(.feed-kind-tabs) { overflow-x: clip; }
+html:has(.feed-kind-tabs) { overflow-x: clip; }
 .thread-row, .pulse-item { display: flex; gap: 14px; align-items: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
 .thread-score { min-width: 2.6em; text-align: center; font-weight: 700; color: var(--text-secondary); padding-top: 2px; }
 .thread-main, .pulse-main { min-width: 0; flex: 1; }

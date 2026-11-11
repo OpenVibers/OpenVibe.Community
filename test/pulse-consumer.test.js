@@ -46,10 +46,18 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     assert.strictEqual(r.json.outcome, 'pulse:created');
     assert.strictEqual((await items())[1].title, 'New post on the openvibe blog');
     assert.strictEqual((await items())[1].origin, 'system', 'no person when a service published it');
+    r = await post(evt({ event_type: 'mediahub.video.published', source: 'media-hub', subject: { type: 'video', id: 'vup_01JAB2C3D4E5F6G7H8J9K0MNPQ' },
+        payload: { upload: 'vup_01JAB2C3D4E5F6G7H8J9K0MNPQ', owner: { type: 'user', id: USR }, title: 'A public video', url: 'https://openvibe.video/u/vup_01JAB2C3D4E5F6G7H8J9K0MNPQ', published_at: new Date().toISOString() } }));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    assert.deepStrictEqual([(await items())[2].source_service, (await items())[2].source_type, (await items())[2].title], ['media-hub', 'video', 'A public video']);
+    r = await post(evt({ event_type: 'games.world.published', source: 'games', subject: { type: 'world', id: 'w0123456789' },
+        payload: { world: 'w0123456789', owner: { type: 'user', id: USR }, title: 'Beacon Hill', url: 'https://openvibe.games/play?world=w0123456789', published_at: new Date().toISOString() } }));
+    assert.strictEqual(r.json.outcome, 'pulse:created');
+    assert.deepStrictEqual([(await items())[3].source_service, (await items())[3].source_type, (await items())[3].title], ['games', 'world', 'Beacon Hill']);
     r = await post(evt({ event_type: 'wiki.page.published', source: 'wiki', subject: { type: 'page', id: 'pg_2' },
         payload: { canonical_url: 'https://openvibe.wiki/w/help/start', publication_state: 'published', visibility: 'public', space: 'help', slug: 'start', indexability: { decision: 'noindex', reasons: ['thin'] } } }));
     assert.strictEqual(r.json.outcome, 'ignored:not_public', 'a noindex page stays out of Pulse');
-    assert.strictEqual((await items()).length, 2);
+    assert.strictEqual((await items()).length, 4);
     // VIP convergence: a membership change from VIP drops cached members-only answers once; from anyone else, nothing.
     const vipEv = (source) => evt({ event_type: 'vip.membership.changed', source, subject: { type: 'membership', id: 'mbr_1', revision: 2 }, actor: { type: 'service', id: 'vip' },
         payload: { member: { type: 'user', id: USR }, creator: { type: 'user', id: USR }, status: 'canceled' } });
@@ -61,7 +69,7 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     r = await post(vipEv('live'));
     assert.strictEqual(r.json.outcome, 'ignored:source');
     assert.deepStrictEqual(vipDrops, [v1.event_id]);
-    assert.strictEqual((await items()).length, 2, 'no Pulse item for a membership');
+    assert.strictEqual((await items()).length, 4, 'no Pulse item for a membership');
     // Game progress (WS-M task 2): games.progress.summary writes through network.module.updated.
     const USR2 = 'usr_01JAB2C3D4E5F6G7H8J9K0MNPR';
     const mod = (level, over = {}) => evt({ event_type: 'network.module.updated', source: 'network', visibility: 'internal', subject: { type: 'user', id: USR2 }, actor: { type: 'service', id: 'games' },
@@ -73,19 +81,19 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     const m11 = mod(11);
     r = await post(m11);
     assert.strictEqual(r.json.outcome, 'pulse:created');
-    assert.deepStrictEqual((await items())[2], { source_service: 'games', source_type: 'level', source_id: `${USR2}:10`, title: 'Reached level 10 in Scraplandia', url: 'https://openvibe.games/', actor_subject: USR2, origin: 'user' });
+    assert.deepStrictEqual((await items())[4], { source_service: 'games', source_type: 'level', source_id: `${USR2}:10`, title: 'Reached level 10 in Scraplandia', url: 'https://openvibe.games/', actor_subject: USR2, origin: 'user' });
     assert.strictEqual((await post(m11)).json.duplicate, true);
     r = await post(mod(6));
     assert.strictEqual(r.json.outcome, 'games:no_milestone', 'a level going down (another character) announces nothing');
     r = await post(mod(12));
     assert.strictEqual(r.json.outcome, 'games:no_milestone', 'the stored level never went down, so 10 is not crossed again');
     r = await post(mod(15));
-    assert.strictEqual((await items())[3].title, 'Reached level 15 in Scraplandia');
+    assert.strictEqual((await items())[5].title, 'Reached level 15 in Scraplandia');
     assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'ai.usage_summary', change: 'updated', public: { level: 20 } } }))).json.outcome, 'ignored:namespace');
     assert.strictEqual((await post(mod(20, { source: 'games' }))).json.outcome, 'ignored:source', 'only Network speaks for user modules');
     assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', change: 'delete' } }))).json.outcome, 'ignored:change');
     assert.strictEqual((await post(mod(20, { payload: { owner: { type: 'user', id: USR2 }, namespace: 'games.progress.summary', change: 'updated', keys: ['level'] } }))).json.outcome, 'ignored:payload', 'no public level, nothing read');
-    assert.strictEqual((await items()).length, 4);
+    assert.strictEqual((await items()).length, 6);
     // A dropped connection is a new Live session (a new subject id), but the stream is one broadcast.
     const store = require('../server/pulse/store');
     const T = Date.parse('2026-06-01T10:00:00.000Z');
@@ -109,12 +117,12 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     assert.strictEqual(r.json.outcome, 'pulse:created');
     assert.strictEqual((await shows(REPEAT)).length, 1, 'the older broadcast is untouched');
     assert.strictEqual((await shows('Goosely went live: New show')).length, 1, 'a different title is a new item');
-    assert.strictEqual((await items()).length, 6);
+    assert.strictEqual((await items()).length, 8);
 
     r = await post(liveAt(9004, T + 7 * 3_600_000, 'Repeat show'));
     assert.strictEqual(r.json.outcome, 'pulse:created', 'more than six hours later is a new broadcast');
     assert.strictEqual((await shows(REPEAT)).length, 2);
-    assert.strictEqual((await items()).length, 7);
+    assert.strictEqual((await items()).length, 9);
 
     // The channel URL is the identity too, when the event names another acting subject for it.
     r = await post(liveAt(9005, T + 10 * 60_000, 'URL show'));
@@ -122,7 +130,7 @@ let SECRET, db, app, vipDrops, USR, seq, evt;
     r = await post(liveAt(9006, T + 25 * 60_000, 'URL show', { actor: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPS' }));
     assert.strictEqual(r.json.outcome, 'pulse:updated');
     assert.strictEqual((await shows('Goosely went live: URL show')).length, 1);
-    assert.strictEqual((await items()).length, 8);
+    assert.strictEqual((await items()).length, 10);
 
     // Duplicates already in the table: the feed read shows one line per channel+title per six hours,
     // at the newest time, without deleting the rows.

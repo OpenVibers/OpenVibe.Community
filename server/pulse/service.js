@@ -88,6 +88,9 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             label: ai ? 'AI' : (i.origin === 'system' ? 'System' : null),
             ...(i.source_service.startsWith('app:') ? { via: `via ${i.app_name || i.source_service.slice(4)}` } : {}),
             ...(i.picture_url ? { picture_url: i.picture_url } : {}),
+            ...(i.preview_url ? { preview_url: i.preview_url } : {}),
+            ...(i.media_ratio ? { media_ratio: i.media_ratio } : {}),
+            ...(i.media_length ? { media_length: i.media_length } : {}),
             ...(i.text ? { text: i.text } : {}),
             actor,
             occurred_at: isoTime(i.occurred_at),
@@ -160,11 +163,21 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             if (v.origin === 'ai') origin = 'ai'; // X-OV-Origin: ai wins over a body that says otherwise
             const when = body.occurred_at == null ? new Date() : new Date(body.occurred_at);
             if (Number.isNaN(when.getTime()) || when.getTime() > Date.now() + FUTURE_SKEW_MS || when.getUTCFullYear() < 2000) fail(400, 'pulse.invalid_time', 'occurred_at must be an ISO time, not in the future');
+            const media = body.media && typeof body.media === 'object' && !Array.isArray(body.media) ? body.media : {};
+            const mediaUrl = (v) => { try { const x = new URL(String(v)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
+            const thumb = mediaUrl(media.thumb);
+            const preview = media.preview == null ? null : mediaUrl(media.preview);
+            const ratio = media.ratio == null ? null : Number(media.ratio);
+            const length = media.length == null ? null : Number(media.length);
+            if (media.thumb != null && !thumb) fail(400, 'pulse.invalid_media', 'media.thumb must be an HTTPS Media URL');
+            if (media.preview != null && !preview) fail(400, 'pulse.invalid_media', 'media.preview must be an HTTPS URL');
+            if (ratio != null && (!Number.isFinite(ratio) || ratio <= 0 || ratio > 20)) fail(400, 'pulse.invalid_media', 'media.ratio must be between 0 and 20');
+            if (length != null && (!Number.isFinite(length) || length < 0 || length > 86400)) fail(400, 'pulse.invalid_media', 'media.length must be between 0 and 86400 seconds');
             const out = await store.upsertItem(db, {
                 source_service: ref.service, source_type: ref.type, source_id: ref.id,
                 title, url: parsed.toString(),
                 actor_subject: origin === 'user' ? (v.subject || null) : null,
-                origin, occurred_at: sqlTime(when),
+                origin, occurred_at: sqlTime(when), picture_url: thumb, preview_url: preview, media_ratio: ratio, media_length: length,
             });
             const projections = await authors.projectionsFor([out.item.actor_subject]);
             return { item: shape(out.item, projections), created: out.created };

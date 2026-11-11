@@ -8,6 +8,7 @@
  *   - OpenVibe.Today: GET /api/v1/events (public, cached there) → source today / event
  *   - OpenVibe.Network: GET /api/v1/stats (public, CORS-open) → one grouped member row per day, "5 people joined today"
  *   - OpenVibe.Quest: GET /api/v1/profiles/:subject/badges for people recently active in Pulse → "Finished a quest: …"
+ *   - OpenVibe.Meme: GET /api/v1/entries (public) → newly published meme entries
  *
  * Due-ness is kept in the database (pulse_source_runs): a run records the next time it is due, so a restart does not
  * skip a source and two processes do not both fetch at once (the second simply finds it not due). A minute timer only
@@ -38,6 +39,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
     const networkSite = String(config.networkUrl || 'https://openvibe.network').replace(/\/+$/, '');
     const questApi = String(config.questInternalUrl || config.questUrl || 'https://openvibe.quest').replace(/\/+$/, '');
     const questSite = String(config.questUrl || 'https://openvibe.quest').replace(/\/+$/, '');
+    const memeApi = String(config.memeInternalUrl || config.memeUrl || 'https://openvibe.meme').replace(/\/+$/, '');
     let timer = null;
     let running = null;
 
@@ -148,10 +150,37 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         return n;
     }
 
+    /** Meme's public entries → one Feed card each; the API excludes hidden and unlisted entries. */
+    async function memeEntries() {
+        let cursor = null, created = 0;
+        for (let page = 0; page < 4; page++) {
+            const url = new URL('/api/v1/entries', memeApi);
+            url.searchParams.set('limit', '50');
+            if (cursor) url.searchParams.set('cursor', cursor);
+            const out = await getJson(url.toString());
+            for (const e of (Array.isArray(out.entries) ? out.entries : [])) {
+                const slug = clean(e && e.slug, 100);
+                const title = clean(e && e.title, 300);
+                if (!slug || !/^[A-Za-z0-9-]+$/.test(slug) || !title) continue;
+                const url = `${String(config.memeUrl || 'https://openvibe.meme').replace(/\/+$/, '')}/m/${encodeURIComponent(slug)}`;
+                const r = await store.upsertItem(db, {
+                    source_service: 'meme', source_type: 'meme', source_id: slug, title, url,
+                    actor_subject: null, origin: 'system', occurred_at: sqlFrom(e.published_at || e.created_at, sqlTime(now())),
+                    text: clean(e.summary || e.description, 280),
+                });
+                if (r.created) created++;
+            }
+            cursor = typeof out.next_cursor === 'string' && out.next_cursor ? out.next_cursor : null;
+            if (!cursor) break;
+        }
+        return created;
+    }
+
     const SOURCES = [
         { name: 'today-events', every: 10 * MINUTE, run: todayEvents },
         { name: 'network-members', every: 60 * MINUTE, run: networkMembers },
         { name: 'quest-badges', every: 15 * MINUTE, run: questBadges },
+        { name: 'meme-entries', every: 10 * MINUTE, run: memeEntries },
     ];
 
     async function remember(name, { nextRun, lastRun, error = null }) {

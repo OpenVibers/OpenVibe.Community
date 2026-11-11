@@ -5,6 +5,8 @@
  * becomes Pulse items (roadmap §29 / §33: provenance kept, AI never shown as a person):
  *
  *   live.stream.started     "<channel> went live: <title>"  → the channel page, actor the streamer
+ *   mediahub.video.published the public video upload
+ *   games.world.published   the creator's public world
  *   blog.post.published     "New post on the <blog> blog"   → the post (public, indexable only)
  *   wiki.page.published     "Wiki: <space> / <slug>"        → the page (public, indexable only)
  *   news.story.published    "News: <topic>"                 → the story (public, indexable only)
@@ -37,7 +39,7 @@ const store = require('./store');
 const blocks = require('../identity/blocks');
 
 const CONSUMER = 'community';
-const TOPICS = Object.freeze(['live.stream.started', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.account.export_requested', 'network.account.deleted']);
+const TOPICS = Object.freeze(['live.stream.started', 'mediahub.video.published', 'games.world.published', 'blog.post.published', 'wiki.page.published', 'wiki.page.updated', 'chat.room.message.created', 'news.story.published', 'vip.membership.changed', 'network.user.token_valid_after', 'network.block.changed', 'network.module.updated', 'network.account.export_requested', 'network.account.deleted']);
 const GAME_NAMESPACE = 'games.progress.summary';
 const GAME_MILESTONE = 5;
 const GAME_URL = 'https://openvibe.games/';
@@ -61,16 +63,19 @@ function itemFor(event) {
         const title = clean(p.title, 120);
         return { source_service: 'live', source_type: 'stream', source_id: subjectId, title: title ? `${name} went live: ${title}` : `${name} went live`, url, actor_subject: subjectOf(ch.subject), origin: 'user', occurred_at: p.started_at || at };
     }
-    const kinds = { 'blog.post.published': ['blog', 'post'], 'wiki.page.published': ['wiki', 'page'], 'wiki.page.updated': ['wiki', 'page'], 'news.story.published': ['news', 'story'] };
+    const kinds = { 'mediahub.video.published': ['media-hub', 'video'], 'games.world.published': ['games', 'world'], 'blog.post.published': ['blog', 'post'], 'wiki.page.published': ['wiki', 'page'], 'wiki.page.updated': ['wiki', 'page'], 'news.story.published': ['news', 'story'] };
     const k = kinds[event.event_type];
     if (!k) return 'ignored:type';
     if (event.source !== k[0]) return 'ignored:source';
-    if (!publicIndexable(p)) return 'ignored:not_public';
-    const url = httpsUrl(p.canonical_url);
+    if (event.event_type === 'mediahub.video.published' || event.event_type === 'games.world.published') {
+        if (event.visibility !== 'public') return 'ignored:not_public';
+    } else if (!publicIndexable(p)) return 'ignored:not_public';
+    const url = httpsUrl(p.canonical_url || p.url);
     if (!url || !subjectId) return 'ignored:payload';
     // blog.post.published names its blog as { id, handle } (contracts payload v1); a plain string is still read.
     const blogName = clean(p.blog && typeof p.blog === 'object' ? p.blog.handle : p.blog, 60);
-    const title = k[0] === 'blog' ? (blogName ? `New post on the ${blogName} blog` : 'New post on an OpenVibe blog')
+    const title = k[0] === 'media-hub' || k[0] === 'games' ? clean(p.title, 160)
+        : k[0] === 'blog' ? (blogName ? `New post on the ${blogName} blog` : 'New post on an OpenVibe blog')
         // A wiki page by its title when the event carries one (contracts 0.366.0), else by where it lives.
         : k[0] === 'wiki' ? (clean(p.title, 160) || `Wiki: ${clean(p.space, 40)} / ${clean(p.slug, 60)}`)
             : `News: ${clean(p.topic, 60) || 'a new story'}`;

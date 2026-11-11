@@ -24,6 +24,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
             { id: 'tev_private', kind: 'event', title: 'Private', visibility: 'followers', status: 'scheduled', owner_subject: null },
         ] }) };
         if (u.includes('/api/v1/stats')) return { ok: true, json: async () => ({ accounts: { total: 1234, daily: [{ day: today, n: 5 }, { day: yesterday, n: 3 }, { day: '2026-01-01', n: 0 }] } }) };
+        if (u.includes('/api/v1/entries')) return { ok: true, json: async () => ({ entries: [{ slug: 'open-source-meme', title: 'Open source meme', summary: 'A public entry', published_at: iso(Date.now() - 120_000) }], next_cursor: null }) };
         if (u.includes('/badges')) return { ok: true, json: async () => ({ badges: [
             { id: 'first-post', name: 'First Post', awarded_at: badgeAt },
             { id: 'old-badge', name: 'Old Badge', awarded_at: iso(Date.now() - 90 * 86_400_000) },
@@ -44,6 +45,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.strictEqual(by['today-events'].items, 1, JSON.stringify(out));
         assert.strictEqual(by['network-members'].items, 2);
         assert.strictEqual(by['quest-badges'].items, 1);
+        assert.strictEqual(by['meme-entries'].items, 1);
         const feed = (await t.get('/api/v1/feed?limit=40')).json();
         const ev = feed.items.find((x) => x.kind === 'event');
         assert.strictEqual(ev.title, 'Event: Launch party');
@@ -55,6 +57,10 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         const q = feed.items.find((x) => x.kind === 'quest');
         assert.strictEqual(q.title, 'Finished a quest: First Post');
         assert.strictEqual(q.actor.name, 'Alex');
+        const meme = feed.items.find((x) => x.kind === 'meme');
+        assert.strictEqual(meme.title, 'Open source meme');
+        assert.strictEqual(meme.text, 'A public entry');
+        assert.strictEqual(meme.url, 'https://openvibe.meme/m/open-source-meme');
         assert.ok(!feed.items.some((x) => /Cancelled|Private|Old Badge/.test(x.title)), feed.items.map((x) => x.title).join(' | '));
     });
 
@@ -62,8 +68,8 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         const quiet = await t.app.locals.pulseSources.runOnce();
         assert.deepStrictEqual(quiet, []);
         const status = await t.app.locals.pulseSources.status();
-        assert.deepStrictEqual(status.sources.sort(), ['network-members', 'quest-badges', 'today-events']);
-        assert.strictEqual(status.runs.length, 3);
+        assert.deepStrictEqual(status.sources.sort(), ['meme-entries', 'network-members', 'quest-badges', 'today-events']);
+        assert.strictEqual(status.runs.length, 4);
         assert.ok(status.runs.every((r) => r.next_run_at && r.last_run_at && !r.last_error));
     });
 

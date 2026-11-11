@@ -63,6 +63,7 @@ const { createSubmissionService } = require('./submissions/service');
 const { createSubmissionsApi } = require('./submissions/api');
 const { createSubmissionPages } = require('./submissions/routes');
 const { pulsePage } = require('./render/pulse');
+const { feedPage } = require('./render/feed');
 const { extensionFor } = require('./render/highlight');
 const { createIndexNow } = require('openvibe-shared/indexnow');
 const { createPasteService } = require('./pastes/service');
@@ -794,6 +795,40 @@ async function createApp(opts = {}) {
         try { out = await pulse.list({ origin, after: req.query.after }); }
         catch (err) { if (err instanceof v1.ApiError) return res.redirect(302, origin ? `/pulse?origin=${origin}` : '/pulse'); throw err; }
         html(res, pulsePage({ items: out.items, origin, after: req.query.after || null, nextCursor: out.next_cursor, origins: await pulse.origins() }));
+    }));
+
+    const feedTools = require('./pulse/feed');
+    const feedLiveNow = feedTools.createLiveNow({ liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch });
+    app.get('/feed', viewers.middleware({ services: false }), wrap(async (req, res) => {
+        const kind = ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update'].includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
+        const cursor = req.query.cursor ? String(req.query.cursor) : '';
+        const live = await feedLiveNow();
+        const items = [];
+        let after = cursor;
+        let nextCursor = null;
+        for (let pages = 0; pages < 8 && items.length < 12; pages++) {
+            const out = await pulse.list({ limit: 12, after: after || undefined });
+            const rows = out.items || [];
+            for (let index = 0; index < rows.length; index++) {
+                const item = rows[index];
+                const card = feedTools.card(item);
+                if (card.kind === 'live') {
+                    card.live_now = live.has(feedTools.channelOf(card.url).toLowerCase());
+                    if (!card.live_now) card.kind = 'stream';
+                }
+                if (!kind || card.kind === kind) items.push(card);
+                if (items.length >= 12) {
+                    nextCursor = index < rows.length - 1
+                        ? v1.encodeCursor([v1.sqlTime(item.occurred_at), item.id])
+                        : (out.next_cursor || null);
+                    break;
+                }
+            }
+            if (items.length >= 12 || !out.next_cursor) break;
+            after = out.next_cursor;
+            nextCursor = after;
+        }
+        html(res, feedPage({ items, kind, cursor: cursor || null, nextCursor }));
     }));
 
     app.get('/my', withUser, wrap(async (req, res) => {

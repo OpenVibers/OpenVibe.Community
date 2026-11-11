@@ -92,6 +92,7 @@ async function buildSitemapRows() {
     const add = (loc, lastmod, changefreq, priority) => rows.push({ loc: abs(loc), lastmod, changefreq, priority });
     add('/', null, 'hourly', '1.0');
     add('/pastes', null, 'hourly', '0.8');
+    add('/feed', null, 'hourly', '0.8');
     add('/pastes?sort=views', null, 'daily', '0.5');
     // No /p/:slug rows: a paste is link-shared content and is noindex (SEO-29), so it must not be
     // in a sitemap. The /pastes browse and search pages above are the surfaces meant for search.

@@ -108,6 +108,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(r.text.startsWith('<?xml version="1.0" encoding="UTF-8"?>'));
         assert.ok(r.text.includes('<loc>https://openvibe.community/</loc>'));
         assert.ok(r.text.includes('<loc>https://openvibe.community/pastes</loc>'));
+        assert.ok(r.text.includes('<loc>https://openvibe.community/feed</loc>'));
         for (const slug of ['amber-fox-42', 'fair-moon-23', 'dark-owl-55', 'grim-vale-61']) {
             assert.ok(!r.text.includes(`/p/${slug}`), `${slug} must not be in a sitemap`);
         }

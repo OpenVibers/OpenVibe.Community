@@ -85,16 +85,16 @@ async function upsertItem(db, it) {
             // what the first record said. A source that sends no text (undefined) keeps the text already there.
             if (it.text === undefined) it = { ...it, text: had.text };
             if (it.touch) {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, app_name = ?, text = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), it.occurred_at, ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), it.occurred_at, ...key);
             } else {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, app_name = ?, text = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), ...key);
             }
             return { item: await find.get(...key), created: false };
         }
-        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, app_name, text)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at, it.picture_url || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300));
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, preview_url, media_ratio, media_length, app_name, text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?, ?, ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.occurred_at, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300));
         return { item: await find.get(...key), created: true };
     });
 }
