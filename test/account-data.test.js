@@ -26,7 +26,6 @@ let SECRET, db, sent, failNext, accountSend, app, DANA, OLD, OTTO, evt;
             exempt: {
                 account_data_events: 'the ledger of requests itself: which export and deletion Community applied',
                 pulse_quest_people: 'when the Quest badge scan last checked a person: exported as quest_checks.json and erased with them',
-                pulse_play_people: 'when the Play achievement scan last checked a person: exported as play_checks.json and erased with them',
                 pulse_profile_revision: 'Network profile event ordering: exported as profile_feed_revision.json and erased with the person',
                 share_members: 'shares are erased by ../identity/account-data.js erase() (subject is jsonb)',
                 share_access_requests: 'shares are erased by ../identity/account-data.js erase() (subject is jsonb)',

@@ -157,38 +157,36 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         return n;
     }
 
-    /** Play's public profile read is the authority for achievements earned in any game. */
+    /** Play's anonymous feed contains every person's public unlock across production games. */
     async function playAchievements() {
-        const at = now();
-        const people = await db.prepare(`SELECT DISTINCT i.actor_subject AS subject FROM pulse_items i
-            LEFT JOIN pulse_play_people p ON p.subject = i.actor_subject
-            WHERE i.actor_subject IS NOT NULL AND i.origin = 'user' AND i.occurred_at >= ?
-              AND (p.subject IS NULL OR p.checked_at < ?) ORDER BY i.actor_subject LIMIT 25`)
-            .all(sqlTime(at - QUEST_RECENT_MS), sqlTime(at - QUEST_CHECK_MS));
+        let cursor = null;
         let created = 0;
-        for (const person of people) {
-            const who = subject(person.subject);
-            if (!who) continue;
-            try {
-                const out = await getJson(`${playApi}/api/v1/people/${encodeURIComponent(who)}/achievements`);
-                for (const title of (Array.isArray(out.titles) ? out.titles : [])) {
-                    const game = clean(title && title.title, 64);
-                    if (!/^[A-Za-z0-9_-]{1,64}$/.test(game)) continue;
-                    for (const a of (Array.isArray(title.achievements) ? title.achievements : [])) {
-                        const unlocked = Date.parse(String(a && a.unlocked_at || ''));
-                        const id = clean(a && a.id, 80);
-                        if (!id || !Number.isFinite(unlocked) || unlocked > at || at - unlocked > QUEST_RECENT_MS) continue;
-                        const r = await store.upsertItem(db, { source_service: 'games', source_type: 'achievement', source_id: `${who}:${game}:${id}`,
-                            title: `Unlocked ${clean(a.name, 120)} in ${clean(title.name || game, 80)}`,
-                            url: `${playApi}/t/${encodeURIComponent(game)}`, actor_subject: who, origin: 'user', occurred_at: sqlTime(unlocked),
-                            text: clean(a.description, 280) });
-                        if (r.created) created++;
-                    }
-                }
-            } catch (err) { log.warn?.(`[Pulse sources] Play ${who}:`, err.message); }
-            await db.prepare(`INSERT INTO pulse_play_people (subject, checked_at) VALUES (?, ?)
-                ON CONFLICT(subject) DO UPDATE SET checked_at = excluded.checked_at`).run(who, sqlTime(at));
+        const seen = new Set();
+        for (let page = 0; page < 100; page++) {
+            const url = new URL('/api/v1/achievements/feed', playApi);
+            url.searchParams.set('limit', '100');
+            if (cursor) url.searchParams.set('cursor', cursor);
+            const out = await getJson(url.toString());
+            for (const a of (Array.isArray(out.items) ? out.items : [])) {
+                const who = subject(a && a.player);
+                const game = clean(a && a.title, 64);
+                const id = clean(a && a.id, 80);
+                const at = sqlFrom(a && a.unlocked_at, null);
+                if (!who || !/^[a-z0-9-]{2,40}$/.test(game) || !/^[a-z0-9_-]{1,64}$/.test(id) || !at) continue;
+                const sourceId = `${who}:${game}:${id}`;
+                seen.add(sourceId);
+                const r = await store.upsertItem(db, { source_service: 'games', source_type: 'achievement', source_id: sourceId,
+                    title: `Unlocked ${clean(a.name, 120)} in ${clean(a.title_name || game, 80)}`,
+                    url: `https://openvibe.games/play?game=${encodeURIComponent(game)}`, actor_subject: who, origin: 'user', occurred_at: at,
+                    text: clean(a.description, 280) });
+                if (r.created) created++;
+            }
+            cursor = typeof out.next === 'string' && out.next ? out.next : null;
+            if (!cursor) break;
         }
+        if (cursor) throw new Error('Play achievement feed exceeded 100 pages; retaining prior cards');
+        const old = await db.prepare("SELECT source_id FROM pulse_items WHERE source_service = 'games' AND source_type = 'achievement'").all();
+        for (const row of old) if (!seen.has(row.source_id)) await store.removeItem(db, 'games', 'achievement', row.source_id);
         return created;
     }
 

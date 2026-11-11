@@ -40,7 +40,7 @@ const EXPORTS = [
     ['post_reactions.json', 'post_reactions', 'subject_id'], ['section_reactions.json', 'thread_section_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
     ['space_moderators.json', 'space_moderators', 'subject_id'], ['quest_checks.json', 'pulse_quest_people', 'subject'],
-    ['play_checks.json', 'pulse_play_people', 'subject'], ['profile_feed_revision.json', 'pulse_profile_revision', 'subject'],
+    ['profile_feed_revision.json', 'pulse_profile_revision', 'subject'],
 ];
 
 async function exportPart(db, subject) {
@@ -180,7 +180,7 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             await db.prepare(`UPDATE submissions SET reviewer_subject = NULL WHERE reviewer_subject IN ${S}`).run(...subjects);
         }
         for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_quest_people', `subject IN ${S}`, 'quest_checks'],
-            ['pulse_play_people', `subject IN ${S}`, 'play_checks'], ['pulse_profile_revision', `subject IN ${S}`, 'profile_feed_revision'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
+            ['pulse_profile_revision', `subject IN ${S}`, 'profile_feed_revision'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
             ['subject_projection', `subject_id IN ${S}`, 'profile'], ['profile_module_pushes', `subject_id IN ${S}`, 'profile'],
             ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks'], ['space_moderators', `subject_id IN ${S}`, 'space_moderators']]) {
             if (!await hasTable(db, table)) continue;

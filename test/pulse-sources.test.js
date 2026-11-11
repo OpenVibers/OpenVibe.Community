@@ -49,9 +49,9 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
             { id: 'first-post', name: 'First Post', awarded_at: badgeAt },
             { id: 'old-badge', name: 'Old Badge', awarded_at: iso(Date.now() - 90 * 86_400_000) },
         ] }) };
-        if (u.includes('/achievements')) return { ok: true, json: async () => ({ titles: [{ title: 'scraplandia', name: 'Scraplandia', achievements: [
-            { id: 'first-haul', name: 'First Haul', description: 'Find your first haul', unlocked_at: badgeAt },
-        ] }] }) };
+        if (u.includes('/achievements/feed')) return { ok: true, json: async () => ({ items: [
+            { player: eventOwner, title: 'scraplandia', title_name: 'Scraplandia', id: 'first-haul', name: 'First Haul', description: 'Find your first haul', unlocked_at: badgeAt },
+        ], next: null }) };
         return { ok: false, status: 404, json: async () => ({}) };
     };
 
