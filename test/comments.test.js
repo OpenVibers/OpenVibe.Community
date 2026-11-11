@@ -169,7 +169,8 @@ const { checkCapability } = require('../server/identity/capabilities');
 
     await check('pagination: ?after= cursor, oldest first by default, ?sort=new newest first, next_cursor ends', async () => {
         const th = (await resolve({ service: 'blog', type: 'post', id: 'pagination' })).json().thread;
-        for (let i = 1; i <= 7; i++) await post(th.id, { message: `m${i}` }, { token: svc([WRITE]), headers: { 'x-ov-subject': sam.subject_id } });
+        const made = [];
+        for (let i = 1; i <= 7; i++) made.push((await post(th.id, { message: `m${i}` }, { token: svc([WRITE]), headers: { 'x-ov-subject': sam.subject_id } })).json().comment);
         const seen = [];
         let cursor = '';
         for (let guard = 0; guard < 10; guard++) {
@@ -183,6 +184,14 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.deepStrictEqual(newest.comments.map((c) => c.message), ['m7', 'm6']);
         const next = (await call(`/api/v1/comments/threads/${th.id}?limit=2&sort=new&after=${newest.next_cursor}`)).json();
         assert.deepStrictEqual(next.comments.map((c) => c.message), ['m5', 'm4']);
+        for (const [c, who] of [[made[0], alexJwt], [made[0], samJwt], [made[2], alexJwt]]) {
+            assert.strictEqual((await call(`/api/v1/comments/${c.id}/votes`, { method: 'POST', json: { value: 1 }, cookie: who })).status, 200);
+        }
+        const top = (await call(`/api/v1/comments/threads/${th.id}?limit=2&sort=top`)).json();
+        assert.deepStrictEqual(top.comments.map((c) => c.message), ['m1', 'm3']);
+        const topNext = (await call(`/api/v1/comments/threads/${th.id}?limit=2&sort=top&after=${encodeURIComponent(top.next_cursor)}`)).json();
+        assert.deepStrictEqual(topNext.comments.map((c) => c.message), ['m7', 'm6']);
+        assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}?sort=top&after=abc`)).status, 400);
         assert.strictEqual((await call(`/api/v1/comments/threads/${th.id}?after=abc`)).status, 400);
     });
 
@@ -431,6 +440,16 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.strictEqual(person.json().comment.author.subject, alex.subject_id);
         const byBrowser = await callL(`/api/v1/comments/threads/${liveVod.access_id}/comments`, { method: 'POST', json: { message: 'from the thread page' }, cookie: samJwt });
         assert.strictEqual(byBrowser.status, 201, 'people with the access id may comment');
+    });
+
+    await check('MediaHub upload threads require service resolve and a signed-in commenter', async () => {
+        const ref = { service: 'media-hub', type: 'video', id: 'vup_01JAB2C3D4E5F6G7H8J9K0MNPQ' };
+        assert.strictEqual((await callL('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref } })).status, 403);
+        const opened = await callL('/api/v1/comments/threads/resolve', { method: 'POST', json: { ref }, token: svc([WRITE]) });
+        assert.strictEqual(opened.status, 201, opened.text);
+        const id = opened.json().thread.id;
+        assert.strictEqual((await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json: { message: 'drive-by' } })).status, 401);
+        assert.strictEqual((await callL(`/api/v1/comments/threads/${id}/comments`, { method: 'POST', json: { message: 'hi' }, cookie: alexJwt })).status, 201);
     });
 
     await check('Live stages a file for its VOD; the author claims it once and removal retires it', async () => {
