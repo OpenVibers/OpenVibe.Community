@@ -389,8 +389,8 @@ signs in and comes back to the same prefilled form, served `private, no-store` a
   position), create spaces, manage the board index's groups, add roadmap items or open staff spaces. Those
   stay with staff. Any moderator of a space, or staff, adds and removes that space's moderators. They must
   be Network users (`usr_…`), and nobody is added across a block in either direction. A listing counts only
-  for the person signed in themselves, never for a service naming them. Account deletion erases the rows and
-  a subject merge moves them. No capability or Contracts change is involved. The cutover runbook is
+  for the person signed in themselves, never for a service naming them. Account deletion erases the rows.
+  No capability or Contracts change is involved. The cutover runbook is
   `docs/cutover-community-0005-space-moderators.md`.
 
 - **Two styles, one system.** Each space is a **forum** or a **feed**. A forum reads like vBulletin or SMF:
@@ -600,7 +600,7 @@ the forum, so they stay here when spaces move to a service of their own.
 | `POST /api/v1/submissions/:slug/review { decision: accept\|reject, note? }` | moderators | `accepted` / `rejected` (409 `submission.withdrawn`) |
 
 Errors are problem+json. Account deletion erases a person's submissions (and their Pulse items) and
-unsigns the decisions they made; the export has `submissions.json`; a subject merge moves both.
+unsigns the decisions they made; the export has `submissions.json`.
 
 ## Platform blocks
 
