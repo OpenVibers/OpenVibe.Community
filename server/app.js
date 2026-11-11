@@ -115,7 +115,7 @@ async function createApp(opts = {}) {
                 fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
                 // Screenshots serve from openvibe.media (which may 302 to object storage); avatars from Live/Network.
                 imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-                connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.chat', 'https://openvibe.live', 'https://openvibe.media', 'https://openvibe.events', 'https://inventory.openvibe.network', 'https://cloudflareinsights.com'],   // inventory: what people wear (items.js)
+                connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.quest', 'https://openvibe.chat', 'https://openvibe.live', 'https://openvibe.media', 'https://openvibe.events', 'https://inventory.openvibe.network', 'https://cloudflareinsights.com'],   // inventory: what people wear (items.js)
                 // The Network's hidden /sso/check frame: how a visitor who is signed in elsewhere gets signed in here.
                 frameSrc: ["'self'", 'https://openvibe.network'],
                 frameAncestors: ["'self'"],
