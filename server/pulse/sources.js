@@ -40,7 +40,10 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
     const questApi = String(config.questInternalUrl || config.questUrl || 'https://openvibe.quest').replace(/\/+$/, '');
     const questSite = String(config.questUrl || 'https://openvibe.quest').replace(/\/+$/, '');
     const memeApi = String(config.memeInternalUrl || config.memeUrl || 'https://openvibe.meme').replace(/\/+$/, '');
+    const picsApi = String(config.picsUrl || 'https://openvibe.pics').replace(/\/+$/, '');
     const liveApi = String(config.liveUrl || 'https://openvibe.live').replace(/\/+$/, '');
+    const spaceApi = String(config.spaceUrl || 'https://openvibe.space').replace(/\/+$/, '');
+    const playApi = String(config.playUrl || 'https://play.openvibe.network').replace(/\/+$/, '');
     let timer = null;
     let running = null;
 
@@ -154,6 +157,41 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         return n;
     }
 
+    /** Play's public profile read is the authority for achievements earned in any game. */
+    async function playAchievements() {
+        const at = now();
+        const people = await db.prepare(`SELECT DISTINCT i.actor_subject AS subject FROM pulse_items i
+            LEFT JOIN pulse_play_people p ON p.subject = i.actor_subject
+            WHERE i.actor_subject IS NOT NULL AND i.origin = 'user' AND i.occurred_at >= ?
+              AND (p.subject IS NULL OR p.checked_at < ?) ORDER BY i.actor_subject LIMIT 25`)
+            .all(sqlTime(at - QUEST_RECENT_MS), sqlTime(at - QUEST_CHECK_MS));
+        let created = 0;
+        for (const person of people) {
+            const who = subject(person.subject);
+            if (!who) continue;
+            try {
+                const out = await getJson(`${playApi}/api/v1/people/${encodeURIComponent(who)}/achievements`);
+                for (const title of (Array.isArray(out.titles) ? out.titles : [])) {
+                    const game = clean(title && title.title, 64);
+                    if (!/^[A-Za-z0-9_-]{1,64}$/.test(game)) continue;
+                    for (const a of (Array.isArray(title.achievements) ? title.achievements : [])) {
+                        const unlocked = Date.parse(String(a && a.unlocked_at || ''));
+                        const id = clean(a && a.id, 80);
+                        if (!id || !Number.isFinite(unlocked) || unlocked > at || at - unlocked > QUEST_RECENT_MS) continue;
+                        const r = await store.upsertItem(db, { source_service: 'games', source_type: 'achievement', source_id: `${who}:${game}:${id}`,
+                            title: `Unlocked ${clean(a.name, 120)} in ${clean(title.name || game, 80)}`,
+                            url: `${playApi}/t/${encodeURIComponent(game)}`, actor_subject: who, origin: 'user', occurred_at: sqlTime(unlocked),
+                            text: clean(a.description, 280) });
+                        if (r.created) created++;
+                    }
+                }
+            } catch (err) { log.warn?.(`[Pulse sources] Play ${who}:`, err.message); }
+            await db.prepare(`INSERT INTO pulse_play_people (subject, checked_at) VALUES (?, ?)
+                ON CONFLICT(subject) DO UPDATE SET checked_at = excluded.checked_at`).run(who, sqlTime(at));
+        }
+        return created;
+    }
+
     /** Meme's public entries → one Feed card each; the API excludes hidden and unlisted entries. */
     async function memeEntries() {
         let cursor = null, created = 0;
@@ -177,6 +215,37 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
             cursor = typeof out.next_cursor === 'string' && out.next_cursor ? out.next_cursor : null;
             if (!cursor) break;
         }
+        return created;
+    }
+
+    /** Pics' gallery is opt-in and checks both the owner's public share and the active picture row. */
+    async function publicPictures() {
+        const seen = new Set();
+        let cursor = null, created = 0;
+        for (let page = 0; page < 50; page++) {
+            const url = new URL('/api/v1/gallery', picsApi);
+            url.searchParams.set('sort', 'new');
+            url.searchParams.set('limit', '30');
+            if (cursor) url.searchParams.set('cursor', cursor);
+            const out = await getJson(url.toString());
+            for (const p of (Array.isArray(out.pictures) ? out.pictures : [])) {
+                const id = clean(p && p.id, 80);
+                const links = p && p.links || {};
+                if (!/^pic_[0-9A-HJKMNP-TV-Z]{26}$/.test(id) || !p.listed || !https(links.page) || !https(links.thumb)) continue;
+                seen.add(id);
+                const r = await store.upsertItem(db, { source_service: 'pics', source_type: 'picture', source_id: id,
+                    title: clean(p.title, 160) || 'Picture on OpenVibe.Pics', url: https(links.page), picture_url: https(links.thumb),
+                    actor_name: clean(p.author, 80), actor_subject: null, origin: 'user',
+                    occurred_at: sqlFrom(p.published_at, sqlTime(now())), text: clean(p.description, 280),
+                    media_ratio: Number(p.width) > 0 && Number(p.height) > 0 ? Number(p.width) / Number(p.height) : null });
+                if (r.created) created++;
+            }
+            cursor = typeof out.next === 'string' && out.next ? out.next : null;
+            if (!cursor) break;
+        }
+        if (cursor) throw new Error('Pics gallery exceeded 50 pages; retaining prior pictures');
+        const old = await db.prepare("SELECT source_id FROM pulse_items WHERE source_service = 'pics' AND source_type = 'picture'").all();
+        for (const row of old) if (!seen.has(row.source_id)) await store.removeItem(db, 'pics', 'picture', row.source_id);
         return created;
     }
 
@@ -211,12 +280,88 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         return created;
     }
 
+    /** Live's Content API has already checked public Media rows, banned owners and playable VODs. */
+    async function publicContent() {
+        const seen = new Set();
+        let cursor = null, created = 0;
+        for (let page = 0; page < 100; page++) {
+            const url = new URL('/api/content/feed', liveApi);
+            url.searchParams.set('sort', 'new');
+            url.searchParams.set('window', 'week');
+            url.searchParams.set('limit', '30');
+            if (cursor) url.searchParams.set('cursor', cursor);
+            const out = await getJson(url.toString());
+            if (out.partial || (out.sources && (out.sources.vods !== 'ok' || out.sources.clips !== 'ok'))) throw new Error('Live Content feed was partial; retaining prior cards');
+            for (const v of (Array.isArray(out.items) ? out.items : [])) {
+                if (!v || !['vod', 'clip'].includes(v.kind) || !https(v.href)) continue;
+                const id = clean(v.id, 80);
+                if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) continue;
+                const type = v.kind === 'vod' ? 'recording' : 'clip';
+                seen.add(`${type}:${id}`);
+                const at = sqlFrom(v.created_at, null);
+                if (!at) continue;
+                const channel = clean(v.channel && v.channel.username, 64);
+                let prior = null;
+                if (type === 'recording' && channel) {
+                    prior = await db.prepare(`SELECT actor_subject, source_id FROM pulse_items WHERE source_service = 'live' AND source_type = 'stream'
+                        AND lower(url) = lower(?) AND occurred_at BETWEEN ? AND ? ORDER BY occurred_at DESC LIMIT 1`)
+                        .get(`${liveApi}/@${encodeURIComponent(channel)}`, sqlTime(Date.parse(`${at.replace(' ', 'T')}Z`) - 60 * MINUTE), sqlTime(Date.parse(`${at.replace(' ', 'T')}Z`) + 60 * MINUTE));
+                }
+                const r = await store.upsertItem(db, { source_service: 'live', source_type: type, source_id: id,
+                    title: `${type === 'recording' ? 'Recording: ' : ''}${clean(v.title, 150) || (type === 'recording' ? 'A stream' : 'A clip')}`,
+                    url: https(v.href), picture_url: https(v.thumbnail_url),
+                    actor_subject: prior && prior.actor_subject || null, actor_name: clean(v.channel && v.channel.display_name, 80),
+                    origin: 'user', occurred_at: at, text: clean(v.excerpt, 280), media_length: Number(v.duration_seconds) > 0 ? Number(v.duration_seconds) : null });
+                if (r.created) created++;
+                if (prior) await store.removeItem(db, 'live', 'stream', prior.source_id);
+            }
+            cursor = typeof out.next === 'string' && out.next ? out.next : null;
+            if (!cursor) break;
+        }
+        if (cursor) throw new Error('Live Content feed exceeded 100 pages; retaining prior cards');
+        const old = await db.prepare("SELECT source_type, source_id FROM pulse_items WHERE source_service = 'live' AND source_type IN ('recording', 'clip')").all();
+        for (const row of old) if (!seen.has(`${row.source_type}:${row.source_id}`)) await store.removeItem(db, 'live', row.source_type, row.source_id);
+        return created;
+    }
+
+    /** Space's public gallery excludes drafts, private spaces, inactive sites and takedowns. */
+    async function publicSpaces() {
+        const seen = new Set();
+        let cursor = null, created = 0;
+        for (let page = 0; page < 50; page++) {
+            const url = new URL('/api/v1/apps/gallery', spaceApi);
+            url.searchParams.set('limit', '100');
+            if (cursor) url.searchParams.set('cursor', cursor);
+            const out = await getJson(url.toString());
+            for (const s of (Array.isArray(out.spaces) ? out.spaces : [])) {
+                const id = clean(s && s.id, 80);
+                const at = Number(s && s.published_at);
+                if (!/^spc_[0-9A-HJKMNP-TV-Z]{26}$/.test(id) || !Number.isFinite(at) || at <= 0 || !https(s.url)) continue;
+                seen.add(id);
+                const r = await store.upsertItem(db, { source_service: 'space', source_type: 'space', source_id: id,
+                    title: clean(s.name, 160) || 'New space', url: https(s.url), text: clean(s.description, 280),
+                    actor_name: clean(s.owner_name || s.owner_username, 80), actor_subject: null, origin: 'user', occurred_at: sqlTime(at) });
+                if (r.created) created++;
+            }
+            cursor = typeof out.next_cursor === 'string' && out.next_cursor ? out.next_cursor : null;
+            if (!cursor) break;
+        }
+        if (cursor) throw new Error('Space gallery exceeded 50 pages; retaining prior spaces');
+        const old = await db.prepare("SELECT source_id FROM pulse_items WHERE source_service = 'space' AND source_type = 'space'").all();
+        for (const row of old) if (!seen.has(row.source_id)) await store.removeItem(db, 'space', 'space', row.source_id);
+        return created;
+    }
+
     const SOURCES = [
         { name: 'today-events', every: 10 * MINUTE, run: todayEvents },
         { name: 'network-members', every: 60 * MINUTE, run: networkMembers },
         { name: 'quest-badges', every: 15 * MINUTE, run: questBadges },
+        { name: 'play-achievements', every: 15 * MINUTE, run: playAchievements },
         { name: 'meme-entries', every: 10 * MINUTE, run: memeEntries },
+        { name: 'public-pictures', every: 5 * MINUTE, run: publicPictures },
         { name: 'rundown-episodes', every: 10 * MINUTE, run: rundownEpisodes },
+        { name: 'public-content', every: 5 * MINUTE, run: publicContent },
+        { name: 'public-spaces', every: 10 * MINUTE, run: publicSpaces },
     ];
 
     async function remember(name, { nextRun, lastRun, error = null }) {

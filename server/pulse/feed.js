@@ -23,7 +23,7 @@ const contracts = require('openvibe-contracts');
 const { run, fail, isoTime, sqlTime, encodeCursor } = require('../http/v1');
 
 const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member', 'avatar', 'banner', 'paste', 'site', 'space', 'follow', 'episode'];
-const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
+const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', space: 'Space', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
 const MAX_PAGE_READS = 8;
 const https = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
 const clean = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
@@ -55,7 +55,7 @@ function kindOf(i) {
 
 function card(i) {
     const site = String((i.source && i.source.service) || 'community');
-    const a = i.actor;
+    const a = i.actor || (i.actor_name ? { display_name: i.actor_name } : null);
     return {
         id: `p:${i.id}`,
         kind: kindOf(i),
@@ -81,7 +81,7 @@ const BURST_WORD = { pic: 'photos', clip: 'clips', video: 'videos', game: 'achie
 function foldBursts(pairs) {
     const groups = [];
     for (const p of pairs) {
-        const actor = p.row.actor_subject || (p.row.actor && p.row.actor.subject);
+        const actor = p.row.actor_subject || (p.row.actor && p.row.actor.subject) || (p.row.actor_name && `name:${p.row.actor_name}`);
         const at = Date.parse(p.card.at || '');
         const prior = actor && Number.isFinite(at) && BURST_WORD[p.card.kind] && groups.find((g) =>
             g.actor === actor && g.card.kind === p.card.kind && g.site === p.card.site && Math.abs(g.at - at) <= BURST_MS);
@@ -261,10 +261,14 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     router.get('/search', run(async (req) => {
         const q = clean(req.query.q, 80).toLowerCase();
         if (!q) fail(400, 'feed.search_required', 'Enter a search term');
-        const kindMatch = /\b(clips?|videos?|photos?|pics?|posts?|streams?|live|games?|updates?)\b/.exec(q);
-        const kind = kindMatch && ({ clip: 'clip', clips: 'clip', video: 'video', videos: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update' })[kindMatch[1]];
+        const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'post', pastes: 'post', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
+        const terms = q.match(/\b[a-z]+\b/g) || [];
+        const kindWord = terms.find((word) => aliases[word]);
+        const kind = kindWord && aliases[kindWord];
         const today = /\btoday\b/.test(q);
-        const words = q.replace(/\b(clips?|videos?|photos?|pics?|posts?|streams?|live|games?|updates?|from|today|new)\b/g, '').trim();
+        const yesterday = /\byesterday\b/.test(q);
+        const date = /\b\d{4}-\d{2}-\d{2}\b/.exec(q);
+        const words = q.replace(/\b(clips?|videos?|recordings?|photos?|pics?|posts?|pastes?|streams?|live|games?|updates?|avatars?|banners?|sites?|spaces?|follows?|episodes?|from|today|yesterday|new)\b/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').trim();
         const live = await liveNow();
         const matched = [];
         let cursor = clean(req.query.cursor, 500), next = null;
@@ -277,7 +281,10 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
                 const item = card(rows[index]);
                 mark([item], live);
                 if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) continue;
-                if (today && String(item.at || '').slice(0, 10) !== new Date().toISOString().slice(0, 10)) continue;
+                const day = String(item.at || '').slice(0, 10);
+                if (today && day !== new Date().toISOString().slice(0, 10)) continue;
+                if (yesterday && day !== new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)) continue;
+                if (date && day !== date[0]) continue;
                 if (words && ![item.title, item.text, item.site, item.site_name, item.kind, item.actor && item.actor.name]
                     .some((v) => String(v || '').toLowerCase().includes(words))) continue;
                 matched.push({ row: rows[index], card: item });

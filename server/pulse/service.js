@@ -92,6 +92,8 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             ...(i.media_ratio ? { media_ratio: i.media_ratio } : {}),
             ...(i.media_length ? { media_length: i.media_length } : {}),
             ...(i.text ? { text: i.text } : {}),
+            ...(i.starts_at ? { starts_at: isoTime(i.starts_at) } : {}),
+            ...(i.actor_name ? { actor_name: i.actor_name } : {}),
             actor,
             occurred_at: isoTime(i.occurred_at),
         };

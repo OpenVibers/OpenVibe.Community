@@ -40,6 +40,7 @@ const EXPORTS = [
     ['post_reactions.json', 'post_reactions', 'subject_id'], ['section_reactions.json', 'thread_section_reactions', 'subject_id'], ['game_progress.json', 'game_progress', 'subject_id'], ['blocks.json', 'network_blocks', 'blocker_subject'],
     ['activity.json', 'pulse_items', 'actor_subject'], ['submissions.json', 'submissions', 'author_subject'],
     ['space_moderators.json', 'space_moderators', 'subject_id'], ['quest_checks.json', 'pulse_quest_people', 'subject'],
+    ['play_checks.json', 'pulse_play_people', 'subject'], ['profile_feed_revision.json', 'pulse_profile_revision', 'subject'],
 ];
 
 async function exportPart(db, subject) {
@@ -49,7 +50,7 @@ async function exportPart(db, subject) {
         if (!await hasColumn(db, table, col)) continue;
         // Newest first: by id where the table has one, else by its timestamp.
         const order = await hasColumn(db, table, 'id') ? 'id' : await hasColumn(db, table, 'created_at') ? 'created_at'
-            : await hasColumn(db, table, 'checked_at') ? 'checked_at' : 'updated_at';
+            : await hasColumn(db, table, 'checked_at') ? 'checked_at' : await hasColumn(db, table, 'updated_at') ? 'updated_at' : col;
         const rows = await db.prepare(`SELECT * FROM ${table} WHERE ${col} = ? ORDER BY ${order} DESC LIMIT ${ROW_LIMIT + 1}`).all(subject);
         if (!rows.length) continue;
         if (rows.length > ROW_LIMIT) truncated.push(name);
@@ -178,7 +179,8 @@ async function erase(db, subjects, { now = new Date().toISOString() } = {}) {
             add(erased, 'submissions', (await db.prepare(`DELETE FROM submissions WHERE author_subject IN ${S}`).run(...subjects)).changes);
             await db.prepare(`UPDATE submissions SET reviewer_subject = NULL WHERE reviewer_subject IN ${S}`).run(...subjects);
         }
-        for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_quest_people', `subject IN ${S}`, 'quest_checks'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
+        for (const [table, where, key] of [['game_progress', `subject_id IN ${S}`, 'game_progress'], ['pulse_quest_people', `subject IN ${S}`, 'quest_checks'],
+            ['pulse_play_people', `subject IN ${S}`, 'play_checks'], ['pulse_profile_revision', `subject IN ${S}`, 'profile_feed_revision'], ['pulse_items', `actor_subject IN ${S}`, 'activity'],
             ['subject_projection', `subject_id IN ${S}`, 'profile'], ['profile_module_pushes', `subject_id IN ${S}`, 'profile'],
             ['network_blocks', `blocker_subject IN ${S} OR blocked_subject IN ${S}`, 'blocks'], ['space_moderators', `subject_id IN ${S}`, 'space_moderators']]) {
             if (!await hasTable(db, table)) continue;
