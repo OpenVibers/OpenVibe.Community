@@ -36,8 +36,8 @@ const forumStore = require('../server/forum/store');
     await check('seeded spaces: on the board index in their groups, all public', async () => {
         const r = await call('/api/v1/spaces');
         assert.strictEqual(r.status, 200);
-        assert.deepStrictEqual(r.json().spaces.map((s) => [s.slug, s.visibility, s.style]), [['general', 'public', 'forum'], ['help', 'public', 'forum'], ['feedback', 'public', 'feed'], ['roadmap', 'public', 'feed'], ['showcase', 'public', 'feed'], ['off-topic', 'public', 'forum']]);
-        assert.deepStrictEqual(r.json().groups.map((g) => [g.slug, g.spaces.map((s) => s.slug)]), [['openvibe', ['general', 'help', 'feedback', 'roadmap']], ['community', ['showcase', 'off-topic']]]);
+        assert.deepStrictEqual(r.json().spaces.map((s) => [s.slug, s.visibility, s.style]), [['general', 'public', 'forum'], ['help', 'public', 'forum'], ['feedback', 'public', 'feed'], ['roadmap', 'public', 'feed'], ['showcase', 'public', 'feed'], ['off-topic', 'public', 'forum'], ['pictures', 'public', 'forum'], ['videos', 'public', 'forum'], ['clips', 'public', 'forum'], ['pastes', 'public', 'forum']]);
+        assert.deepStrictEqual(r.json().groups.map((g) => [g.slug, g.spaces.map((s) => s.slug)]), [['openvibe', ['general', 'help', 'feedback', 'roadmap']], ['community', ['showcase', 'off-topic']], ['openvibe-items', ['pictures', 'videos', 'clips', 'pastes']]]);
         assert.strictEqual((await call('/api/v1/spaces/nope')).status, 404);
     });
 
