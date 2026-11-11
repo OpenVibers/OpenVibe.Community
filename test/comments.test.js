@@ -150,15 +150,21 @@ const { checkCapability } = require('../server/identity/capabilities');
         const r1 = (await post(vod.id, { message: 'reply', parent_id: top.id }, { cookie: samJwt })).json().comment;
         const r2 = await post(vod.id, { message: 'reply to reply', parent_id: r1.id }, { cookie: alexJwt });
         assert.strictEqual(r2.json().comment.parent_id, top.id);
+        assert.strictEqual(r2.json().comment.reply_to_id, r1.id);
+        assert.strictEqual(r2.json().comment.reply_to.display_name, 'Sam');
+        const r3 = (await post(vod.id, { message: 'third reply', parent_id: top.id },
+            { token: svc([WRITE]), headers: { 'x-ov-subject': ids.newId('user') } })).json().comment;
         const other = (await resolve({ service: 'live', type: 'stream', id: '456' })).json().thread;
         assert.strictEqual((await post(other.id, { message: 'cross', parent_id: top.id }, { cookie: alexJwt })).status, 400);
         const page = (await call(`/api/v1/comments/threads/${vod.id}?limit=100`)).json();
         const shown = page.comments.find((c) => c.id === top.id);
-        assert.strictEqual(shown.reply_count, 2);
+        assert.strictEqual(shown.reply_count, 3);
         assert.deepStrictEqual(shown.replies.map((r) => r.message), ['reply', 'reply to reply']);
         assert.ok(page.comments.every((c) => c.parent_id === null), 'only top-level comments at the top');
         const replies = (await call(`/api/v1/comments/threads/${vod.id}?parent=${top.id}&after=${r1.id}`)).json();
-        assert.deepStrictEqual(replies.comments.map((c) => c.message), ['reply to reply']);
+        assert.deepStrictEqual(replies.comments.map((c) => c.message), ['reply to reply', 'third reply']);
+        assert.strictEqual(replies.comments[0].reply_to_id, r1.id);
+        assert.strictEqual(replies.comments[1].id, r3.id);
     });
 
     await check('pagination: ?after= cursor, oldest first by default, ?sort=new newest first, next_cursor ends', async () => {

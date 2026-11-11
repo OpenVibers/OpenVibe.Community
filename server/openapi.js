@@ -826,7 +826,8 @@ function openapi() {
                     last_activity_at: nullable('string', { format: 'date-time' }), created_at: str({ format: 'date-time' }),
                 } },
                 Comment: { type: 'object', required: ['id', 'message'], properties: {
-                    id: { type: 'integer' }, thread_id: str(), parent_id: nullable('integer'), origin: str(), author: nullable('object'),
+                    id: { type: 'integer' }, thread_id: str(), parent_id: nullable('integer'), reply_to_id: nullable('integer'),
+                    reply_to: nullable('object', { description: 'The exact comment answered, with its author display name' }), origin: str(), author: nullable('object'),
                     anon_name: nullable('string'), display_name: nullable('string'), message: nullable('string'), deleted: { type: 'boolean' },
                     score: { type: 'integer' }, upvotes: { type: 'integer' }, downvotes: { type: 'integer' }, my_vote: { type: 'integer' },
                     created_at: str(), updated_at: str(), replies: arrayOf({ type: 'object' }), attachments: arrayOf(ref('AiFile')),

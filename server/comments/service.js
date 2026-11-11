@@ -70,7 +70,7 @@ const VISIBILITIES = ['public', 'hidden', 'locked'];
 const MAX_MESSAGE = 5000;
 const ACCESS_ID_RE = /^cth_[A-Za-z0-9_-]{22}$/;
 const PAGE = 30;
-const REPLY_PAGE = 20;
+const REPLY_PAGE = 2;
 
 function createCommentService({ db, network = null, limits = {}, canViewPaste = null, fetchImpl = globalThis.fetch, media = null } = {}) {
     const authors = createAuthors({ db, network });
@@ -95,13 +95,18 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
     }
 
-    function shapeComment(c, v, projections, votes, threadId) {
+    function shapeComment(c, v, projections, votes, threadId, targets) {
         const deleted = !!c.deleted_at;
         const a = deleted ? null : authors.author(c.author_subject, c.origin, projections);
+        const target = c.reply_to_id ? targets.get(c.reply_to_id) : null;
+        const targetAuthor = target && !target.deleted_at ? authors.author(target.author_subject, target.origin, projections) : null;
         const out = {
             id: c.id,
             thread_id: threadId,
             parent_id: c.parent_id || null,
+            reply_to_id: c.reply_to_id || null,
+            reply_to: target ? { id: target.id, display_name: target.deleted_at ? 'Deleted comment'
+                : (targetAuthor && (targetAuthor.display_name || targetAuthor.username)) || target.anon_name || 'Member' } : null,
             origin: c.origin,
             author: a,
             anon_name: deleted || c.author_subject || c.origin === 'ai' ? null : (c.anon_name || 'Anonymous'),
@@ -118,16 +123,17 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             can_delete: !deleted && (moderator(v) || !!(v && v.subject && c.author_subject === v.subject)),
             attachments: deleted ? [] : (c.attachments || []).map((row) => commentAttachments.publicReference(row)),
         };
-        if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId));
+        if (c.replies) out.replies = c.replies.map((r) => shapeComment(r, v, projections, votes, threadId, targets));
         return out;
     }
 
     async function shapeComments(rows, v, t) {
         const all = [];
         for (const r of rows) { all.push(r); if (r.replies) all.push(...r.replies); }
-        const projections = await authors.projectionsFor(all.map((c) => c.author_subject));
+        const targets = await store.replyTargets(db, all.map((c) => c.reply_to_id));
+        const projections = await authors.projectionsFor(all.map((c) => c.author_subject).concat([...targets.values()].map((c) => c.author_subject)));
         const votes = await myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
-        return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v)));
+        return rows.map((r) => shapeComment(r, v, projections, votes, threadIdFor(t, v), targets));
     }
 
     /** A thread by its access id, the only id anyone addresses a thread by (C-14). */
@@ -358,7 +364,8 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
                 }
             }
             const forumItem = forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`] ? await forumLinks.publicExternalItem(t, fetchImpl) : null;
-            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds, forum_item: forumItem });
+            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, reply_to_id: parent ? parent.id : null,
+                author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds, forum_item: forumItem });
             commentLimiter.record(key, message);
             return { comment: (await shapeComments([c], v, t))[0] };
         },
