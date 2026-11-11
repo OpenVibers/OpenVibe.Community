@@ -27,7 +27,7 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         if (u.includes('/api/v1/entries')) return { ok: true, json: async () => ({ entries: [{ slug: 'open-source-meme', title: 'Open source meme', summary: 'A public entry', published_at: iso(Date.now() - 120_000) }], next_cursor: null }) };
         if (u.includes('/api/rundown/streams')) return { ok: true, json: async () => ({ streams: [{ stream_id: 123, live: false,
             title: 'Night stream', started_at: badgeAt, thumbnail_url: 'https://openvibe.media/night.webp',
-            episode: { title: 'The night sky', logline: 'A recap', aired_at: badgeAt } }], next: null }) };
+            episode: { title: 'The night sky', logline: 'A recap', aired_at: badgeAt, audience: 'public' } }], next: null }) };
         if (u.includes('/badges')) return { ok: true, json: async () => ({ badges: [
             { id: 'first-post', name: 'First Post', awarded_at: badgeAt },
             { id: 'old-badge', name: 'Old Badge', awarded_at: iso(Date.now() - 90 * 86_400_000) },

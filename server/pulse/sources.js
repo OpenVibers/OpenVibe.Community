@@ -27,8 +27,8 @@ const clean = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().s
 const https = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
 const subject = (v) => (/^usr_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(v || '')) ? String(v) : null);
 const sqlFrom = (v, fallback) => {
-    const t = Date.parse(String(v || ''));
-    return Number.isFinite(t) ? sqlTime(t) : fallback;
+    const normalized = store.pulseTime(v);
+    return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(normalized || '')) ? normalized : fallback;
 };
 const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
 
@@ -189,7 +189,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
             if (before) url.searchParams.set('before', before);
             const out = await getJson(url.toString());
             for (const s of (Array.isArray(out.streams) ? out.streams : [])) {
-                if (!s || s.live || !s.episode || !Number.isSafeInteger(Number(s.stream_id)) || Number(s.stream_id) < 1) continue;
+                if (!s || s.live || !s.episode || s.episode.audience !== 'public' || !Number.isSafeInteger(Number(s.stream_id)) || Number(s.stream_id) < 1) continue;
                 const id = String(s.stream_id);
                 const title = clean(s.episode.title || s.title, 160);
                 if (!title) continue;
