@@ -61,7 +61,7 @@ ${groups.length ? groups.map((g) => `<section class="board-group" id="g-${esc(g.
   <h2 class="board-group-h" id="gh-${esc(g.slug || 'more')}">${esc(g.name)}</h2>
   ${g.description ? `<p class="muted small board-group-p">${esc(g.description)}</p>` : ''}
   ${boardTable(g.spaces, g.name)}
-</section>`).join('') : '<p class="empty">No forums yet.</p>'}
+</section>`).join('') : kit.empty({ icon: 'chat', title: 'No forums yet', text: 'No forum has been started here yet.', action: canModerate ? { href: '/forum/new', label: 'New forum', icon: 'plus' } : { href: '/pulse', label: 'See what is happening', icon: 'live' } })}
 ${user ? '' : '<p class="muted small">Sign in with your OpenVibe account to post.</p>'}`;
     return renderPage({
         title: 'Forum',
@@ -70,6 +70,7 @@ ${user ? '' : '<p class="muted small">Sign in with your OpenVibe account to post
         active: 'spaces',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/forum/feed.xml' }],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }])],
+        styles: ['kit.css'],
         body,
     });
 }
@@ -160,7 +161,7 @@ ${tags}${statuses}
 <section data-results>
 ${threads.length ? `<table class="board-table topic-table"><caption class="sr-only">Topics in ${esc(space.name)}</caption>
   <thead><tr><th scope="col" class="topic-icon"><span class="sr-only">Kind</span></th><th scope="col">Topic</th><th scope="col" class="num">Replies</th><th scope="col" class="num">Views</th><th scope="col">Last post</th></tr></thead>
-  <tbody>${threads.map((t) => topicRow(t, space)).join('')}</tbody></table>` : `<p class="empty">${filtered ? `Nothing here yet. <a href="${esc(href({ category: null, status: null }))}">See every topic</a>.` : viewer.can_start !== false ? `No topics yet — <a href="/forum/${esc(space.slug)}/new">start the first one</a>.` : 'Nothing here yet.'}</p>`}
+  <tbody>${threads.map((t) => topicRow(t, space)).join('')}</tbody></table>` : filtered ? kit.empty({ icon: 'search', title: 'Nothing here yet', text: 'No topic matches these filters.', action: { href: href({ category: null, status: null }), label: 'See every topic', icon: 'grid' } }) : viewer.can_start !== false ? kit.empty({ icon: 'chat', title: 'No topics yet', text: 'This forum has no topic yet.', action: { href: `/forum/${esc(space.slug)}/new`, label: space.thread_kind === 'request' ? 'Make the first request' : 'Start the first topic', icon: 'plus' } }) : kit.empty({ icon: 'chat', title: 'Nothing here yet', text: 'No topic has been started here yet.', action: { href: '/forum', label: 'See the other forums', icon: 'grid' } })}
 ${pagerHtml}
 </section>
 ${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moderators, { me, error: modError }) : ''}
@@ -173,6 +174,7 @@ ${viewer.can_moderate ? settingsForm(space, groups) + moderatorsBox(space, moder
         active: 'spaces',
         feeds: feedable ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : [],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Forum', url: '/forum' }, { name: space.name, url: `/forum/${space.slug}` }])],
+        styles: ['kit.css'],
         body,
     });
 }

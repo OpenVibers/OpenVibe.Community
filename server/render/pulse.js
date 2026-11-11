@@ -11,6 +11,7 @@ const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { timeTag } = require('./pages');
 const { who } = require('./forum');
+const kit = require('openvibe-shared/kit');
 
 const FILTERS = [['', 'Everything'], ['user', 'People'], ['ai', 'AI'], ['system', 'System']];
 const SERVICE_NAMES = { community: 'Community', live: 'Live', media: 'Media', network: 'Network', tools: 'Tools', games: 'Games', wiki: 'Wiki', blog: 'Blog', reviews: 'Reviews' };
@@ -52,7 +53,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null, origin
 <nav class="tabs sort-tabs" aria-label="Filter by origin">${tabs}</nav>
 <section data-results${after ? '' : ' data-pulse-live'}>
   <p class="pulse-new" hidden><button type="button" class="btn btn-sm" data-pulse-show></button></p>
-  ${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : '<p class="empty">Nothing here yet.</p>'}
+  ${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : kit.empty({ icon: 'live', title: 'Nothing here yet', text: origin ? 'Nothing from this part of the network has arrived yet.' : 'New public clips, threads, pastes and posts land here as they happen.', action: origin ? { href: '/pulse', label: 'Everything', icon: 'live' } : { href: '/forum', label: 'Visit the forum', icon: 'chat' } })}
   ${after || nextCursor ? `<nav class="pager" aria-label="Pages">${after ? `<a href="${esc(href(origin))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Latest</a>` : '<span></span>'}<span></span>${nextCursor ? `<a rel="next" href="${esc(href(origin, nextCursor))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}
 </section>`;
     return renderPage({
@@ -64,6 +65,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null, origin
         active: 'pulse',
         feeds: [{ title: 'OpenVibe.Community — latest threads', href: '/forum/feed.xml' }],
         jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pulse', url: '/pulse' }])],
+        styles: ['kit.css'],
         body,
     });
 }

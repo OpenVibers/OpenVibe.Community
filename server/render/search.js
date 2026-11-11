@@ -6,6 +6,7 @@
  */
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
+const kit = require('openvibe-shared/kit');
 
 // Search escapes the text and adds only <mark>; keep exactly that, whatever arrives.
 const snippet = (html) => esc(String(html || '')).replace(/&lt;(\/?)mark&gt;/g, '<$1mark>');
@@ -28,9 +29,9 @@ function searchPage({ q = '', type = '', results = [], nextCursor = null, unavai
     const opt = (v, label) => `<option value="${v}"${type === v ? ' selected' : ''}>${label}</option>`;
     const more = nextCursor ? `<nav class="pager"><a class="btn" href="/search?${new URLSearchParams({ q, ...(type ? { type } : {}), cursor: nextCursor })}">More results</a></nav>` : '';
     let section;
-    if (unavailable) section = `<p class="empty">Search is not answering right now. <a href="/pastes?q=${encodeURIComponent(q)}">Filter pastes for “${esc(q)}”</a> instead, or try again in a minute.</p>`;
-    else if (!q) section = '<p class="empty">Search every public thread and paste on OpenVibe.Community.</p>';
-    else if (!results.length) section = `<p class="empty">Nothing public matches “${esc(q)}”.</p>`;
+    if (unavailable) section = kit.empty({ icon: 'search', title: 'Search is not answering', text: 'OpenVibe.Search is not answering right now. Try again in a minute, or filter pastes instead.', action: q ? { href: `/pastes?q=${encodeURIComponent(q)}`, label: 'Filter pastes', icon: 'search' } : { href: '/pastes', label: 'Browse pastes', icon: 'grid' } });
+    else if (!q) section = kit.empty({ icon: 'search', title: 'Search Community', text: 'Search every public thread and paste on OpenVibe.Community.', action: { href: '/forum', label: 'Browse the forum', icon: 'chat' } });
+    else if (!results.length) section = kit.empty({ icon: 'search', title: 'Nothing matches', text: `Nothing public matches “${q}”.`, action: { href: `https://search.openvibe.network/?q=${encodeURIComponent(q)}`, label: 'Search the whole network', icon: 'search' } });
     else section = `<ol class="search-results">${results.map(resultItem).join('\n')}</ol>${more}`;
     const body = `
 <header class="page-head">
@@ -49,6 +50,7 @@ function searchPage({ q = '', type = '', results = [], nextCursor = null, unavai
         canonicalPath: '/search',
         robots: 'noindex,follow',
         active: 'search',
+        styles: ['kit.css'],
         body,
     });
 }
