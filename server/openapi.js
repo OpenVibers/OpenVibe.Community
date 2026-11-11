@@ -374,7 +374,7 @@ route('post', '/api/v1/pulse/items', {
     } }, { type: 'object', required: ['ref', 'title', 'url'], properties: {
         ref: { type: 'object', required: ['service', 'type', 'id'], properties: { service: str(), type: str(), id: str() } },
         title: str(), url: str({ format: 'uri' }), origin: { type: 'string', enum: ['user', 'ai', 'system'] },
-        occurred_at: str({ format: 'date-time' }), visibility: { type: 'string', enum: ['public'] },
+        occurred_at: str({ format: 'date-time' }), visibility: { type: 'string', enum: ['public', 'followers'] },
     } }] }),
     responses: { 200: json('Already there', { type: 'object', properties: { item: ref('PulseItem'), created: { const: false } } }),
         201: json('Created', { type: 'object', properties: { item: ref('PulseItem'), created: { const: true } } }), ...errors() },
@@ -389,16 +389,26 @@ route('get', '/api/v1/feed', {
     operationId: 'getFeed', summary: 'The menu\'s Feed: one stream from Pulse, newest first', tags: ['feed'], security: ANONYMOUS,
     description: 'Public. A kind, site or word filters the stream; following=1 is the signed-in person\'s Network follows. Cards carry Community\'s views, likes and comments where it knows them.',
     parameters: [
-        query('kind', { type: 'string', enum: ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member'] }),
+        query('kind', { type: 'string', enum: ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member', 'avatar', 'banner', 'paste', 'site', 'space', 'follow', 'episode'] }),
         query('site', str({ maxLength: 40 }), 'A source service (live, community, wiki, quest, chat, today, network…)'),
         query('q', str({ maxLength: 80 }), 'Words in the title or text'), query('following', { type: 'string', enum: ['1', 'true'] }),
         query('cursor', str(), 'The next_cursor from the previous page'), query('limit', { type: 'integer', minimum: 1, maximum: 40, default: 20 })],
     responses: { 200: json('Cards and the next cursor', { type: 'object', required: ['items', 'next_cursor'], properties: {
         items: arrayOf({ type: 'object', required: ['id', 'kind', 'url', 'title', 'text', 'site', 'site_name', 'counts'], properties: {
             id: str(), kind: str(), url: str(), title: str({ maxLength: 300 }), text: str({ maxLength: 280 }), at: nullable('string', { format: 'date-time' }),
-            site: str(), site_name: str(), media: nullable('object'), counts: { type: 'object' },
+            site: str(), site_name: str(), media: nullable('object'), counts: { type: 'object' }, starts_at: str({ format: 'date-time' }), group: { type: 'object' }, visibility: { type: 'string', enum: ['followers'] },
             actor: nullable('object', { properties: { name: nullable('string'), avatar: nullable('string') } }) } }),
         next_cursor: nullable('string') } }), ...errors([400, 401, 429]) },
+});
+route('get', '/api/v1/feed/search', {
+    operationId: 'searchFeed', summary: 'Search feed activity by words, person, site, kind and date', tags: ['feed'], security: ANONYMOUS,
+    parameters: [query('q', str({ maxLength: 80 }), 'For example, clips from today or a person\'s name'),
+        query('cursor', str(), 'The next_cursor from the previous search page'), query('limit', { type: 'integer', minimum: 1, maximum: 40, default: 20 })],
+    responses: { 200: json('Matching feed cards', { type: 'object', properties: { items: arrayOf({ type: 'object' }), next_cursor: nullable('string') } }), ...errors([400, 429]) },
+});
+route('get', '/api/v1/feed/examples', {
+    operationId: 'feedSearchExamples', summary: 'Search examples based on current feed items', tags: ['feed'], security: ANONYMOUS,
+    responses: { 200: json('Suggested searches', { type: 'object', properties: { examples: arrayOf({ type: 'object', properties: { text: str(), reason: str() } }) } }), ...errors([429]) },
 });
 route('post', '/api/v1/me/status', {
     operationId: 'postStatus', summary: 'Post a public status to your profile and Pulse', tags: ['pulse'], security: PERSON,
