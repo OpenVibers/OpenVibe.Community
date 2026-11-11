@@ -180,12 +180,16 @@ function createLiveNow({ liveUrl, fetchImpl }) {
         try {
             const r = await fetchImpl(`${liveUrl}/api/streams`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(3000) });
             const j = r.ok ? await r.json() : null;
-            cache = new Map(((j && j.streams) || []).map((x) => {
+            const byChannel = new Map();
+            for (const x of ((j && j.streams) || [])) {
                 const name = String((x && x.username) || '').toLowerCase();
                 const raw = String((x && x.started_at) || '');
                 const stamp = /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(raw) ? `${raw.replace(' ', 'T')}Z` : raw;
-                return [name, Date.parse(stamp)];
-            }).filter(([name]) => name));
+                if (!name) continue;
+                if (!byChannel.has(name)) byChannel.set(name, []);
+                byChannel.get(name).push(Date.parse(stamp));
+            }
+            cache = byChannel;
         } catch { /* keep the last answer */ }
         return cache;
     };
@@ -194,8 +198,9 @@ const channelOf = (url) => { try { const u = new URL(url); return /(^|\.)openvib
 const isCurrentLive = (card, live) => {
     const name = channelOf(card.url).toLowerCase();
     if (!live.has(name)) return false;
-    const started = live.get(name), recorded = Date.parse(card.at || '');
-    return !Number.isFinite(started) || !Number.isFinite(recorded) || Math.abs(started - recorded) <= 10 * 60_000;
+    const recorded = Date.parse(card.at || '');
+    return live.get(name).some((started) => !Number.isFinite(started) || !Number.isFinite(recorded)
+        || Math.abs(started - recorded) <= 10 * 60_000);
 };
 
 function searchMatches(item, query) {

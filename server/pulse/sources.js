@@ -284,11 +284,14 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         let cursor = null, created = 0;
         const live = await getJson(`${liveApi}/api/streams`);
         const onAir = new Map();
+        const liveIds = new Set();
         for (const s of (Array.isArray(live.streams) ? live.streams : [])) {
             const id = Number(s && s.id), channel = clean(s && s.username, 64);
             const started = sqlFrom(s && s.started_at, null);
             if (!Number.isSafeInteger(id) || id < 1 || !/^[A-Za-z0-9_.-]{1,64}$/.test(channel) || !started) continue;
-            onAir.set(channel.toLowerCase(), { id: String(id), started: Date.parse(`${started.replace(' ', 'T')}Z`) });
+            if (!onAir.has(channel.toLowerCase())) onAir.set(channel.toLowerCase(), []);
+            onAir.get(channel.toLowerCase()).push(Date.parse(`${started.replace(' ', 'T')}Z`));
+            liveIds.add(String(id));
             const name = clean(s.display_name || channel, 80);
             const r = await store.upsertItem(db, { source_service: 'live', source_type: 'stream', source_id: String(id),
                 title: `${name} went live: ${clean(s.title, 160) || 'a stream'}`, url: `${liveApi}/@${encodeURIComponent(channel)}`,
@@ -311,15 +314,16 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
                 const at = sqlFrom(v.created_at, null);
                 if (!at) continue;
                 const channel = clean(v.channel && v.channel.username, 64);
-                const current = onAir.get(channel.toLowerCase());
-                if (type === 'recording' && current && Number.isFinite(current.started)
-                    && Math.abs(Date.parse(`${at.replace(' ', 'T')}Z`) - current.started) <= 10 * MINUTE) continue;
+                const current = onAir.get(channel.toLowerCase()) || [];
+                if (type === 'recording' && current.some((started) => Number.isFinite(started)
+                    && Math.abs(Date.parse(`${at.replace(' ', 'T')}Z`) - started) <= 10 * MINUTE)) continue;
                 seen.add(`${type}:${id}`);
                 let prior = null;
                 if (type === 'recording' && channel) {
-                    prior = await db.prepare(`SELECT actor_subject, source_id FROM pulse_items WHERE source_service = 'live' AND source_type = 'stream'
-                        AND lower(url) = lower(?) AND source_id <> ? AND occurred_at BETWEEN ? AND ? ORDER BY occurred_at DESC LIMIT 1`)
-                        .get(`${liveApi}/@${encodeURIComponent(channel)}`, current && current.id || '', sqlTime(Date.parse(`${at.replace(' ', 'T')}Z`) - 60 * MINUTE), sqlTime(Date.parse(`${at.replace(' ', 'T')}Z`) + 60 * MINUTE));
+                    const candidates = await db.prepare(`SELECT actor_subject, source_id FROM pulse_items WHERE source_service = 'live' AND source_type = 'stream'
+                        AND lower(url) = lower(?) AND occurred_at BETWEEN ? AND ? ORDER BY occurred_at DESC LIMIT 20`)
+                        .all(`${liveApi}/@${encodeURIComponent(channel)}`, sqlTime(Date.parse(`${at.replace(' ', 'T')}Z`) - 60 * MINUTE), sqlTime(Date.parse(`${at.replace(' ', 'T')}Z`) + 60 * MINUTE));
+                    prior = candidates.find((row) => !liveIds.has(row.source_id)) || null;
                 }
                 const r = await store.upsertItem(db, { source_service: 'live', source_type: type, source_id: id,
                     title: `${type === 'recording' ? 'Recording: ' : ''}${clean(v.title, 150) || (type === 'recording' ? 'A stream' : 'A clip')}`,

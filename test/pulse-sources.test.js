@@ -156,15 +156,18 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
     await check('a current broadcast stays one Live item until it becomes a recording', async () => {
         const db = t.app.locals.db;
         const item = (type, id) => db.prepare('SELECT title FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?').get('live', type, String(id));
-        liveStreams = [{ id: 999, username: 'alex', display_name: 'Alex', title: 'Night stream', started_at: badgeAt }];
+        liveStreams = [{ id: 999, username: 'alex', display_name: 'Alex', title: 'Night stream', started_at: badgeAt },
+            { id: 998, username: 'alex', display_name: 'Alex', title: 'Earlier live stream', started_at: iso(Date.parse(badgeAt) - 40 * 60_000) }];
         extraContent = [{ id: 125, kind: 'vod', title: 'Earlier broadcast', href: 'https://openvibe.video/watch?v=earlier',
             created_at: iso(Date.parse(badgeAt) - 20 * 60_000), channel: { username: 'alex', display_name: 'Alex' } }];
         await t.app.locals.pulseSources.runOnce({ force: true });
         assert.ok(await item('stream', 999));
+        assert.ok(await item('stream', 998), 'both on-air stream IDs survive an older VOD on the same channel');
         assert.ok(!(await item('recording', 123)), 'a recording for the broadcast is suppressed while it is live');
         liveStreams = [];
         await t.app.locals.pulseSources.runOnce({ force: true });
         assert.ok(!(await item('stream', 999)), 'the ended Live item leaves when the recording arrives');
+        assert.ok(!(await item('stream', 998)));
         assert.ok(await item('recording', 123));
     });
 

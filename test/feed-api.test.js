@@ -16,7 +16,9 @@ const FRAME = { cards: [
     ] },
     { site: 'news', title: 'Top stories', items: [{ title: 'Not a kind the feed shows', url: 'https://openvibe.news/a', image: { src: 'https://openvibe.media/t/n.webp' } }] },
 ] };
-const LIVE = { streams: [{ username: 'alex', started_at: new Date().toISOString() }, { username: 'ada', started_at: new Date().toISOString() }] };
+const LIVE = { streams: [{ username: 'alex', started_at: new Date().toISOString() },
+    { username: 'alex', started_at: new Date(Date.now() - 40 * 60_000).toISOString() },
+    { username: 'ada', started_at: new Date().toISOString() }] };
 const feedFetch = async (url) => {
     const u = String(url);
     return { ok: /\/api\/(frame|streams)/.test(u), json: async () => (/\/api\/streams/.test(u) ? LIVE : FRAME) };
@@ -144,6 +146,10 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
     });
 
     await check('LIVE only for a channel that is live now', async () => {
+        const feedTools = require('../server/pulse/feed');
+        const current = await feedTools.createLiveNow({ liveUrl: 'https://openvibe.live', fetchImpl: feedFetch })();
+        assert.strictEqual(current.get('alex').length, 2, 'both active stream starts are retained for one channel');
+        assert.ok(feedTools.isCurrentLive({ url: 'https://openvibe.live/@alex', at: new Date(Date.now() - 40 * 60_000).toISOString() }, current));
         const mk = (id, who, at = null) => t.get('/api/v1/pulse/items', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${netSvc}`, 'x-ov-subject': alex.subject_id },
             body: JSON.stringify({ ref: { service: 'live', type: 'stream', id }, title: `${who} went live: ${at ? 'an older stream' : 'a stream'}`, url: `https://openvibe.live/@${who}`, ...(at ? { occurred_at: at } : {}) }) });
         assert.strictEqual((await mk('s1', 'ada')).status, 201);
