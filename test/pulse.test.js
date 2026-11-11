@@ -182,7 +182,7 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(people.includes('<meta name="robots" content="index,follow">'));
         const empty = pulsePage({ items: [], origin: 'system', origins: ['user'] });
         assert.ok(empty.includes('aria-current="page">System</a>'), 'the filter asked for keeps its tab');
-        assert.ok(empty.includes('Nothing here yet.') && empty.includes('<meta name="robots" content="noindex,follow">'));
+        assert.ok(empty.includes('Nothing here yet') && empty.includes('class="ovk-empty"') && empty.includes('<meta name="robots" content="noindex,follow">'));
         assert.ok(pulsePage({ items: [item] }).includes('href="/pulse?origin=system"'), 'without the origins list every filter shows');
         const r = await t.get('/pulse');
         assert.ok(r.text.includes('href="/pulse?origin=system"'), 'system items exist here, so the tab shows');
