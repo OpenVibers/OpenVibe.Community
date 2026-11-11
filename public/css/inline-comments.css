@@ -1,0 +1,11 @@
+.ovc-thread { margin: 24px 0; }
+.ovc-head, .ovc-order, .ovc-comment header, .ovc-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ovc-head { justify-content: space-between; }
+.ovc-comment { padding: 12px 0; border-bottom: 1px solid var(--border, #5555); }
+.ovc-comment header img { border-radius: 50%; object-fit: cover; }
+.ovc-comment time, .ovc-community { font-size: .875em; opacity: .8; }
+.ovc-replies { margin-left: 24px; }
+.ovc-actions form { display: inline; }
+.ovc-attach { display: inline-block; margin: 4px 8px 4px 0; }
+.ovc-attach img { max-width: 120px; max-height: 90px; object-fit: cover; }
+.ovc-order .is-active { font-weight: 700; }

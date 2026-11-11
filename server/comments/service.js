@@ -240,7 +240,8 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (!(v && v.subject)) fail(401, 'auth.required', 'Sign in to attach a file');
             const paste = ref && ref.service === 'community' && ref.type === 'paste';
             const owner = ref && ((ref.service === 'live' && ['vod', 'clip'].includes(ref.type) && v.service === 'svc:live')
-                || (ref.service === 'pics' && ref.type === 'picture' && v.service === 'svc:media-hub'));
+                || (ref.service === 'pics' && ref.type === 'picture' && v.service === 'svc:media-hub')
+                || (ref.service === 'media-hub' && ref.type === 'video' && v.service === 'svc:media-hub'));
             const picture = ref && ref.service === 'pics' && ref.type === 'picture' && v.kind === 'user';
             if (!paste && !picture && !(owner && v.kind === 'service' && checkCapability(v.claims, 'community.comment.write').allowed))
                 fail(403, 'attachment.owner_service', 'Upload this attachment through the service that owns the item');
@@ -392,8 +393,10 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         },
 
         /** DELETE /comments/:id — the author or a moderator. */
-        async remove(v, commentId) {
-            const { comment: c } = await visibleComment(v, commentId);
+        async remove(v, commentId, expectedRef = null) {
+            const { comment: c, thread: t } = await visibleComment(v, commentId);
+            if (expectedRef && (t.ref_service !== expectedRef.service || t.ref_type !== expectedRef.type || t.ref_id !== String(expectedRef.id)))
+                fail(404, 'comment.not_found', 'Comment not found');
             if (!(v && v.subject) && !moderator(v)) fail(401, 'auth.required', 'Sign in to delete a comment');
             const isAuthor = !!(v.subject && c.author_subject && c.author_subject === v.subject);
             if (!isAuthor && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');

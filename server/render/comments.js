@@ -7,7 +7,7 @@
  * is a plain form post. Messages are plain text, always escaped.
  */
 const config = require('../config');
-const { renderPage } = require('./layout');
+const { renderPage, asset } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { timeTag, fmtDate, num } = require('./pages');
 const { who } = require('./forum');
@@ -71,49 +71,19 @@ function repliesHtml(c) {
  * sorting links, where sign-in returns), action: where the form posts. sort: 'new' or 'old' when the
  * page offers both orders (null: newest first, no sort links). note: HTML after "Commenting as …".
  */
-function commentPanel({ page, user, base, action = base, after = null, sort = null, error = null, draft = '', note = '' }) {
-    const thread = page ? page.thread : null;
-    const comments = page ? page.comments : [];
-    const next = page ? page.next_cursor : null;
-    const viewer = page ? page.viewer : { can_comment: !!user, can_moderate: false };
-    const href = (o = {}) => {
-        const q = new URLSearchParams();
-        if (o.sort === 'old') q.set('sort', 'old');
-        if (o.after) q.set('after', o.after);
-        const qs = q.toString();
-        return qs ? `${base}?${qs}` : base;
-    };
-
-    let form = '';
-    if (thread && thread.visibility === 'locked' && !viewer.can_moderate) form = '<p class="alert">This comment thread is locked.</p>';
-    else if (!user) form = `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(base)}">Sign in with your OpenVibe account</a> to comment.</p>`;
-    else if (viewer.can_comment) {
-        form = `<form class="paste-form reply-form" method="post" action="${esc(action)}" id="comment">
-    ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
-    <label class="field"><span>Comment</span><textarea name="message" rows="4" maxlength="2000" required placeholder="Add a comment…">${esc(draft)}</textarea></label>
-    <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-comment" aria-hidden="true"></i> Comment</button><span class="muted small">Commenting as <strong>${esc(user.display_name || user.username || 'you')}</strong>.${note ? ` ${note}` : ''}</span></div>
-  </form>`;
-    }
-
-    const tabs = sort && thread && thread.comment_count > 1
-        ? `<nav class="tabs sort-tabs" aria-label="Sort comments">${[['new', 'Newest'], ['old', 'Oldest']].map(([id, label]) => `<a class="tab${id === sort ? ' active' : ''}" href="${esc(href({ sort: id }))}"${id === sort ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
-        : '';
-    const list = comments.length
-        ? `<div class="posts">${comments.map(commentHtml).join('\n')}</div>`
-        : `<p class="empty">${after ? 'No older comments.' : 'No comments yet.'}</p>`;
-    const older = next ? `<nav class="pager" aria-label="Pages"><span></span><a rel="next" href="${esc(href({ sort, after: next }))}">${sort === 'old' ? 'More' : 'Older'} comments <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a></nav>` : '';
-
-    return `${after ? '' : form}
-  ${after ? `<p><a href="${esc(href({ sort }))}">${sort === 'old' ? 'First' : 'Newest'} comments</a></p>` : ''}
-  ${tabs}
-  ${list}
-  ${older}`;
+function commentPanel({ page, user, base, action = base, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null }) {
+    return require('./inline-thread').renderThread({
+        answer: page || { thread: null, comments: [], viewer: { can_comment: true } },
+        base, post: action, remove: `${action}/delete`, signedIn: !!user && (!page || page.viewer.can_comment !== false),
+        attachmentsAllowed: !page || ['community/paste', 'pics/picture'].includes(`${page.thread.ref.service}/${page.thread.ref.type}`),
+        sort, replyId, expandedId, expandedReplies, error,
+    });
 }
 
 /**
  * page: the comment service's answer for this viewer ({ thread, comments, next_cursor, viewer }).
  */
-function threadPage({ accessId, page, user, after = null, error = null, draft = '' }) {
+function threadPage({ accessId, page, user, after = null, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null, draft = '' }) {
     const { thread } = page;
     const ref = thread.ref;
     const what = refName(ref);
@@ -121,7 +91,7 @@ function threadPage({ accessId, page, user, after = null, error = null, draft = 
     const label = ref.label || `a ${what} on ${product}`;
     const src = sourceUrl(ref);
     const base = `/c/${accessId}`;
-    const panel = commentPanel({ page, user, base, after, error, draft, note: `It shows on ${esc(product)} too.` });
+    const panel = commentPanel({ page, user, base, action: base, sort, replyId, expandedId, expandedReplies, error });
 
     const body = `
 <article class="thread comment-thread">
@@ -140,7 +110,7 @@ function threadPage({ accessId, page, user, after = null, error = null, draft = 
         robots: 'noindex,nofollow',
         active: 'comments',
         footerVariant: 'compact',
-        body,
+        body: `${body}<script src="${asset('js/inline-comments.js')}" defer></script>`, styles: ['kit.css', 'thread.css'], pageCss: ['inline-comments.css'],
     });
 }
 

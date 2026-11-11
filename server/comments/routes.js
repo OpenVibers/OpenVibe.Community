@@ -15,6 +15,7 @@ const express = require('express');
 const pages = require('../render/pages');
 const { threadPage } = require('../render/comments');
 const { ApiError } = require('../http/v1');
+const commentForm = require('./form');
 const cache = require('openvibe-shared/cache-policy');
 const { setRobotsHeader } = require('../render/layout');
 
@@ -40,9 +41,21 @@ function createCommentPages({ comments, viewers, config }) {
     const notFound = () => new ApiError(404, 'thread.not_found', 'Comment thread not found');
 
     async function render(req, res, { status = 200, error = null, draft = '' } = {}) {
-        const after = /^\d{1,15}$/.test(String(req.query.after || '')) ? String(req.query.after) : null;
-        const page = await comments.get(req.viewer, req.params.accessId, { sort: 'new', after, limit: 30 });
-        html(res, threadPage({ accessId: req.params.accessId, page, user: req.user, after, error, draft }), status);
+        const after = /^(?:-?\d{1,12}:)?\d{1,15}$/.test(String(req.query.after || '')) ? String(req.query.after) : null;
+        const sort = req.query.sort === 'new' ? 'new' : 'top';
+        const page = await comments.get(req.viewer, req.params.accessId, { sort, after, limit: 30 });
+        const expandedId = /^\d{1,15}$/.test(String(req.query.replies || '')) ? String(req.query.replies) : null;
+        let expandedReplies = null;
+        if (expandedId && page.comments.some((c) => String(c.id) === expandedId)) {
+            expandedReplies = [];
+            let cursor = null;
+            do {
+                const more = await comments.get(req.viewer, req.params.accessId, { parent: expandedId, after: cursor, limit: 100 });
+                expandedReplies.push(...more.comments);
+                cursor = more.next_cursor;
+            } while (cursor);
+        }
+        html(res, threadPage({ accessId: req.params.accessId, page, user: req.user, after, sort, replyId: req.query.reply, expandedId, expandedReplies, error, draft }), status);
     }
 
     router.get('/c/:accessId', withViewer, wrap(async (req, res, next) => {
@@ -52,7 +65,7 @@ function createCommentPages({ comments, viewers, config }) {
         } catch (err) { failPage(req, res, err, next); }
     }));
 
-    router.post('/c/:accessId', withViewer, form, wrap(async (req, res, next) => {
+    router.post('/c/:accessId', withViewer, form, commentForm.parse, wrap(async (req, res, next) => {
         const origin = req.get('origin');
         if (origin && origin !== 'null' && origin !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
         const draft = String((req.body || {}).message || '').slice(0, 5000);
@@ -60,12 +73,27 @@ function createCommentPages({ comments, viewers, config }) {
             if (!ACCESS_ID_RE.test(req.params.accessId)) throw notFound();
             // Signed-in people only on this page, whatever the thread allows through the API.
             if (!req.viewer || !req.viewer.subject) throw new ApiError(401, 'auth.required', 'Sign in to comment');
-            const out = await comments.add(req.viewer, req.params.accessId, { message: draft });
+            const page = await comments.get(req.viewer, req.params.accessId, { sort: 'top', limit: 1 });
+            const body = await commentForm.bodyFor(comments, req.viewer, page.thread.ref, req);
+            const out = await comments.add(req.viewer, req.params.accessId, body);
             res.redirect(303, `/c/${req.params.accessId}#comment-${out.comment.id}`);
         } catch (err) {
             if (!(err instanceof ApiError) || err.status === 401 || err.status === 404) return failPage(req, res, err, next);
             try { await render(req, res, { status: err.status, error: err.message, draft }); } catch (e) { failPage(req, res, e, next); }
         }
+    }));
+
+    router.post('/c/:accessId/delete', withViewer, form, wrap(async (req, res, next) => {
+        const origin = req.get('origin');
+        if (origin && origin !== 'null' && origin !== config.baseUrl) return html(res, pages.errorPage({ status: 403, title: 'Not allowed', message: 'That form was sent from another site.' }), 403);
+        try {
+            if (!ACCESS_ID_RE.test(req.params.accessId)) throw notFound();
+            const id = String((req.body || {}).comment_id || '');
+            if (!/^\d{1,15}$/.test(id)) throw notFound();
+            const page = await comments.get(req.viewer, req.params.accessId, { sort: 'top', limit: 1 });
+            await comments.remove(req.viewer, id, page.thread.ref);
+            return res.redirect(303, `/c/${req.params.accessId}#comments`);
+        } catch (err) { return failPage(req, res, err, next); }
     }));
 
     return router;
