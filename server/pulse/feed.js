@@ -224,11 +224,10 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
             if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) items.push(t[k++]);
         });
         while (items.length < want && k < t.length) items.push(t[k++]);
-        items.sort((a, b) => Number(!!b.live_now) - Number(!!a.live_now));
         return { items, next_cursor: next };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor, channelOf };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow };

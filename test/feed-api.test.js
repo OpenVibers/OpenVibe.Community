@@ -95,6 +95,15 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.deepStrictEqual(c.media, { thumb: 'https://openvibe.media/c1.webp', preview: 'https://openvibe.media/c1.mp4', ratio: 1.5, length: 18 });
     });
 
+    await check('GET /feed is server rendered, kind chips keep the page crawlable and Older carries a cursor', async () => {
+        const r = await t.get('/feed?kind=video');
+        assert.strictEqual(r.status, 200, r.text);
+        assert.ok(r.text.includes('A video'), 'card text is in the response HTML');
+        assert.ok(r.text.includes('https://openvibe.video/v/1'), 'card link is in the response HTML');
+        assert.ok(r.text.includes('schema.org') && r.text.includes('ItemList'), 'ItemList JSON-LD is present');
+        assert.ok(r.text.includes('Older'), 'the page has a crawlable older-page link');
+    });
+
     await check('a paste and a screenshot paste carry their text and first picture; the counts are Community\'s', async () => {
         const j = (await t.get('/api/v1/feed?limit=40')).json();
         const p = j.items.find((x) => x.title === 'Public one');
