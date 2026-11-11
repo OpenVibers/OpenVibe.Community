@@ -60,7 +60,7 @@ function card(i) {
         site,
         site_name: SITE_NAMES[site] || site.replace(/^app:/, ''),
         actor: a ? { name: clean(a.display_name || a.username || '', 80) || null, avatar: https(a.avatar_url) } : null,
-        media: i.picture_url && https(i.picture_url) ? { thumb: https(i.picture_url), ratio: 16 / 9 } : null,
+        media: i.picture_url && https(i.picture_url) ? { thumb: https(i.picture_url), ...(i.preview_url && https(i.preview_url) ? { preview: https(i.preview_url) } : {}), ratio: Number(i.media_ratio) > 0 ? Number(i.media_ratio) : 16 / 9, ...(Number(i.media_length) > 0 ? { length: Number(i.media_length) } : {}) } : null,
         counts: {},
         ...(i.label ? { label: i.label } : {}),
     };
@@ -224,6 +224,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
             if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) items.push(t[k++]);
         });
         while (items.length < want && k < t.length) items.push(t[k++]);
+        items.sort((a, b) => Number(!!b.live_now) - Number(!!a.live_now));
         return { items, next_cursor: next };
     }));
     router.use((req, res) => contracts.http.sendProblem(res, 404, 'route.not_found', { detail: 'Not found', ctx: req.ov }));

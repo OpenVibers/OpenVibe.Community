@@ -63,6 +63,7 @@ const { createSubmissionService } = require('./submissions/service');
 const { createSubmissionsApi } = require('./submissions/api');
 const { createSubmissionPages } = require('./submissions/routes');
 const { pulsePage } = require('./render/pulse');
+const { feedPage } = require('./render/feed');
 const { extensionFor } = require('./render/highlight');
 const { createIndexNow } = require('openvibe-shared/indexnow');
 const { createPasteService } = require('./pastes/service');
@@ -794,6 +795,14 @@ async function createApp(opts = {}) {
         try { out = await pulse.list({ origin, after: req.query.after }); }
         catch (err) { if (err instanceof v1.ApiError) return res.redirect(302, origin ? `/pulse?origin=${origin}` : '/pulse'); throw err; }
         html(res, pulsePage({ items: out.items, origin, after: req.query.after || null, nextCursor: out.next_cursor, origins: await pulse.origins() }));
+    }));
+
+    app.get('/feed', viewers.middleware({ services: false }), wrap(async (req, res) => {
+        const kind = ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update'].includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
+        const out = await pulse.list({ limit: 40 });
+        let items = out.items || [];
+        if (kind) items = items.filter((item) => require('./pulse/feed').kindOf(item) === kind);
+        html(res, feedPage({ items: items.slice(0, 12), kind }));
     }));
 
     app.get('/my', withUser, wrap(async (req, res) => {

@@ -52,7 +52,7 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
     const textPaste = (await t.app.locals.pastes.createText(asAlex, { title: 'Public one', content: 'The first line of a public paste.' })).paste;
     const shot = (await t.app.locals.pastes.createScreenshot(asAlex, { title: 'A shot', content: 'A tiny cat on a screen' }, { buffer: PNG, originalname: 'cat.png' })).paste;
     const clip = await t.get('/api/v1/pulse/items', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${netSvc}`, 'x-ov-subject': alex.subject_id },
-        body: JSON.stringify({ ref: { service: 'live', type: 'clip', id: 'c1' }, title: 'Great clip', url: 'https://openvibe.live/clip/c1' }) });
+        body: JSON.stringify({ ref: { service: 'live', type: 'clip', id: 'c1' }, title: 'Great clip', url: 'https://openvibe.live/clip/c1', media: { thumb: 'https://openvibe.media/c1.webp', preview: 'https://openvibe.media/c1.mp4', ratio: 1.5, length: 18 } }) });
     assert.strictEqual(clip.status, 201, clip.text);
 
     // One fixture for every remaining kind Pulse can carry (the other services' items are pushed, never read per request).
@@ -92,6 +92,7 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(c.site, 'live');
         assert.strictEqual(c.site_name, 'Live');
         assert.strictEqual(c.actor.name, 'Alex');
+        assert.deepStrictEqual(c.media, { thumb: 'https://openvibe.media/c1.webp', preview: 'https://openvibe.media/c1.mp4', ratio: 1.5, length: 18 });
     });
 
     await check('a paste and a screenshot paste carry their text and first picture; the counts are Community\'s', async () => {
