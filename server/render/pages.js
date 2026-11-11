@@ -209,12 +209,20 @@ function shelfHead(id, title, more) {
     return `<div class="ovk-rail-head"><h2 id="${esc(id)}">${esc(title)}</h2><a class="ovk-rail-more" href="${esc(more.href)}">${esc(more.label)}${kit.icon('chevron')}</a></div>`;
 }
 
-/** The kinds of paste as quick filters under the newest: the most viewed, then the languages people use most. */
+/** The kinds of paste as quick filters under the newest: the most viewed, then the languages people use most. Each is
+ *  an icon in its own tint, the name, and its count beside it (the owner, 11-11: "improve design and add icon"). */
+const KIND_ICON = { image: 'image', text: 'file', plaintext: 'file', markdown: 'book', md: 'book', bash: 'terminal', shell: 'terminal', sh: 'terminal',
+    powershell: 'terminal', log: 'terminal', console: 'terminal', json: 'gear', yaml: 'gear', yml: 'gear', toml: 'gear', ini: 'gear', xml: 'gear', env: 'gear' };
 function kindChips(languages) {
-    const items = [{ href: '/pastes?sort=views', label: 'Most viewed' }].concat((languages || []).slice(0, 7).map((l) => (l.language === 'image'
-        ? { href: '/pastes?type=images', label: `Images ${num(l.count)}` }
-        : { href: `/pastes?lang=${encodeURIComponent(l.language)}`, label: `${languageLabel(l.language)} ${num(l.count)}` })));
-    return `<nav class="cm-kinds" aria-label="Browse pastes by kind">${items.map((x) => kit.button({ ...x, kind: 'quiet', small: true })).join('')}</nav>`;
+    const chip = ({ href, label, n, icon, kind }) => `<a class="cm-kind" data-kind="${esc(kind)}" href="${esc(href)}"><span class="cm-kind-ic">${kit.icon(icon)}</span><span class="cm-kind-l">${esc(label)}</span>${n != null ? `<span class="cm-kind-n">${esc(num(n))}</span>` : ''}</a>`;
+    const items = [{ href: '/pastes?sort=views', label: 'Most viewed', icon: 'flame', kind: 'top' }].concat((languages || []).slice(0, 7).map((l) => {
+        const lang = String(l.language || 'text').toLowerCase();
+        if (lang === 'image') return { href: '/pastes?type=images', label: 'Images', n: l.count, icon: 'image', kind: 'image' };
+        // A paste whose language was never detected is "Other", not the picker's "Auto-detect".
+        const icon = lang === 'auto' ? 'file' : KIND_ICON[lang] || 'code';
+        return { href: `/pastes?lang=${encodeURIComponent(l.language)}`, label: lang === 'auto' ? 'Other' : languageLabel(l.language), n: l.count, icon, kind: icon === 'code' ? 'code' : icon };
+    }));
+    return `<nav class="cm-kinds" aria-label="Browse pastes by kind">${items.map(chip).join('')}</nav>`;
 }
 
 function latestShelf(latest, languages) {
