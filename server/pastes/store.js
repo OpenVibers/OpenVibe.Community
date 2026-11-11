@@ -219,6 +219,7 @@ async function updatePaste(db, id, patch, editedBy = null) {
         sets.push('updated_at = ov_now()');
         await db.prepare(`UPDATE pastes SET ${sets.join(', ')} WHERE id = ?`).run(...params, id);
         const next = await getById(db, id);
+        if (patch.visibility !== undefined) await require('../comments/forum-links').hidePasteThread(db, next.slug, next.visibility === 'public' && !next.burn_after_read);
         if (textChanged) {
             await db.prepare('INSERT INTO paste_versions (paste_id, revision, title, content, language, edited_by) VALUES (?, ?, ?, ?, ?, ?)')
                 .run(id, next.revision, next.title, next.content, next.language, editedBy);
@@ -239,6 +240,7 @@ async function softDelete(db, id) {
         const cur = await getById(db, id);
         const n = (await db.prepare(`UPDATE pastes SET deleted_at = ov_now(), content = NULL, screenshot_url = NULL, metadata = NULL,
                        ai_summary = NULL, ai_tags = NULL, updated_at = ov_now() WHERE id = ? AND deleted_at IS NULL`).run(id)).changes;
+        if (n && cur) await require('../comments/forum-links').hidePasteThread(db, cur.slug, false);
         if (n && cur) await require('../events').pasteDeleted(cur.slug);   // community.paste.deleted
         return n;
     });
@@ -373,6 +375,7 @@ async function setVisibility(db, pasteId, visibility) {
     return await db.tx(async () => {
         const cur = await getById(db, pasteId);
         const r = await db.prepare('UPDATE pastes SET visibility = ?, updated_at = ov_now() WHERE id = ? AND deleted_at IS NULL').run(visibility, pasteId);
+        if (r.changes && cur) await require('../comments/forum-links').hidePasteThread(db, cur.slug, visibility === 'public' && !cur.burn_after_read);
         if (r.changes && cur && cur.visibility !== visibility) await require('../events').pasteUpdated(await getById(db, pasteId), ['visibility']);
         return r.changes;
     });

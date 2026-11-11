@@ -511,7 +511,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'ne
     <a class="btn btn-sm" href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
     ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
     <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
-    ${!restricted && p.visibility !== 'private' && !p.burn_after_read ? `<a class="btn btn-sm" href="/forum/discuss?paste=${encodeURIComponent(p.slug)}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
+    ${!restricted && p.visibility === 'public' && !p.burn_after_read ? `<a class="btn btn-sm" href="${esc(comments && comments.thread.forum_url || '#comments')}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
     ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
 
