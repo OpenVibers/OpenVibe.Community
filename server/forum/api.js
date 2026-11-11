@@ -147,13 +147,17 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', me
         const files = [];
         const mediaOrigin = new URL(mediaUrl).origin;
         for (const id of fileIds) {
-            const kept = await fetch(`${mediaOrigin}/api/v1/attachments/${id}/keep`, {
-                method: 'POST', headers: { Authorization: String(req.get('authorization') || ''), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message_id: `community:post:${id}` }), signal: AbortSignal.timeout(10000),
-            });
+            let kept;
+            try {
+                kept = await fetch(`${mediaOrigin}/api/v1/attachments/${id}/keep`, {
+                    method: 'POST', headers: { Authorization: String(req.get('authorization') || ''), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message_id: `community:post:${id}` }), signal: AbortSignal.timeout(10000),
+                });
+            } catch { fail(502, 'post.attachment_unavailable', 'Media did not answer'); }
             if (!kept.ok) fail(kept.status === 404 ? 400 : 502, 'post.attachment_unavailable', 'A file could not be attached');
             const f = await kept.json();
-            const url = new URL(String(f.url || ''), mediaOrigin);
+            let url;
+            try { url = new URL(String(f.url || ''), mediaOrigin); } catch { fail(502, 'post.attachment_invalid', 'Media returned an invalid attachment'); }
             if (f.kind === 'image' || /^image\//.test(String(f.mime || ''))) fail(400, 'post.picture_alt_required', 'Pictures need alt text in pictures');
             if (f.id !== id || url.origin !== mediaOrigin || !url.pathname.startsWith(`/a/${id}/`) || !Number.isFinite(Number(f.size)) || Number(f.size) < 0) {
                 fail(502, 'post.attachment_invalid', 'Media returned an invalid attachment');
