@@ -38,6 +38,7 @@ function commentHtml(c) {
     const edited = c.edited_at ? ` <span class="sep">·</span> <span class="muted small" title="Edited ${esc(fmtDate(c.edited_at))}">edited</span>` : '';
     return `<article class="post comment" id="comment-${c.id}">
     <header class="post-head">${who(c.author || (c.anon_name ? { display_name: c.anon_name } : null))} <span class="sep">·</span> <a class="muted small" href="#comment-${c.id}">${timeTag(c.created_at)}</a>${edited}</header>
+    ${c.reply_to && c.reply_to_id !== c.parent_id ? `<p class="muted small">Replying to ${esc(c.reply_to.display_name)}</p>` : ''}
     <p class="comment-text">${esc(c.message)}</p>
     ${attachmentsHtml(c.attachments)}
     ${repliesHtml(c)}

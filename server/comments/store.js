@@ -55,6 +55,13 @@ async function getComment(db, id) {
     return row;
 }
 
+async function replyTargets(db, ids) {
+    const unique = [...new Set((ids || []).map(Number).filter(Number.isSafeInteger))];
+    if (!unique.length) return new Map();
+    const rows = await db.prepare(`SELECT id, author_subject, anon_name, origin, deleted_at FROM comments WHERE id IN (${unique.map(() => '?').join(',')})`).all(...unique);
+    return new Map(rows.map((row) => [row.id, row]));
+}
+
 /** References staged by the owning service, grouped by comment id. */
 async function listAttachments(db, commentIds) {
     const out = new Map();
@@ -99,13 +106,13 @@ async function refIsPublic(db, t) {
 }
 
 /** Insert a comment and keep the thread's and parent's counters in step. */
-async function insertComment(db, { thread_id, parent_id = null, author_subject = null, anon_name = null, origin = 'user', message, attachment_ids = [], forum_item = null }) {
+async function insertComment(db, { thread_id, parent_id = null, reply_to_id = null, author_subject = null, anon_name = null, origin = 'user', message, attachment_ids = [], forum_item = null }) {
     return await db.tx(async () => {
         const thread = await getThread(db, thread_id);
         const staged = await stagedAttachments(db, attachment_ids, author_subject, thread && { service: thread.ref_service, type: thread.ref_type, id: thread.ref_id });
         if (!staged) { const err = new Error('Use attachments uploaded for this item'); err.status = 400; err.code = 'comment.attachment_invalid'; throw err; }
-        const info = await db.prepare('INSERT INTO comments (thread_id, parent_id, author_subject, anon_name, origin, message) VALUES (?, ?, ?, ?, ?, ?) RETURNING id')
-            .run(thread_id, parent_id, author_subject, anon_name, origin, message);
+        const info = await db.prepare('INSERT INTO comments (thread_id, parent_id, reply_to_id, author_subject, anon_name, origin, message) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id')
+            .run(thread_id, parent_id, reply_to_id, author_subject, anon_name, origin, message);
         for (const row of staged) {
             const claimed = await db.prepare('UPDATE comment_attachments SET comment_id = ? WHERE media_id = ? AND comment_id IS NULL').run(info.lastInsertRowid, row.media_id);
             if (!claimed.changes) { const err = new Error('This attachment was already used'); err.status = 400; err.code = 'comment.attachment_invalid'; throw err; }
@@ -192,4 +199,4 @@ async function listNewest(db, threadId, { limit = 50, offset = 0 } = {}) {
     return top;
 }
 
-module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, listAttachments, createAttachment, stagedAttachments, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };
+module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, replyTargets, listAttachments, createAttachment, stagedAttachments, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };
