@@ -1082,6 +1082,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (!mine && !mod) fail(403, 'post.not_yours', 'Only the author or a moderator edits a post');
             if (thread.locked && !mod) fail(403, 'thread.locked', 'This thread is locked');
             if (post.comment_id) {
+                if (!mine) fail(403, 'comment.not_yours', 'Only the author can edit a comment');
                 const text = cleanBody(body.body != null ? body.body : body.body_markdown);
                 await store.editPost(db, post.id, text, v.subject || v.service || null);
                 await commentStore.editComment(db, post.comment_id, text);

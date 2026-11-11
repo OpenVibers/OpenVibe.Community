@@ -118,7 +118,7 @@ const { boot, check, done } = require('./helpers/app');
     await check('"Discuss in a space" from a paste: the picker, then a new topic with the paste attached', async () => {
         const pasteUrl = await require('../server/pastes/store').canonicalForRef(t.db, 'snip1');
         const paste = (await call(`/p/${pasteUrl}`)).text;
-        assert.ok(paste.includes('/forum/discuss?paste=snip1'));
+        assert.ok(paste.includes('href="#comments"'), 'an item with no comments opens its own composer');
         const picker = (await call('/forum/discuss?paste=snip1', { cookie: alexJwt })).text;
         assert.ok(picker.includes('/forum/general/new?paste=snip1') && !picker.includes('/forum/roadmap/new'));
         const form = (await call('/forum/general/new?paste=snip1', { cookie: alexJwt })).text;
