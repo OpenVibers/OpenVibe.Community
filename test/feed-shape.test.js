@@ -34,12 +34,14 @@ const { createPulseSources } = require('../server/pulse/sources');
     assert.strictEqual(rundown.media.thumb, 'https://openvibe.media/f/rundown-picture.jpg');
     assert.ok(Math.abs(rundown.media.ratio - 1200 / 630) < 1e-9, 'the AI picture keeps its 1200×630 ratio');
     assert.strictEqual(rundown.label, undefined, 'The Rundown, not "System"');
+    assert.deepStrictEqual(rundown.ref, { service: 'live', kind: 'episode', id: '3005' }, 'the card names its own ref for the view store');
     assert.ok(rundown.url.endsWith('/rundown/e/3005'));
 
     const recording = body.items.find((x) => x.id === 'p:2');
     assert.ok(recording, 'the recording is in the feed');
     assert.strictEqual(recording.kind, 'video');
     assert.strictEqual(recording.actor.name, 'Maticus');
+    assert.deepStrictEqual(recording.ref, { service: 'live', kind: 'recording', id: 'vod-6393' });
     assert.strictEqual(recording.duration_s, 5203, 'the length is a duration, not a bare number');
     assert.ok(!recording.media.length, 'no bare length badge on a recording');
     assert.strictEqual(recording.media.thumb, 'https://openvibe.media/t/vod-6393.jpg');

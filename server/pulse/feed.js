@@ -72,6 +72,11 @@ function card(i) {
     const duration = Number(i.media_length) > 0 ? Number(i.media_length) : null;
     return {
         id: `p:${i.id}`,
+        // The item's own ref in its service's id space (service, type, id). The menu's Feed asks the one view store
+        // (Media's POST /api/v1/views) by exactly this ref, and Network attaches counts.views/counts.engaged to the
+        // card from it (Network server/views/counts.js). Additive: an older reader ignores it.
+        ...(i.source && i.source.service && i.source.type && i.source.id != null
+            ? { ref: { service: String(i.source.service), kind: String(i.source.type), id: String(i.source.id) } } : {}),
         kind,
         url: https(i.url) || i.url,
         title: clean(i.title, 300),
