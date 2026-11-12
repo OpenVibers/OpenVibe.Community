@@ -111,8 +111,6 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
     await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'general'").run(alex.subject_id);
     await t.db.prepare("UPDATE spaces SET created_by = ? WHERE slug = 'showcase'").run(cora.subject_id);
     ok(await send('PUT', '/api/v1/spaces/general/chat-room', { who: alex, json: { room: 'alex-room' } }), 'alex attaches a room to his space');
-    const liveItem = ok(await send('POST', '/api/v1/pulse/items', { token: net.signService({ sub: 'svc:live', cap: ['community.pulse.write'] }), json: { ref: { service: 'live', type: 'stream', id: '9' }, title: 'alex is live', url: 'https://openvibe.live/@alex' } }), 'live pulse item');
-    assert.ok(liveItem.item);
 
     await check('pastes: sam (and services and an app acting for him) cannot edit, hide, delete, re-screenshot, annotate, bulk-change or read the history of alex\'s pastes', async () => {
         const P = `/api/pastes/${pub.slug}`;
@@ -216,15 +214,6 @@ const FORUM_CAPS = ['community.post.create', 'community.comment.write'];
         await allowed('cora attaches a room to her own space', 'PUT', '/api/v1/spaces/showcase/chat-room', 'cora', { json: { room: 'cora-room' } });
         await allowed('alex detaches his own', 'DELETE', '/api/v1/spaces/general/chat-room', 'alex');
         await allowed('a moderator changes settings', 'PUT', '/api/v1/spaces/general/settings', 'boss', { json: { description: 'Changed by staff' } });
-    });
-
-    await check('Pulse: one service cannot publish or retract another service\'s items', async () => {
-        const tools = { token: net.signService({ sub: 'svc:tools', cap: ['community.pulse.write'] }) };
-        as['svc:tools (pulse)'] = tools;
-        await refused('retract Live\'s item', 'DELETE', '/api/v1/pulse/items/live/stream/9', ['svc:tools (pulse)', 'sam', 'svc:live for sam']);
-        await refused('publish as Live', 'POST', '/api/v1/pulse/items', ['svc:tools (pulse)'], { json: { ref: { service: 'live', type: 'stream', id: '10' }, title: 'fake', url: 'https://openvibe.live/@x' } });
-        as['svc:live (pulse)'] = { token: net.signService({ sub: 'svc:live', cap: ['community.pulse.write'] }) };
-        await allowed('Live retracts its own', 'DELETE', '/api/v1/pulse/items/live/stream/9', 'svc:live (pulse)');
     });
 
     await t.close();

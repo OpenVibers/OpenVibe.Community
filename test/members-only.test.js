@@ -179,9 +179,11 @@ function startVip() {
     });
 
     await check('nothing gated leaks: Pulse, sitemap, feeds, space feed, JSON-LD', async () => {
-        const pulse = (await call('/api/v1/pulse')).text;
+        // The one feed reads Community's public activity directly (server/activity/service.js), so a gated
+        // thread is absent there rather than removed from a store later.
+        const pulse = (await call('/api/v1/activity?limit=1000')).text;
         assert.ok(!pulse.includes('Backstage with Cora') && !pulse.includes('Members lounge') && !pulse.includes('member reply'));
-        assert.strictEqual((await t.db.prepare("SELECT COUNT(*) AS c FROM pulse_items WHERE source_type = 'thread' AND source_id IN (?, ?)").get(String(secret.id), String(showcaseThread.id))).c, 0);
+        assert.ok(!pulse.includes(`"id":"${secret.id}"`) && !pulse.includes(`"id":"${showcaseThread.id}"`));
         const sitemap = (await call('/sitemap.xml')).text;
         assert.ok(!sitemap.includes(secret.slug) && !sitemap.includes('/forum/showcase'), 'no gated thread or space in the sitemap');
         const feed = (await call('/forum/feed.xml')).text;
@@ -191,12 +193,9 @@ function startVip() {
         assert.ok(!general.includes('Backstage') && !general.includes('secret backstage body'));
         // A thread gated after the fact leaves Pulse as well.
         const later = (await call('/api/v1/spaces/general/threads', { method: 'POST', who: cora, json: { title: 'Soon private', body: 'soon' } })).json().thread;
-        assert.ok((await call('/api/v1/pulse')).text.includes('Soon private'));
+        assert.ok((await call('/api/v1/activity?limit=1000')).text.includes('Soon private'));
         await call(`/api/v1/spaces/general/threads/${later.slug}/members-only`, { method: 'PUT', who: cora, json: { owner: true } });
-        assert.ok(!(await call('/api/v1/pulse')).text.includes('Soon private'));
-        // Pulse's read-time check alone hides an item nothing removed.
-        await t.db.prepare("INSERT INTO pulse_items (source_service, source_type, source_id, title, url, origin, visibility, occurred_at) VALUES ('community', 'thread', ?, 'stale gated item', 'https://openvibe.community/x', 'user', 'public', datetime('now'))").run(String(secret.id));
-        assert.ok(!(await call('/api/v1/pulse')).text.includes('stale gated item'));
+        assert.ok(!(await call('/api/v1/activity?limit=1000')).text.includes('Soon private'), 'gating it takes it out of the public activity');
     });
 
     await check('SSR: a teaser with the join link (403, noindex) for outsiders; the posts for members, still noindex and without JSON-LD', async () => {

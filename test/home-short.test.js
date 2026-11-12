@@ -11,15 +11,20 @@ const path = require('path');
 const { boot, check, done } = require('./helpers/app');
 
 (async () => {
-    const t = await boot();
+    // The home's "Across OpenVibe" is the one feed's wall view (Network feed.item@1). A recorded wall
+    // response stands in for Network: one row a place, a site mark, the AI label and its picture.
+    const wall = { items: [
+        { id: 'f:network:members:n1', source: { service: 'network', type: 'members', id: 'n1' }, title: '3 people joined today', url: 'https://openvibe.network/', origin: 'system', actor: null, occurred_at: new Date().toISOString() },
+        { id: 'f:live:stream:s1', source: { service: 'live', type: 'stream', id: 's1' }, title: 'Dee went live: Raid night', url: 'https://openvibe.live/@Dee', origin: 'system', actor: null, occurred_at: new Date().toISOString() },
+        { id: 'f:today:event:t1', source: { service: 'today', type: 'event', id: 't1' }, title: 'Live: Raid night', url: 'https://openvibe.live/@Dee', origin: 'system', actor: null, occurred_at: new Date().toISOString() },
+        { id: 'f:blog:post:b1', source: { service: 'blog', type: 'post', id: 'b1' }, title: 'A new post', url: 'https://openvibe.blog/a-new-post', origin: 'ai', label: 'AI', actor: null,
+            picture_url: 'https://openvibe.media/o/med_01JZ00000000000000000000B1', text: 'What changed this week, in one paragraph.', occurred_at: new Date().toISOString() },
+    ] };
+    const feedFetch = async (url) => ({ ok: true, status: 200, async text() { return JSON.stringify(String(url).includes('/wall') ? wall : { items: [], next_cursor: null }); } });
+    const t = await boot({ appOpts: { feedFetch } });
     try {
         await t.db.prepare("INSERT INTO threads (space_id, slug, title, status, last_activity_at) VALUES (4, 'test-item', 'A test item', 'in_progress', ov_now())").run();
         await t.db.prepare("INSERT INTO threads (space_id, slug, title, status, last_activity_at) VALUES (4, 'done-item', 'A finished item', 'done', ov_now())").run();
-        const pulse = (type, id, title, url, origin, extra = '') => t.db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, origin, visibility, occurred_at${extra ? ', picture_url, text' : ''}) VALUES (?, ?, ?, ?, ?, ?, 'public', ov_now()${extra ? ', ?, ?' : ''})`);
-        await pulse().run('network', 'members', 'n1', '3 people joined today', 'https://openvibe.network/', 'system');
-        await pulse().run('live', 'stream', 's1', 'Dee went live: Raid night', 'https://openvibe.live/@Dee', 'system');
-        await pulse().run('today', 'event', 't1', 'Live: Raid night', 'https://openvibe.live/@Dee', 'system');
-        await pulse('x', 'x', 'x', 'x', 'x', 'with').run('blog', 'update', 'b1', 'A new post', 'https://openvibe.blog/a-new-post', 'ai', 'https://openvibe.media/o/med_01JZ00000000000000000000B1', 'What changed this week, in one paragraph.');
 
         await check('the roadmap and the pulse are two sections, not a pick block', async () => {
             const r = await t.get('/');

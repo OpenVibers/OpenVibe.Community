@@ -29,7 +29,9 @@ const has = (html, s, msg) => assert.ok(html.includes(s), msg || `expected to fi
         body: json !== undefined ? JSON.stringify(json) : undefined,
     });
     const row = async (slug) => await t.db.prepare('SELECT * FROM submissions WHERE slug = ?').get(slug);
-    const pulseItem = async (slug) => await t.db.prepare("SELECT * FROM pulse_items WHERE source_service = 'community' AND source_type = 'submission' AND source_id = ?").get(slug);
+    // The one feed reads Community's public activity directly (server/activity/service.js): an accepted
+    // submission is there, a pending/rejected/withdrawn one is not, with no store to go stale.
+    const pulseItem = async (slug) => (await t.get('/api/v1/activity?limit=1000')).json().items.find((i) => i.type === 'submission' && i.id === slug);
     const count = async () => Number((await t.db.prepare('SELECT COUNT(*) AS n FROM submissions').get()).n);
     const submitApi = async (body, token = alexJwt) => { const r = await api('', { method: 'POST', token, json: body }); assert.strictEqual(r.status, 201, r.text); return r.json().submission; };
 
@@ -122,10 +124,7 @@ const has = (html, s, msg) => assert.ok(html.includes(s), msg || `expected to fi
         assert.deepStrictEqual(listed.map((x) => [x.slug, x.author.subject, x.review_note]), [[slug, alex.subject_id, null]]);
 
         const it = await pulseItem(slug);
-        assert.deepStrictEqual([it.title, it.url, it.actor_subject, it.origin, it.visibility], ['Best play of the week', `https://openvibe.community/submissions/${slug}`, alex.subject_id, 'user', 'public']);
-        const feed = (await t.get('/api/v1/pulse?origin=user')).json().items;
-        assert.ok(feed.some((i) => i.source.type === 'submission' && i.source.id === slug && i.actor.subject === alex.subject_id));
-        has((await t.get('/pulse')).text, 'Best play of the week');
+        assert.deepStrictEqual([it.title, it.url, it.actor, it.origin], ['Best play of the week', `https://openvibe.community/submissions/${slug}`, alex.subject_id, 'user']);
     });
 
     await check('the author withdraws: gone from the page, the list and Pulse; nobody else may; not twice', async () => {
@@ -162,8 +161,7 @@ const has = (html, s, msg) => assert.ok(html.includes(s), msg || `expected to fi
         const c = await submitApi({ kind: 'idea', title: 'Changed behind our back', body: 'x' });
         await api(`/${c.slug}/review`, { method: 'POST', token: bossJwt, json: { decision: 'accept' } });
         await t.db.prepare("UPDATE submissions SET status = 'rejected' WHERE slug = ?").run(c.slug);   // no hook ran
-        assert.ok(await pulseItem(c.slug), 'row still there');
-        assert.ok(!(await t.get('/api/v1/pulse?limit=100')).json().items.some((i) => i.source.id === c.slug), 'but never listed');
+        assert.strictEqual(await pulseItem(c.slug), undefined, 'the read is the check: a row that changed is never listed');
     });
 
     await check('identity comes from the token, never the body; services cannot submit; input is checked', async () => {
