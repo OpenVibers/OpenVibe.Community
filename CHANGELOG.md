@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A Live recording, clip or "went live" card names its channel's person: the one subject Community knows by that
+  username, none when two share it. 70 of 112 Live recordings and clips since 11-01 had no subject, so the Following
+  feed never showed them and one streamer's evening folded as two runs. An update fills a card that had no person; a
+  card's person never changes once known. Test: `test/pulse-sources.test.js`.
+
 - The Feed folds a person's run of one kind on one site while each card is within two hours of the run (it was 15
   minutes from the run's first card): 11-11's feed showed one streamer's evening of restarts as nine rows and another's
   morning of uploads as five "added 2 videos" rows. A trending card is skipped when the page already shows its link or

@@ -84,12 +84,15 @@ async function upsertItem(db, it) {
             // time forward (a Wiki page edited again, a busy chat hour still filling): provenance is otherwise
             // what the first record said. A source that sends no text (undefined) keeps the text already there.
             if (it.text === undefined) it = { ...it, text: had.text };
+            // A person found later fills a card that had none (Live recordings named only their channel until
+            // 2026-11-12); a card's person, once known, never changes.
+            const person = it.actor_subject || null;
             if (it.touch) {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, visibility = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, it.visibility || 'public', it.occurred_at, ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, actor_subject = COALESCE(actor_subject, ?), visibility = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, person, it.visibility || 'public', it.occurred_at, ...key);
             } else {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, visibility = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, it.visibility || 'public', ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, actor_subject = COALESCE(actor_subject, ?), visibility = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, person, it.visibility || 'public', ...key);
             }
             return { item: await find.get(...key), created: false };
         }
