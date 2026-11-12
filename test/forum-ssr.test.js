@@ -174,7 +174,7 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         assert.match(reply.headers.get('location'), new RegExp(`^${url}#post-\\d+$`));
         const empty = await t.get(`${url}/reply`, as(samJwt, form({ body: '   ' })));
         assert.strictEqual(empty.status, 400);
-        has(empty.text, 'Write something first');
+        has(empty.text, 'Write something or add a picture');
         const vote = await t.get(`${url}/vote`, as(samJwt, form({ value: '1' })));
         assert.strictEqual(vote.status, 303);
         assert.strictEqual(vote.headers.get('location'), url);
