@@ -37,10 +37,8 @@ const INVENTORY = {
     'server/media/objects.js': [3, 'OV_MEDIA_INTERNAL_URL Object API v2 and normalize-image paths, service token; fixed Media base, never a user URL'],
     'server/pastes/review.js': [2, 'OpenVibe.Vision /api/v1/review (OV_VISION_URL, fixed path) with a service token; only the paste\'s Media URL is sent'],
     'server/observability.js': [1, '/api/ready probes of the configured Media health URL'],
-    'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token'],
-    'server/pulse/feed.js': [2, 'Network /api/frame at networkUrl (trending cards) and Live /api/streams at liveUrl (who is live now); no user input in either URL'],
-    'server/pulse/service.js': [1, 'Network /api/v1/me/follows at the configured networkInternalUrl, with the viewer token and a bounded cursor'],
-    'server/pulse/sources.js': [2, 'Today /api/v1/events, Network /api/v1/stats and Quest /api/v1/profiles/<usr_>/badges at the configured internal base URLs (OV_TODAY_INTERNAL_URL, OV_NETWORK_INTERNAL_URL, OV_QUEST_INTERNAL_URL), fixed paths; the subject must be usr_'],
+    'server/pulse/consumer.js': [2, 'Events subscriptions API (EVENTS_URL) with a service token; the remaining consumer handles revocations, blocks, VIP and account data only'],
+    'server/feed/proxy.js': [1, 'Network /api/v1/feed, /search, /examples and /wall at the configured networkInternalUrl (OV_NETWORK_INTERNAL_URL), fixed paths; the person\'s own session token goes along, never a user URL'],
     'server/relay/discord-gateway.js': [1, 'DISCORD_GATEWAY_URL (owner) or the resume_gateway_url Discord\'s READY names'],
     'server/relay/discord.js': [1, 'a Discord webhook URL read from an environment variable the owner allowlisted; mappings name the variable, never a URL'],
     'server/relay/events-worker.js': [3, 'Events pull API (EVENTS_URL) with a service token'],
@@ -114,10 +112,8 @@ function inventory() {
         return { status: res.status, text: await res.text() };
     };
 
-    await check('URLs people and services hand in (Pulse items, post links and images, comments, pastes, page_url, chat rooms, relay mappings) are never fetched', async () => {
+    await check('URLs people and services hand in (post links and images, comments, pastes, page_url, chat rooms, relay mappings) are never fetched', async () => {
         const urls = [`${C}/pulse`, `${C}/post`, `${C}/img.png`, 'http://169.254.169.254/latest/meta-data/', `${C}/comment`, `${C}/paste`, `${C}/page`, `${C}/r/room-one`];
-        const r1 = await send('POST', '/api/v1/pulse/items', { token: net.signService({ sub: 'svc:live', cap: ['community.pulse.write'] }), json: { ref: { service: 'live', type: 'stream', id: '5' }, title: 'live now', url: urls[0] } });
-        assert.strictEqual(r1.status, 201, r1.text);
         const th = await send('POST', '/api/v1/spaces/general/threads', { json: { title: 'links', body: `see [this](${urls[1]}) and ![img](${urls[2]}) and <img src="${urls[3]}"> ${urls[1]}` } });
         assert.strictEqual(th.status, 201, th.text);
         const slug = JSON.parse(th.text).thread.slug;

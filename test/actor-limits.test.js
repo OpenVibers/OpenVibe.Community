@@ -36,7 +36,7 @@ const { actor, serviceItself } = require('../server/actor-limits');
         if (json !== undefined) { h['content-type'] = 'application/json'; body = JSON.stringify(json); }
         return t.get(path, { method, headers: h, body, cookies: cookie ? [`ov_token=${cookie}`] : [] });
     };
-    const PULSE = '/api/v1/pulse';
+    const PULSE = '/api/v1/activity';
 
     await check('a read: 3 a minute per person, then 429 rate_limited with Retry-After; another person passes', async () => {
         for (let i = 0; i < 3; i++) assert.strictEqual((await call(PULSE, { cookie: alexJwt })).status, 200);
@@ -46,7 +46,7 @@ const { actor, serviceItself } = require('../server/actor-limits');
         assert.ok(/^application\/problem\+json/.test(r.headers.get('content-type')));
         const body = r.json();
         assert.deepStrictEqual([body.code, body.status, body.retry_after_seconds], ['rate_limited', 429, 45]);
-        assert.ok(body.detail.includes('community.pulse.read'), body.detail);
+        assert.ok(body.detail.includes('community.feed.read'), body.detail);
         assert.strictEqual((await call(PULSE, { cookie: samJwt })).status, 200, 'another person still passes');
     });
 
@@ -97,7 +97,7 @@ const { actor, serviceItself } = require('../server/actor-limits');
 
     await check('refusals are counted in community_rate_limited_total', async () => {
         const m = (await call('/metrics')).text;
-        assert.ok(/community_rate_limited_total\{limit="community.pulse.read",window="minute"\} 3/.test(m), m.split('\n').filter((l) => l.includes('rate_limited')).join('\n'));
+        assert.ok(/community_rate_limited_total\{limit="community.feed.read",window="minute"\} 3/.test(m), m.split('\n').filter((l) => l.includes('rate_limited')).join('\n'));
         assert.ok(/community_rate_limited_total\{limit="community.comment.create",window="minute"\} 1/.test(m));
     });
 

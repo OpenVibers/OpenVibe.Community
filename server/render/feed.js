@@ -3,7 +3,6 @@
 const ld = require('./jsonld');
 const { renderPage } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
-const { card } = require('../pulse/feed');
 
 // What each kind is called on a card and its mark (Opus, 2026-11-11: "Live · video" and "Quest · quest" said the same
 // thing twice; a card now says what happened, who, where and when, in one line).
@@ -60,7 +59,7 @@ const KINDS = [['', 'For you'], ['live', 'Live'], ['clip', 'Clips'], ['video', '
 const href = (kind, cursor = '', search = '') => { const q = new URLSearchParams(); if (kind) q.set('kind', kind); if (search) q.set('q', search); if (cursor) q.set('cursor', cursor); return `/feed${q.size ? `?${q}` : ''}`; };
 
 function feedPage({ items = [], kind = '', q = '', examples = [], cursor = null, nextCursor = null, now = Date.now() } = {}) {
-    const cards = items.map((item) => item && item.kind ? item : card(item));
+    const cards = items.filter((item) => item && item.kind);
     const chips = KINDS.map(([id, label]) => `<a class="tab${id === kind ? ' active' : ''}" href="${esc(href(id, '', q))}"${id === kind ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     const body = `<header class="page-head"><nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Feed</span></nav><h1>Feed</h1><p class="muted">What's happening across OpenVibe.</p></header>
 <form class="feed-find" action="/feed" method="get" role="search"><label for="feed-search" class="sr-only">Search the feed</label><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="feed-search" type="search" name="q" value="${esc(q)}" placeholder="People, clips, sites, dates" maxlength="80">${kind ? `<input type="hidden" name="kind" value="${esc(kind)}">` : ''}<button type="submit">Search</button></form>

@@ -346,44 +346,12 @@ route('post', '/api/v1/comments/{commentId}/votes', {
     responses: { 200: json('The comment and its score'), ...errors() },
 });
 
-// ── /api/v1/feed — the menu's Feed on every site (server/pulse/feed.js) ──────────────────────
-route('get', '/api/v1/feed', {
-    operationId: 'listFeed', summary: 'One stream of everything public on the network, as cards by kind', tags: ['pulse'], security: ANONYMOUS,
-    description: 'Pulse items as cards (live, clip, video, pic, post, meme, game, update), newest first, with the network\'s trending pictures and videos woven into the first page.',
-    parameters: [
-        query('kind', { type: 'string', enum: ['live', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update'] }),
-        query('cursor', str(), 'The next_cursor from the previous page'), query('limit', { type: 'integer', minimum: 1, maximum: 40 })],
-    responses: { 200: json('Cards and the cursor for the next page', { type: 'object', properties: { items: arrayOf({ type: 'object', properties: {
-        id: str(), kind: str(), url: str(), title: str(), text: str(), at: nullable('string'), site: str(), site_name: str(), label: str(),
-        actor: { type: ['object', 'null'] }, media: { type: ['object', 'null'] }, counts: { type: 'object' } } }), next_cursor: nullable('string') } }), ...errors([429]) },
-});
-
 // ── /api/v1/pulse — the network's public activity (server/pulse/api.js) ──────────────────────
 route('get', '/api/v1/pulse', {
-    operationId: 'listPulse', summary: 'What the network is doing; followed people first in the last hour for me', tags: ['pulse'], security: ANONYMOUS, parameters: [
-        query('origin', { type: 'string', enum: ['user', 'ai', 'system', 'all'] }), query('for', { type: 'string', enum: ['me'] }),
-        query('cursor', str(), 'The personal next_cursor'), query('after', str(), 'The public next_cursor from the previous page'),
-        query('limit', { type: 'integer', minimum: 1, maximum: 100 })],
-    responses: { 200: json('Items and the cursor for the next page', { type: 'object', properties: { items: arrayOf(ref('PulseItem')), next_cursor: nullable('string') } }), ...errors([400, 429]) },
-});
-route('post', '/api/v1/pulse/items', {
-    operationId: 'ingestPulseItem', summary: 'Publish one public activity item', tags: ['pulse'], security: SERVICE,
-    description: 'community.pulse.write for services or community.pulse.contribute with a person grant for developer apps. An app sends {id,text,url,picture_url?}; its subject and label come from the token. Idempotent per source id.',
-    requestBody: body({ anyOf: [{ type: 'object', required: ['id', 'text', 'url'], properties: {
-        id: str(), text: str({ maxLength: 300 }), url: str({ format: 'uri' }), picture_url: str({ format: 'uri' }),
-    } }, { type: 'object', required: ['ref', 'title', 'url'], properties: {
-        ref: { type: 'object', required: ['service', 'type', 'id'], properties: { service: str(), type: str(), id: str() } },
-        title: str(), url: str({ format: 'uri' }), origin: { type: 'string', enum: ['user', 'ai', 'system'] },
-        occurred_at: str({ format: 'date-time' }), visibility: { type: 'string', enum: ['public', 'followers'] },
-    } }] }),
-    responses: { 200: json('Already there', { type: 'object', properties: { item: ref('PulseItem'), created: { const: false } } }),
-        201: json('Created', { type: 'object', properties: { item: ref('PulseItem'), created: { const: true } } }), ...errors() },
-});
-route('delete', '/api/v1/pulse/items/{service}/{type}/{id}', {
-    operationId: 'retractPulseItem', summary: 'Retract one of the calling service\'s items', tags: ['pulse'], security: SERVICE,
-    parameters: [path('service', str()), path('type', str()), path('id', str())],
-    description: 'community.pulse.write for services, community.pulse.contribute for apps.',
-    responses: { 200: json('Whether it was there'), ...errors() },
+    operationId: 'listPulse', summary: 'The old wall path: the one feed\'s wall view', tags: ['pulse'], security: ANONYMOUS,
+    description: 'Kept for clients that still ask /api/v1/pulse; the answer is the same rows and ids as /api/v1/feed/wall (OpenVibe.Network feed.item@1).',
+    parameters: [query('after', str(), 'The next_cursor from the previous page'), query('limit', { type: 'integer', minimum: 1, maximum: 100 })],
+    responses: { 200: json('Items and the cursor for the next page', { type: 'object', properties: { items: arrayOf({ type: 'object' }), next_cursor: nullable('string') } }), ...errors([429]) },
 });
 route('get', '/api/v1/feed', {
     operationId: 'getFeed', summary: 'The menu\'s Feed: one stream from Pulse, newest first', tags: ['feed'], security: ANONYMOUS,
@@ -409,6 +377,18 @@ route('get', '/api/v1/feed/search', {
 route('get', '/api/v1/feed/examples', {
     operationId: 'feedSearchExamples', summary: 'Search examples based on current feed items', tags: ['feed'], security: ANONYMOUS,
     responses: { 200: json('Suggested searches', { type: 'object', properties: { examples: arrayOf({ type: 'object', properties: { text: str(), reason: str() } }) } }), ...errors([429]) },
+});
+route('get', '/api/v1/feed/wall', {
+    operationId: 'feedWall', summary: 'The menu\'s wall: the one feed in the older wall shape', tags: ['feed'], security: ANONYMOUS,
+    parameters: [query('cursor', str()), query('limit', { type: 'integer', minimum: 1, maximum: 100 })],
+    responses: { 200: json('Items and the next cursor', { type: 'object', properties: { items: arrayOf({ type: 'object' }), next_cursor: nullable('string') } }), ...errors([429]) },
+});
+// ── /api/v1/activity — Community's public rows for Network's collector ──────────────────────
+route('get', '/api/v1/activity', {
+    operationId: 'publicActivity', summary: 'Public posts, pastes and accepted submissions, newest first', tags: ['feed'], security: ANONYMOUS,
+    description: 'The one feed (OpenVibe.Network server/feed/) polls this; only public rows leave, and nothing is stored.',
+    parameters: [query('since', str({ format: 'date-time' })), query('limit', { type: 'integer', minimum: 1, maximum: 1000, default: 500 })],
+    responses: { 200: json('Public activity rows', { type: 'object', properties: { items: arrayOf({ type: 'object' }), count: { type: 'integer' } } }), ...errors([429]) },
 });
 route('post', '/api/v1/me/status', {
     operationId: 'postStatus', summary: 'Post a public status to your profile and Pulse', tags: ['pulse'], security: PERSON,

@@ -52,8 +52,9 @@ const { createForumService } = require('./forum/service');
 const { createVipGate } = require('./vip');
 const { createSpacesApi, createPostsApi, createGroupsApi } = require('./forum/api');
 const { createForumRoutes } = require('./forum/routes');
-const { createPulse } = require('./pulse/service');
-const { createPulseApi } = require('./pulse/api');
+const { createActivity } = require('./activity/service');
+const { createActivityApi } = require('./activity/api');
+const { createFeedProxy } = require('./feed/proxy');
 const { createDiscordRelay } = require('./relay/discord');
 const { createRelayEventsWorker } = require('./relay/events-worker');
 const { createDiscordGateway } = require('./relay/discord-gateway');
@@ -150,13 +151,22 @@ async function createApp(opts = {}) {
     const revocations = require('openvibe-sdk/auth').createPgRevocationStore(db, { table: 'token_revocations' });
     await revocations.load();
     const viewers = createViewerResolver({ auth, config, network, revocations });
-    const pulse = createPulse({ db, network, config });
-    // Public activity without an Events topic (Today's calendar, Network's open stats, Quest badges): a due-based
-    // job that fills Pulse, started by server/index.js and never called while a feed request is being answered.
-    const pulseSources = require('./pulse/sources').createPulseSources({
-        db, config, fetchImpl: opts.sourcesFetch || opts.fetchImpl || globalThis.fetch, testSubjects: () => pulse.testSubjectIds(), ...(opts.pulseSources || {}),
-    });
-    app.locals.pulseSources = pulseSources;
+    // Community's public activity, read directly from its own tables for the one feed (OpenVibe.Network
+    // server/feed/). Pulse reads Network's feed now; there is no local Pulse store and no collector.
+    const activity = createActivity({ db, config });
+    // The menu's Feed and Pulse: one proxy to Network (feed.item@1), forwarding the person's own token.
+    const feedProxy = createFeedProxy({ config, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch });
+    app.locals.feedProxy = feedProxy;
+    // The old write hooks the forum, pastes and status call after a change. They are no-ops now: the one
+    // feed reads Community's public activity directly (server/activity/service.js), so there is nothing
+    // to record a second time. Kept while their callers are still named pulse.* (they are removed with
+    // the next change to each service); they never write anywhere.
+    const noop = async () => null;
+    const pulse = {
+        ORIGINS: ['user', 'ai', 'system'],
+        pasteCreated: noop, pasteChanged: noop, pasteGone: noop, threadCreated: noop, postCreated: noop,
+        submissionAccepted: noop, submissionGone: noop, threadGone: noop, postGone: noop, forgetLocal: noop, statusCreated: noop,
+    };
     const relay = opts.relay || createDiscordRelay({
         db, config, enabled: config.discordRelay.enabled,
         pollMs: config.discordRelay.pollMs, baseMs: config.discordRelay.backoffMs, maxAttempts: config.discordRelay.maxAttempts,
@@ -320,9 +330,14 @@ async function createApp(opts = {}) {
     app.use('/api/v1/comments', cors, createCommentsApi({ service: comments, viewers, anonWriteLimiter, resolveLimiter, limits }));
     // The menu's wall and Feed on every OpenVibe site read these: public reads from any origin, writes from the listed ones.
     const readCors = v1.publicReadCors(config.apiCorsOrigins);
-    app.use('/api/v1/pulse', readCors, createPulseApi({ pulse, viewers, limits }));
-    // The menu's Feed on every site: one stream from Pulse with the network's trending pictures and videos (pulse/feed.js).
-    app.use('/api/v1/feed', readCors, require('./pulse/feed').createFeedApi({ pulse, viewers, limits, db, networkUrl: config.networkUrl, liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch }));
+    // Pulse and the menu's Feed: the same Network feed, the same ids (server/feed/proxy.js).
+    app.use('/api/v1/activity', readCors, createActivityApi({ activity, viewers, limits }));
+    app.use('/api/v1/feed', readCors, feedProxy.router);
+    // The old wall path keeps working for clients that still ask /api/v1/pulse: it is the feed's wall view.
+    app.get('/api/v1/pulse', readCors, (req, res, next) => {
+        req.url = `/wall?limit=${encodeURIComponent(String(req.query.limit || '20'))}&cursor=${encodeURIComponent(String(req.query.after || req.query.cursor || ''))}`;
+        feedProxy.router(req, res, next);
+    });
     app.use('/api/v1/me/status', cors, require('./status/api').createStatusApi({ forum, pulse, viewers, limits, db, baseUrl: config.baseUrl }));
     app.use('/api/v1/profiles', cors, require('./status/api').createProfileStatusApi({ viewers, limits, db, baseUrl: config.baseUrl }));
     // OpenVibe.Events → Pulse (server/pulse/consumer.js): public activity from Live, Blog, Wiki and News.
@@ -473,13 +488,17 @@ async function createApp(opts = {}) {
                 ORDER BY (t.status = 'in_progress') DESC, t.last_activity_at DESC, t.id DESC LIMIT 5`).all(), []),
             quiet(db.prepare(`SELECT t.status, COUNT(*) AS n FROM threads t JOIN spaces s ON s.id = t.space_id
                 WHERE s.slug = 'roadmap' AND t.deleted_at IS NULL GROUP BY t.status`).all(), []),
-            quiet(pulse.list({ limit: 16 }).then((out) => {
+            quiet(feedProxy.read('/api/v1/feed/wall', { limit: '16' }, null).then((out) => {
                 // One row a place: a stream's go-live and the day's card that follows it link the same channel.
                 const seen = new Set();
-                return (out.items || []).filter((it) => it.source && it.source.type !== 'paste' && !seen.has(it.url) && seen.add(it.url)).slice(0, 5);
+                return ((out.body && out.body.items) || []).filter((it) => it.source && it.source.type !== 'paste' && !seen.has(it.url) && seen.add(it.url)).slice(0, 5);
             }), []),
             quiet(db.prepare(`SELECT (SELECT COUNT(*) FROM pastes WHERE deleted_at IS NULL AND visibility = 'public') AS pastes,
-                (SELECT COUNT(*) FROM pulse_items) AS pulse`).get(), {}),
+                (SELECT COUNT(*) FROM pastes WHERE deleted_at IS NULL AND visibility = 'public' AND origin = 'user'
+                    AND COALESCE(is_nsfw, 0) = 0 AND COALESCE(burn_after_read, 0) = 0)
+                + (SELECT COUNT(*) FROM threads t JOIN spaces s ON s.id = t.space_id
+                    WHERE t.deleted_at IS NULL AND s.visibility = 'public' AND s.members_only_owner IS NULL
+                      AND t.members_only_owner IS NULL) AS pulse`).get(), {}),
         ]);
         const value = {
             spaces: spaces.filter((sp) => sp.slug !== 'roadmap' && sp.group_slug !== 'openvibe-items' && !sp.members_only_owner),
@@ -814,48 +833,31 @@ async function createApp(opts = {}) {
     app.use(createCommentPages({ comments, viewers, config }));
     app.use(createSubmissionPages({ submissions, viewers, config }));
     app.get('/pulse', viewers.middleware({ services: false }), wrap(async (req, res) => {
-        const origin = pulse.ORIGINS.includes(req.query.origin) ? req.query.origin : '';
-        let out;
-        try { out = await pulse.list({ origin, after: req.query.after }); }
-        catch (err) { if (err instanceof v1.ApiError) return res.redirect(302, origin ? `/pulse?origin=${origin}` : '/pulse'); throw err; }
-        html(res, pulsePage({ items: out.items, origin, after: req.query.after || null, nextCursor: out.next_cursor, origins: await pulse.origins() }));
+        const origin = ['user', 'ai', 'system'].includes(String(req.query.origin || '')) ? String(req.query.origin) : '';
+        // Pulse is Network's one feed now (server/feed/proxy.js): its wall view keeps this page's look.
+        const out = await feedProxy.read('/api/v1/feed/wall', { limit: '24', cursor: String(req.query.after || '') }, require('./auth/routes').extractToken(req));
+        const all = ((out.body && out.body.items) || []).map((i) => ({
+            id: i.id, source: i.source, title: i.title, text: i.text, url: i.url, origin: i.origin, label: i.label,
+            actor: i.actor, occurred_at: i.occurred_at, picture_url: i.picture_url || (i.media && i.media.thumb) || null,
+        }));
+        const items = origin ? all.filter((i) => i.origin === origin) : all;
+        html(res, pulsePage({ items, origin, after: req.query.after || null, nextCursor: out.body && out.body.next_cursor, origins: all.length ? [...new Set(all.map((i) => i.origin))] : ['user', 'ai', 'system'] }));
     }));
 
-    const feedTools = require('./pulse/feed');
-    const feedLiveNow = feedTools.createLiveNow({ liveUrl: config.liveUrl, fetchImpl: opts.feedFetch || opts.fetchImpl || globalThis.fetch });
     app.get('/feed', viewers.middleware({ services: false }), wrap(async (req, res) => {
-        const kind = ['live', 'clip', 'video', 'pic', 'post', 'paste', 'meme', 'game', 'update'].includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
+        const kind = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'paste', 'meme', 'game', 'update', 'work', 'deal', 'news', 'report'].includes(String(req.query.kind || '')) ? String(req.query.kind) : '';
         const q = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 80);
         const cursor = req.query.cursor ? String(req.query.cursor) : '';
-        const live = await feedLiveNow();
-        const items = [];
-        const seen = [];
-        let after = cursor;
-        let nextCursor = null;
-        for (let pages = 0; pages < 8 && !feedTools.filled(items, 12); pages++) {
-            const out = await pulse.list({ limit: 12, after: after || undefined }, req.viewer);
-            const rows = out.items || [];
-            for (let index = 0; index < rows.length; index++) {
-                const item = rows[index];
-                const card = feedTools.card(item);
-                if (card.kind === 'live') {
-                    card.live_now = feedTools.isCurrentLive(card, live);
-                    if (!card.live_now) card.kind = 'stream';
-                }
-                seen.push(card);
-                if ((!kind || card.kind === kind) && feedTools.searchMatches(card, q)) items.push({ row: item, card });
-                if (feedTools.filled(items, 12)) {
-                    nextCursor = index < rows.length - 1
-                        ? v1.encodeCursor([v1.sqlTime(item.occurred_at), item.id])
-                        : (out.next_cursor || null);
-                    break;
-                }
-            }
-            if (feedTools.filled(items, 12) || !out.next_cursor) break;
-            after = out.next_cursor;
-            nextCursor = after;
-        }
-        html(res, feedPage({ items: feedTools.foldBursts(items), kind, q, examples: feedTools.searchExamples(seen), cursor: cursor || null, nextCursor }));
+        const token = require('./auth/routes').extractToken(req);
+        const params = { limit: '40' };
+        if (kind) params.kind = kind;
+        if (q) params.q = q;
+        if (cursor) params.cursor = cursor;
+        const [out, examples] = await Promise.all([
+            feedProxy.read('/api/v1/feed', params, token),
+            feedProxy.read('/api/v1/feed/examples', {}, token),
+        ]);
+        html(res, feedPage({ items: (out.body && out.body.items) || [], kind, q, examples: (examples.body && examples.body.examples) || [], cursor: cursor || null, nextCursor: out.body && out.body.next_cursor }));
     }));
 
     app.get('/my', withUser, wrap(async (req, res) => {

@@ -238,9 +238,11 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         const docs = JSON.stringify(outbox.filter((e) => /^community\.index_document\./.test(e.event_type)));
         assert.ok(docs.includes(pub.slug) || docs.includes('Open thread'), 'search documents were built');
         for (const s of [priv.slug, privShot.slug, unl.slug, burn.slug, burnShot.slug, gated.thread.slug, gatedSpaceThread.thread.slug, staff.thread.slug, member.thread.slug]) assert.ok(!docs.includes(s), `${s} is a search document`);
-        const pulse = JSON.stringify(await t.db.prepare('SELECT * FROM pulse_items').all());
-        assert.ok(pulse.includes('Open thread'), 'Pulse took the public thread');
-        for (const m of [...allMarkers, GATEDTITLE]) assert.ok(!pulse.includes(m), `Pulse holds ${m}`);
+        // The one feed reads Community's public activity directly (server/activity/service.js): the public
+        // thread is there, and nothing private, gated, member-only or hidden ever leaves.
+        const activity = JSON.stringify((await t.get('/api/v1/activity?limit=1000')).json());
+        assert.ok(activity.includes('Open thread'), 'the public thread is in the public activity');
+        for (const m of [...allMarkers, GATEDTITLE]) assert.ok(!activity.includes(m), `the activity holds ${m}`);
     });
 
     // ── the crawl ──
