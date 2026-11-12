@@ -78,17 +78,23 @@ function card(i) {
 const svcOf = (i) => String((i.source && i.source.service) || i.source_service || '');
 const typeOf = (i) => String((i.source && i.source.type) || i.source_type || '');
 const idOf = (i) => String((i.source && i.source.id) || i.source_id || '');
-const BURST_MS = 15 * 60_000;
+// A person's run of one kind on one site is one card ("Maticus added 7 videos"). A card joins a run when it is within
+// two hours of any card already in it, so a morning of uploads twenty minutes apart, or an evening of stream restarts,
+// reads as one card (ask 360: the feed folds its duplicates). At 15 minutes from the run's first card, 11-11's feed
+// showed one streamer's evening as nine rows.
+const BURST_MS = 2 * 60 * 60_000;
 const BURST_WORD = { pic: 'photos', clip: 'clips', video: 'videos', game: 'achievements', quest: 'quests', avatar: 'profile updates' };
+/** A card's title for "already on the page": a stream's recording and the stream are one title. */
+const titleKey = (c) => String(c.title || '').replace(/^recording:\s*/i, '').trim().toLowerCase();
 function foldBursts(pairs) {
     const groups = [];
     for (const p of pairs) {
         const actor = p.row.actor_subject || (p.row.actor && p.row.actor.subject) || (p.row.actor_name && `name:${p.row.actor_name}`);
         const at = Date.parse(p.card.at || '');
         const prior = actor && Number.isFinite(at) && BURST_WORD[p.card.kind] && groups.find((g) =>
-            g.actor === actor && g.card.kind === p.card.kind && g.site === p.card.site && Math.abs(g.at - at) <= BURST_MS);
-        if (prior) { prior.cards.push(p.card); continue; }
-        groups.push({ actor, at, site: p.card.site, card: p.card, cards: [p.card] });
+            g.actor === actor && g.card.kind === p.card.kind && g.site === p.card.site && g.ats.some((t) => Math.abs(t - at) <= BURST_MS));
+        if (prior) { prior.cards.push(p.card); prior.ats.push(at); continue; }
+        groups.push({ actor, ats: Number.isFinite(at) ? [at] : [], site: p.card.site, card: p.card, cards: [p.card] });
     }
     return groups.map((g) => {
         if (g.cards.length < 2) return g.card;
@@ -325,17 +331,25 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         picked.splice(0, picked.length, ...rankCards(picked.map((p) => p.card), followedIds).map((c) => picked.find((p) => p.card.id === c.id)));
 
         // The first page carries trending pictures and videos, one after every three Pulse items.
+        // A trending card is skipped when the page already shows its link or its title, a folded run's own cards
+        // included: three "iZoR_One's Stream" cards beside his folded recordings said the same thing four times.
+        const folded = foldBursts(picked);
+        const shown = new Set(), titles = new Set();
+        const note = (c) => {
+            for (const x of [c, ...(c.group ? c.group.items : [])]) { shown.add(x.url); titles.add(titleKey(x)); }
+        };
+        folded.forEach(note);
+        const fresh = (c) => !shown.has(c.url) && !titles.has(titleKey(c));
         const items = [];
         let k = 0;
-        foldBursts(picked).forEach((c, n) => {
+        folded.forEach((c, n) => {
             items.push(c);
-            if ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) {
+            while ((n + 1) % 3 === 0 && k < Math.min(t.length, Math.floor(want / 4))) {
                 const extra = t[k++];
-                if (!items.some((x) => x.url === extra.url)) items.push(extra);
+                if (fresh(extra)) { items.push(extra); note(extra); break; }
             }
         });
-        const seen = new Set(items.map((c) => c.url));
-        while (items.length < want && k < t.length) { const c = t[k++]; if (!seen.has(c.url)) { items.push(c); seen.add(c.url); } }
+        while (items.length < want && k < t.length) { const c = t[k++]; if (fresh(c)) { items.push(c); note(c); } }
         // Frame cards keep their existing placement, while an actual on-air channel always leads the response.
         items.sort((a, b) => Number(b.kind === 'live' && b.live_now === true) - Number(a.kind === 'live' && a.live_now === true));
         return { items, next_cursor: next };
