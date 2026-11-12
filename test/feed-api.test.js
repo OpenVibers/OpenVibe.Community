@@ -163,6 +163,22 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
         assert.strictEqual(run.title, 'Maticus added 6 videos');
         assert.deepStrictEqual(run.group.items.map((x) => x.id), ['a', 'b', 'c', 'd', 'e', 'f']);
         assert.deepStrictEqual(out.map((c) => c.id), ['a', 'clip', 'other', 'later'], 'a clip, someone else and a card past the gap stay apart');
+
+        // A page is full by cards, after folding (11-12's /feed: twelve rows, three cards, then "Older").
+        const { filled } = require('../server/pulse/feed');
+        const six = ['a', 'b', 'c', 'd', 'e', 'f'].map((id, i) => pair(id, i * 10));
+        assert.strictEqual(filled(six, 3), false, 'six rows that fold into one card do not fill three');
+        assert.strictEqual(filled([...six, pair('clip', 5, 'clip'), pair('other', 5, 'video', 'sub_ada')], 3), true, 'three cards do');
+        assert.strictEqual(filled(Array.from({ length: 12 }, (_, i) => pair(`r${i}`, i)), 3), true, 'raw rows stop at four times the page');
+
+        // A folded run shows its members: the first four pictures, "+N" over the last (rule 136).
+        const { feedPage } = require('../server/render/feed');
+        const pics = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ ...pair(id, 0), card: { ...pair(id, 0).card, media: { thumb: `https://openvibe.media/${id}.webp`, ratio: 16 / 9 } } }));
+        const html = feedPage({ items: foldBursts(pics) });
+        assert.ok(html.includes('class="feed-strip" data-n="4"'), 'four pictures of the run');
+        assert.ok(html.includes('>+2</span>'), '"+2" for the other two');
+        assert.ok(html.includes('https://openvibe.video/watch?v=d'), 'each picture opens its own video');
+        assert.ok(html.includes('Recordings'), 'the run is named in the plural');
     });
 
     await check('LIVE only for a channel that is live now', async () => {
