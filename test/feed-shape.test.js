@@ -41,7 +41,7 @@ const { createPulseSources } = require('../server/pulse/sources');
     assert.ok(recording, 'the recording is in the feed');
     assert.strictEqual(recording.kind, 'video');
     assert.strictEqual(recording.actor.name, 'Maticus');
-    assert.deepStrictEqual(recording.ref, { service: 'live', kind: 'recording', id: 'vod-6393' });
+    assert.deepStrictEqual(recording.ref, { service: 'live', kind: 'recording', id: 'vod-6393', creator: 'usr_01KKT9AC60KM7CRTB3WN1Z8P56' }, 'the creator is the card\'s subject');
     assert.strictEqual(recording.duration_s, 5203, 'the length is a duration, not a bare number');
     assert.ok(!recording.media.length, 'no bare length badge on a recording');
     assert.strictEqual(recording.media.thumb, 'https://openvibe.media/t/vod-6393.jpg');

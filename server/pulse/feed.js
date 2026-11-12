@@ -76,7 +76,8 @@ function card(i) {
         // (Media's POST /api/v1/views) by exactly this ref, and Network attaches counts.views/counts.engaged to the
         // card from it (Network server/views/counts.js). Additive: an older reader ignores it.
         ...(i.source && i.source.service && i.source.type && i.source.id != null
-            ? { ref: { service: String(i.source.service), kind: String(i.source.type), id: String(i.source.id) } } : {}),
+            ? { ref: { service: String(i.source.service), kind: String(i.source.type), id: String(i.source.id),
+                ...(i.actor_subject ? { creator: String(i.actor_subject) } : {}) } } : {}),
         kind,
         url: https(i.url) || i.url,
         title: clean(i.title, 300),
