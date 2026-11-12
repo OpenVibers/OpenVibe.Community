@@ -217,6 +217,12 @@ async function createApp(opts = {}) {
             const o = await mediaObjects.uploadImage({ buffer, mime, filename, owner, kind: 'screenshot', source: 'community.paste', visibility });
             return { key: o.id, url: o.url, size: o.size_bytes, mime, content_hash: o.content_hash, media_ref: o.id, private: visibility === 'private' };
         },
+        /** A deleted paste's picture goes from Media too (best effort: Media keeps a deleted object for its retention). */
+        async remove(ref) {
+            if (!mediaObjects.configured || !/^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(ref || ''))) return false;
+            await mediaObjects.deleteObject(ref);
+            return true;
+        },
         /** A paste's screenshot bytes, for the proxy (a private object through a signed download). */
         async bytes(row, variant = null) {
             // A card's ?w=&fmt= rides on the same URL Media answered: public objects take it openly, a

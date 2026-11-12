@@ -795,6 +795,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             });
             await tell((pl) => pl.pasteGone(p.slug));
             pingIndexNow(p);
+            // "Delete this paste? There is no undo": its picture goes too, unless another paste still shows the same object.
+            if (p.media_ref && media && typeof media.remove === 'function') {
+                try {
+                    const other = await db.prepare('SELECT 1 FROM pastes WHERE media_ref = ? AND id <> ? AND deleted_at IS NULL LIMIT 1').get(p.media_ref, p.id);
+                    if (!other) await media.remove(p.media_ref);
+                } catch (err) { console.warn('[Pastes] picture cleanup failed:', err.message); }
+            }
             return { success: true };
         },
 

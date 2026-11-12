@@ -316,6 +316,28 @@ const { boot, check, done } = require('./helpers/app');
         assert.deepStrictEqual(failed.json(), { error: 'Media service unavailable' });
     });
 
+    await check('a picture paste deleted and posted again is a new paste, and its picture leaves Media (11-12)', async () => {
+        // The same person's same picture: Media answered the old object as a duplicate, and the upload into it got 409
+        // "Object is ready", so every repost failed with 502 after a delete.
+        const bytes = Buffer.concat([jpeg, Buffer.from('repost-1112')]);
+        const post = (extra = {}) => { const fd = new FormData(); for (const [k, v] of Object.entries(extra)) fd.append(k, v); fd.append('screenshot', new Blob([bytes], { type: 'image/jpeg' }), 'n.jpg'); return call('/api/pastes/screenshot', { method: 'POST', cookie: alexJwt, body: fd }); };
+        const first = await post({ title: 'Nvidia thing' });
+        assert.strictEqual(first.status, 201, first.text);
+        const one = await t.db.prepare('SELECT media_ref FROM pastes WHERE slug = ?').get(first.json().slug);
+        const gone = await call(`/api/pastes/${first.json().slug}`, { method: 'DELETE', cookie: alexJwt });
+        assert.strictEqual(gone.status, 200, gone.text);
+        assert.ok(t.media.deletes.includes(one.media_ref), 'the deleted paste\'s picture is deleted in Media');
+        const again = await post({ title: 'Nvidia thing' });
+        assert.strictEqual(again.status, 201, `posted again: ${again.status} ${again.text}`);
+        const two = await t.db.prepare('SELECT media_ref FROM pastes WHERE slug = ?').get(again.json().slug);
+        assert.notStrictEqual(two.media_ref, one.media_ref);
+        // Kept both on purpose while the first is still there: its own object too, never Media's duplicate.
+        const both = await post({ keep_both: '1' });
+        assert.strictEqual(both.status, 201, `kept both: ${both.status} ${both.text}`);
+        const three = await t.db.prepare('SELECT media_ref FROM pastes WHERE slug = ?').get(both.json().slug);
+        assert.ok(three.media_ref && three.media_ref !== two.media_ref, 'a second object of its own');
+    });
+
     await check('screenshot upload: the type comes from the bytes, not the declared Content-Type', async () => {
         // A JPEG whose bytes still carry EXIF, uploaded as image/png. Trusting the declared type let it
         // pass the type check and skip stripping (stripPng bails on the signature mismatch), so the GPS

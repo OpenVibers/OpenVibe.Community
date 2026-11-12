@@ -93,18 +93,24 @@ function start({ publicPem, issuer }) {
                 if (req.method === 'POST' && !v2[1]) {
                     if (failNext) { failNext = false; return json(500, { error: 'disk full' }); }
                     const b = JSON.parse(body.toString() || '{}');
+                    // Like Media: the same owner's ready object with the same hash answers as a duplicate unless keep_both.
+                    const owner = req.headers['x-ov-subject'] || null;
+                    const same = owner && b.content_hash && !['1', 'true'].includes(String(b.keep_both || '').toLowerCase())
+                        && uploads.find((u) => u.v2 && u.owner === owner && u.content_hash === String(b.content_hash).toLowerCase());
+                    if (same) return json(200, { duplicate: true, id: same.key, object: { id: same.key } });
                     const id = ids.newId('media');
                     pending.set(id, { ...b, owner: req.headers['x-ov-subject'] || null });
                     return json(201, { id, object: { id } });
                 }
                 const o = pending.get(v2[1]);
+                if (!o && req.method === 'PUT' && uploads.some((u) => u.key === v2[1])) return json(409, { code: 'media.object.conflict', error: 'Object is ready' });
                 if (!o) return json(404, { code: 'media.object.not_found' });
                 if (req.method === 'PUT' && v2[2] === 'content') { o.bytes = body; o.mime = String(req.headers['content-type'] || ''); return json(200, { id: v2[1], size_bytes: body.length }); }
                 if (req.method === 'POST' && v2[2] === 'complete') {
                     const hash = crypto.createHash('sha256').update(o.bytes || Buffer.alloc(0)).digest('hex');
                     if (hash !== o.content_hash) return json(400, { code: 'media.object.hash_mismatch' });
                     pending.delete(v2[1]);
-                    uploads.push({ key: v2[1], name: o.filename || 'upload.bin', mime: o.mime, bytes: o.bytes, claims: v.claims, kind: o.kind, visibility: o.visibility, owner: o.owner, v2: true });
+                    uploads.push({ key: v2[1], name: o.filename || 'upload.bin', mime: o.mime, bytes: o.bytes, claims: v.claims, kind: o.kind, visibility: o.visibility, owner: o.owner, v2: true, content_hash: hash });
                     return json(200, { id: v2[1], lifecycle_status: 'ready' });
                 }
                 return json(404, { error: 'not found' });
