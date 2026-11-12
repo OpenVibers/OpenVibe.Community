@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The forum's reply and new thread boxes and the inline comment thread are the shared composer v2 (openvibe-shared
+  4.215.0, `OpenVibeComposer.mount`): the reply and a comment use the comment preset, a new thread the post preset, and
+  each keeps its form's action, a reply's parent and its no-JS post. Tests: `test/composer.test.js` at 390 px and the
+  shared `test/inline-composer-chrome.test.js`.
+
 - A Live recording, clip or "went live" card names its channel's person: the one subject Community knows by that
   username, none when two share it. 70 of 112 Live recordings and clips since 11-01 had no subject, so the Following
   feed never showed them and one streamer's evening folded as two runs. An update fills a card that had no person; a

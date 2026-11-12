@@ -632,7 +632,7 @@ window.addEventListener('DOMContentLoaded', function () {
             ld.pasteLd(p, { description, image: shot || DEFAULT_OG_IMAGE }),
             ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Pastes', url: '/pastes' }, { name: title, url: `/p/${pageSlug}` }]),
         ],
-        styles: ['kit.css', 'thread.css'], pageCss: ['inline-comments.css'],
+        styles: ['kit.css', 'thread.css'], pageCss: ['inline-comments.css'], scripts: ['ov-thread.js'],
         body: `${body}<script src="${asset('js/inline-comments.js')}" defer></script>`,
     });
 }
