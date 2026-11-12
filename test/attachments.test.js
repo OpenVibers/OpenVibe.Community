@@ -129,6 +129,18 @@ const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR',
         assert.ok(!html.includes('enctype="multipart/form-data"'), 'the form no longer posts files itself');
     });
 
+    await check('a picture alone is a post (11-12); nothing at all is not', async () => {
+        const up = await upload(alexJwt, PNG, 'only.png');
+        const pic = up.json().attachment;
+        let r = await json(alexJwt, '/api/v1/spaces/general/threads', { title: 'Just a picture', body: '', attachments: [pic.media_id] });
+        assert.strictEqual(r.status, 201, r.text);
+        assert.strictEqual(r.json().post.body_markdown || '', '', 'no words');
+        assert.deepStrictEqual(r.json().post.attachments.map((a) => a.media_id), [pic.media_id]);
+        r = await json(alexJwt, '/api/v1/spaces/general/threads', { title: 'Nothing', body: '   ' });
+        assert.strictEqual(r.status, 400);
+        assert.strictEqual(r.json().code, 'post.empty');
+    });
+
     await check('the reply form names images the shared uploader already stored', async () => {
         const a = await upload(samJwt, PNG, 'a.png');
         const b = await upload(samJwt, PNG, 'b.png');

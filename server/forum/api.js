@@ -133,12 +133,14 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', me
         const body = req.body || {};
         if (Object.keys(body).some((k) => !['text', 'pictures', 'attachments'].includes(k))) fail(400, 'post.invalid', 'Only text, pictures and attachments are accepted');
         const text = typeof body.text === 'string' ? body.text.trim() : '';
-        if (!text) fail(400, 'post.invalid', 'Write something first');
+        const hasFiles = (Array.isArray(body.pictures) && body.pictures.length > 0) || (Array.isArray(body.attachments) && body.attachments.length > 0);
+        // A picture alone is a post, as on any social app (the owner, 11-12); with nothing at all it is not.
+        if (!text && !hasFiles) fail(400, 'post.invalid', 'Write something or add a picture');
         if (text.length > 2000) fail(400, 'post.invalid', 'Text is at most 2000 characters');
         const pictures = body.pictures == null ? [] : body.pictures;
         if (!Array.isArray(pictures) || pictures.length > 4) fail(400, 'post.invalid_pictures', 'pictures is an array of at most four { media_id, alt }');
         for (const p of pictures) {
-            if (!p || typeof p.media_id !== 'string' || typeof p.alt !== 'string') fail(400, 'post.invalid_pictures', 'Every picture is { media_id, alt }');
+            if (!p || typeof p.media_id !== 'string' || (p.alt != null && typeof p.alt !== 'string')) fail(400, 'post.invalid_pictures', 'Every picture is { media_id, alt? }');
         }
         const fileIds = body.attachments == null ? [] : body.attachments;
         if (!Array.isArray(fileIds) || fileIds.length > 10 || fileIds.some((id) => !/^att_[0-9A-HJKMNP-TV-Z]{26}$/.test(id)) || new Set(fileIds).size !== fileIds.length) {
@@ -164,8 +166,10 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', me
             }
             files.push({ id, name: String(f.name || 'File').slice(0, 255), mime: String(f.mime || 'application/octet-stream').slice(0, 120), size: Number(f.size), url: url.href });
         }
-        const title = `Status: ${text.replace(/https?:\/\/[^\s<>]+/gi, '').trim().slice(0, 110) || 'Shared a picture'}`;
-        const { thread, post } = await forum.createThread(v, 'status', { title, body: text, pictures: pictures.map((p) => ({ media_id: p.media_id, alt: p.alt })) });
+        // A picture-only post is named by what it shows (its alt text), so two of them are not "the same thread".
+        const firstAlt = String((pictures[0] && pictures[0].alt) || '').trim();
+        const title = `Status: ${text.replace(/https?:\/\/[^\s<>]+/gi, '').trim().slice(0, 110) || firstAlt.slice(0, 110) || `Shared a picture · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`}`;
+        const { thread, post } = await forum.createThread(v, 'status', { title, body: text, pictures: pictures.map((p) => ({ media_id: p.media_id, alt: String(p.alt || '') })) });
         if (files.length) await forum.attachComposerFiles(v, post.id, files);
         if (pulse) {
             await pulse.forgetLocal('thread', thread.id);

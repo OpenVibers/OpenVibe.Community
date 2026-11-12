@@ -247,9 +247,10 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     }
 
     const cleanTitle = (t) => String(t == null ? '' : t).replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
-    function cleanBody(b) {
+    /** A post's words. Empty only beside a picture or a file (a picture alone is a post, as on any social app, 11-12). */
+    function cleanBody(b, { allowEmpty = false } = {}) {
         const body = String(b == null ? '' : b).replace(/\u0000/g, '').replace(/\r\n?/g, '\n').replace(/\s+$/, '');
-        if (!body.trim()) fail(400, 'post.empty', 'Write something first');
+        if (!body.trim()) { if (allowEmpty) return ''; fail(400, 'post.empty', 'Write something or add a picture'); }
         if (body.length > BODY_MAX) fail(400, 'post.too_long', `Posts are limited to ${BODY_MAX.toLocaleString('en-US')} characters`);
         return body;
     }
@@ -307,7 +308,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         return rows;
     }
     /**
-     * The pictures a post names: [{ media_id, alt }], alt required, at most four. An upload made through
+     * The pictures a post names: [{ media_id, alt }], at most four. The alt text is the composer's (written by the person
+     * or by AI when they leave it, 11-12); a picture without one is still posted, its alt left empty. An upload made through
      * /api/v1/spaces/:space/attachments is already an attachments row; a direct Media upload (the SDK's
      * posts.create path) is checked with Media's object API, where the person owns the image, and remembered
      * here with the alt text. → rows ready for claimable()
@@ -322,7 +324,6 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const mediaId = String((p && p.media_id) || '');
             const alt = String((p && p.alt) == null ? '' : p.alt).replace(/\s+/g, ' ').trim();
             if (!MED_ID.test(mediaId)) fail(400, 'pictures.invalid', 'Every picture needs a Media media_id');
-            if (!alt) fail(400, 'pictures.alt_required', 'Every picture needs alt text');
             if (alt.length > 300) fail(400, 'pictures.alt_too_long', 'Alt text is at most 300 characters');
             let row = await db.prepare('SELECT * FROM attachments WHERE media_id = ?').get(mediaId);
             if (row) {
@@ -1024,7 +1025,8 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             if (title.length < TITLE_MIN || title.length > TITLE_MAX) fail(400, 'thread.invalid_title', `Titles are ${TITLE_MIN} to ${TITLE_MAX} characters`);
             const labels = body.labels === undefined || body.labels === null ? null : contentLabels.parseLabels(body.labels);
             if (body.labels !== undefined && body.labels !== null && labels === null) fail(400, 'thread.labels_invalid', `Labels are from this list: ${contentLabels.LABELS.join(', ')}`);
-            const text = cleanBody(body.body != null ? body.body : body.body_markdown);
+            const withFiles = [body.pictures, body.attachments].some((x) => (Array.isArray(x) ? x.length > 0 : x != null));
+            const text = cleanBody(body.body != null ? body.body : body.body_markdown, { allowEmpty: withFiles });
             const pictureRows = await preparePictures(w, body.pictures);
             const listed = Array.isArray(body.attachments) ? body.attachments : (body.attachments == null ? [] : [body.attachments]);
             const images = await claimable(w, [...listed, ...pictureRows.map((x) => x.media_id)]);
