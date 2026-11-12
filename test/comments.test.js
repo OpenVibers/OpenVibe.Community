@@ -229,6 +229,21 @@ const { checkCapability } = require('../server/identity/capabilities');
         assert.deepStrictEqual(after.comments, []);
         assert.strictEqual((await t.db.prepare('SELECT COUNT(*) AS n FROM comment_attachments WHERE media_id = ?').get(attachment.id)).n, 0);
         assert.ok(t.media.deletes.includes(attachment.id), 'removing the comment retires its Community Media object');
+
+        // A picture alone is a comment (the owner, 11-12: "it shouldn't require you to type text if you just put a
+        // picture"); with neither words nor a file it is still refused.
+        const form2 = new FormData();
+        form2.set('ref', JSON.stringify(ref));
+        form2.set('file', new Blob([Buffer.from('second picture')], { type: 'image/png' }), 'only.png');
+        const up2 = (await t.get('/api/v1/comments/attachments', { method: 'POST', headers: { authorization: `Bearer ${fileOwnerJwt}` }, body: form2 })).json().attachment;
+        const quiet = await post(thread.id, { message: '', attachments: [up2] }, { cookie: fileOwnerJwt });
+        assert.strictEqual(quiet.status, 201, quiet.text);
+        assert.deepStrictEqual([quiet.json().comment.message, quiet.json().comment.attachments.map((a) => a.id)], ['', [up2.id]], 'a picture with no caption');
+        const page2 = await t.get(`/c/${thread.id}`);
+        assert.match(page2.text, new RegExp(`<img src="https://openvibe\\.media/o/${up2.id}"`), 'and it shows');
+        const bare = await post(thread.id, { message: '  ' }, { cookie: fileOwnerJwt });
+        assert.strictEqual(bare.status, 400);
+        assert.strictEqual(bare.json().code, 'comment.empty');
     });
 
     await check('section reactions: one thread per post, the section id is the key; people only', async () => {
@@ -545,7 +560,7 @@ const { checkCapability } = require('../server/identity/capabilities');
         const form = (body, who) => t.get(`/c/${liveVod.access_id}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': ip2(), ...(who.origin ? { origin: who.origin } : {}) }, body, cookies: who.cookie ? [`ov_token=${who.cookie}`] : [] });
         const empty = await form('message=+', { cookie: samJwt, origin: 'https://openvibe.community' });
         assert.strictEqual(empty.status, 400);
-        assert.match(empty.text, /A comment is 1 to 2,000 characters/, 'the page explains the error');
+        assert.match(empty.text, /Write something or attach a picture/, 'the page explains the error');
         const made = await form('message=said+on+Community', { cookie: samJwt });
         assert.strictEqual(made.status, 303, made.text.slice(0, 200));
         assert.match(made.headers.get('location'), new RegExp(`^/c/${liveVod.access_id}#comment-\\d+$`));

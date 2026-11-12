@@ -15,10 +15,11 @@ function parse(req, res, next) {
 async function bodyFor(comments, viewer, ref, req) {
     const body = req.body || {};
     const message = String(body.message || '').trim();
-    if (!message || message.length > 2000) throw new ApiError(400, 'comment.message_invalid', 'A comment is 1 to 2,000 characters');
+    const files = req.files || [];
+    // A picture alone is a comment, as on any social app (the owner, 11-12): words are optional when a file is attached.
+    if ((!message && !files.length) || message.length > 2000) throw new ApiError(400, 'comment.message_invalid', 'Write something or attach a picture (up to 2,000 characters)');
     const parent = String(body.parent_id || '');
     if (parent && !/^\d{1,15}$/.test(parent)) throw new ApiError(400, 'comment.parent_invalid', 'That reply target is not valid');
-    const files = req.files || [];
     const attachments = [];
     for (const file of files) {
         if (!TYPES.has(file.mimetype)) throw new ApiError(415, 'comment.file_type', 'Attach JPEG, PNG, GIF, WebP, PDF or text files');

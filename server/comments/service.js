@@ -204,9 +204,10 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         return null;
     }
 
-    function cleanMessage(raw) {
+    /** A comment's words. Empty only with files attached (a picture alone is a comment, 11-12). */
+    function cleanMessage(raw, { allowEmpty = false } = {}) {
         const message = String(raw == null ? '' : raw).replace(/\u0000/g, '').trim();
-        if (!message) fail(400, 'comment.empty', 'Comment cannot be empty');
+        if (!message && !allowEmpty) fail(400, 'comment.empty', 'Write something or attach a picture');
         if (message.length > MAX_MESSAGE) fail(400, 'comment.too_long', `Comment must be under ${MAX_MESSAGE} characters`);
         return message;
     }
@@ -328,7 +329,8 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         async add(v, id, body = {}) {
             const t = await visibleThread(v, id);
             if (t.visibility === 'locked' && !moderator(v)) fail(403, 'thread.locked', 'This comment thread is locked');
-            const message = cleanMessage(body.message);
+            const rawAttachments = body.attachments == null ? [] : (Array.isArray(body.attachments) ? body.attachments : [body.attachments]);
+            const message = cleanMessage(body.message, { allowEmpty: rawAttachments.length > 0 });
 
             let parent = null;
             let parentId = null;
@@ -354,8 +356,9 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
                 anonName = String(body.anon_name || '').trim().slice(0, 32).replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'Anonymous';
             }
             const key = author ? `s:${author}` : null;
-            commentLimiter.check(key, message);
-            const rawAttachments = body.attachments == null ? [] : (Array.isArray(body.attachments) ? body.attachments : [body.attachments]);
+            // The repeat check reads a picture-only comment by its files, so two different pictures are not "the same comment".
+            const said = message || `files:${JSON.stringify(rawAttachments).slice(0, 400)}`;
+            commentLimiter.check(key, said);
             if (rawAttachments.length > 4) fail(400, 'comment.attachments_too_many', 'At most four files can be attached to a comment');
             if (rawAttachments.length && !author) fail(401, 'auth.required', 'Sign in to attach a file');
             let attachmentIds = [];
@@ -377,7 +380,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             const forumItem = forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`] ? await forumLinks.publicExternalItem(t, fetchImpl) : null;
             const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, reply_to_id: parent ? parent.id : null,
                 author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds, forum_item: forumItem });
-            commentLimiter.record(key, message);
+            commentLimiter.record(key, said);
             return { comment: (await shapeComments([c], v, t))[0] };
         },
 
