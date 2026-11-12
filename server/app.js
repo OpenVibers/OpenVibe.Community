@@ -103,6 +103,8 @@ async function createApp(opts = {}) {
     const metrics = require('openvibe-shared/metrics').instrument(app, { service: 'community', release: release.release });
     app.use(require('openvibe-sdk/service').telemetryMiddleware);   // request telemetry: a no-op until server/index.js calls telemetry.init()
     app.locals.metrics = metrics.registry;
+    // Times leave with their zone (openvibe.design rule 148): the SQLite-era text columns are UTC.
+    app.use(require('./http/iso-times').isoJsonTimes);
 
     app.use(helmet({
         contentSecurityPolicy: {
