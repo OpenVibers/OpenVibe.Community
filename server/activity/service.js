@@ -55,7 +55,7 @@ function createActivity({ db, config = {} } = {}) {
     }
 
     async function threads(since, limit) {
-        const rows = await db.prepare(`SELECT t.id, t.title, t.created_at, t.author_subject, t.origin, t.views, t.score, t.reply_count, s.slug AS space,
+        const rows = await db.prepare(`SELECT t.id, t.slug AS thread_slug, t.title, t.created_at, t.author_subject, t.origin, t.views, t.score, t.reply_count, s.slug AS space,
                 (SELECT b.body_markdown FROM posts b WHERE b.thread_id = t.id AND b.is_opening = 1 AND b.deleted_at IS NULL LIMIT 1) AS opening
             FROM threads t JOIN spaces s ON s.id = t.space_id
             WHERE s.visibility = 'public' AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL
@@ -64,7 +64,7 @@ function createActivity({ db, config = {} } = {}) {
         return rows.map((t) => ({
             service: 'community', type: 'thread', id: String(t.id),
             title: clean(t.title, 300) || 'A thread', text: clean(t.opening, 280),
-            url: `${base}/forum/${encodeURIComponent(t.space)}/${encodeURIComponent(t.slug || '')}`,
+            url: `${base}/forum/${encodeURIComponent(t.space)}/${encodeURIComponent(t.thread_slug || '')}`,
             actor: t.author_subject || null, origin: t.origin === 'ai' ? 'ai' : t.origin === 'system' ? 'system' : 'user',
             at: iso(t.created_at), kind: 'post', picture_url: null, media_ratio: null,
             counts: counts({ views: t.views, likes: t.score, comments: t.reply_count }),
