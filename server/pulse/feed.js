@@ -77,7 +77,7 @@ function card(i) {
         // card from it (Network server/views/counts.js). Additive: an older reader ignores it.
         ...(i.source && i.source.service && i.source.type && i.source.id != null
             ? { ref: { service: String(i.source.service), kind: String(i.source.type), id: String(i.source.id),
-                ...(i.actor_subject ? { creator: String(i.actor_subject) } : {}) } } : {}),
+                ...((i.actor_subject || (i.actor && i.actor.subject)) ? { creator: String(i.actor_subject || i.actor.subject) } : {}) } } : {}),
         kind,
         url: https(i.url) || i.url,
         title: clean(i.title, 300),
