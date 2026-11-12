@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The Feed folds a person's run of one kind on one site while each card is within two hours of the run (it was 15
+  minutes from the run's first card): 11-11's feed showed one streamer's evening of restarts as nine rows and another's
+  morning of uploads as five "added 2 videos" rows. A trending card is skipped when the page already shows its link or
+  its title ("Recording: " aside), a folded run's own cards included; before, a trending card could repeat a Pulse
+  card further down the page. Test: `test/feed-api.test.js`.
+
 - Community records `orientation applied` on new Media image objects after Media normalizes their EXIF before upload.
   This keeps already-corrected screenshots and attachments out of the later AI orientation queue. Test:
   `test/attachments.test.js`.

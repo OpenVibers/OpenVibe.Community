@@ -10,7 +10,11 @@ const { boot, check, done } = require('./helpers/app');
 
 const FRAME = { cards: [
     { site: 'media-hub', title: 'Trending', items: [
-        { title: 'A trending video', url: 'https://openvibe.video/v/1', meta: '1.2k views', image: { src: 'https://openvibe.media/t/1.webp' } },
+        { title: 'A trending video', url: 'https://openvibe.video/v/7', meta: '1.2k views', image: { src: 'https://openvibe.media/t/1.webp' } },
+        // The same title as a Pulse card on the page ("Recording: " aside): skipped, never a second card for it.
+        { title: 'Recording: A video', url: 'https://openvibe.video/v/8', image: { src: 'https://openvibe.media/t/8.webp' } },
+        // The same link as a Pulse card further down the page: skipped too.
+        { title: 'Same link, other words', url: 'https://openvibe.video/v/1', image: { src: 'https://openvibe.media/t/9.webp' } },
         { title: 'No picture', url: 'https://openvibe.video/v/2' },
         { title: 'Not https', url: 'http://openvibe.video/v/3', image: { src: 'https://openvibe.media/t/3.webp' } },
     ] },
@@ -140,9 +144,25 @@ const at = (minsAgo) => new Date(Date.now() - minsAgo * 60_000).toISOString().re
     await check('trending pictures are woven in: https, with a picture, kinds the feed shows', async () => {
         const j = (await t.get('/api/v1/feed')).json();
         const tr = j.items.filter((x) => x.label === 'Trending');
-        assert.deepStrictEqual(tr.map((x) => x.title), ['A trending video'], 'only the https one with a picture');
+        assert.deepStrictEqual(tr.map((x) => x.title), ['A trending video'],
+            'only the https one with a picture, and never a link or a title the page already shows');
         assert.strictEqual(tr[0].kind, 'video');
         assert.strictEqual(tr[0].media.thumb, 'https://openvibe.media/t/1.webp');
+    });
+
+    await check('a person\'s run folds while each card is within two hours of the run, and a gap ends it', async () => {
+        const { foldBursts } = require('../server/pulse/feed');
+        const base = Date.parse('2026-11-11T07:35:00Z');
+        const pair = (id, mins, kind = 'video', who = 'sub_maticus') => ({ row: { actor_subject: who },
+            card: { id, kind, site: 'media-hub', url: `https://openvibe.video/watch?v=${id}`, title: id,
+                at: new Date(base + mins * 60_000).toISOString(), actor: { name: 'Maticus' }, media: null } });
+        // 07:35, 07:55, 09:10, 09:44, 10:06 and 10:13 (11-11's morning, which showed as five rows), then 15:00.
+        const out = foldBursts([pair('a', 158), pair('b', 151), pair('c', 129), pair('d', 95), pair('e', 20), pair('f', 0),
+            pair('clip', 140, 'clip'), pair('other', 150, 'video', 'sub_ada'), pair('later', 445)]);
+        const run = out.find((c) => c.group);
+        assert.strictEqual(run.title, 'Maticus added 6 videos');
+        assert.deepStrictEqual(run.group.items.map((x) => x.id), ['a', 'b', 'c', 'd', 'e', 'f']);
+        assert.deepStrictEqual(out.map((c) => c.id), ['a', 'clip', 'other', 'later'], 'a clip, someone else and a card past the gap stay apart');
     });
 
     await check('LIVE only for a channel that is live now', async () => {
