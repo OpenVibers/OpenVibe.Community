@@ -801,11 +801,13 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         },
 
         /** DELETE /api/pastes/:slug — owner (or staff) only. The owner's can be undone for ten minutes (./undo.js). */
-        async remove(v, slug) {
+        async remove(v, slug, { undo: undoable = true } = {}) {
             needIdentity(v);
             const p = await visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
-            if (isOwner(v, p) && !truthy(p.burn_after_read)) {
+            // Undo is for a person deleting on the site; a service acting for the owner (Network's resource control)
+            // has no page to undo from, so its delete clears at once as before.
+            if (undoable && v.kind !== 'service' && isOwner(v, p) && !truthy(p.burn_after_read)) {
                 const until = Date.now() + undo.UNDO_MS;
                 await store.hideForUndo(db, p.id, undo.stamp(until));
                 await tell((pl) => pl.pasteGone(p.slug));
