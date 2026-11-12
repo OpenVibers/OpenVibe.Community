@@ -13,7 +13,7 @@ const REVALIDATE = cache.assetHeaders('css/community.css', { hashed: false });
     const t = await boot();
 
     assert.strictEqual(IMMUTABLE, 'public, max-age=31536000, immutable');
-    assert.strictEqual(REVALIDATE, 'public, max-age=300, stale-while-revalidate=86400');
+    assert.strictEqual(REVALIDATE, 'public, max-age=300, stale-while-revalidate=300');
 
     await check('assets: the current ?v= is immutable, a wrong ?v= or none revalidates', async () => {
         const v = assetVersion('css/community.css');
