@@ -64,10 +64,14 @@ const ITEM = {
             VALUES (?, ?, 'user', 'paste', ?, ?, ?, ?)`).run('public-one', ITEM.subject, 'A public paste', 'hello', 'public', at);
         await t.db.prepare(`INSERT INTO pastes (slug, owner_subject, origin, type, title, content, visibility, created_at)
             VALUES (?, ?, 'user', 'paste', ?, ?, ?, ?)`).run('private-one', ITEM.subject, 'A private paste', 'secret', 'private', at);
+        const space = await t.db.prepare("SELECT id FROM spaces WHERE slug = 'general'").get();
+        await t.db.prepare(`INSERT INTO threads (space_id, slug, title, author_subject, origin, created_at)
+            VALUES (?, 'one-feed', 'A thread about one feed', ?, 'user', ?)`).run(space.id, ITEM.subject, at);
         const r = await t.get('/api/v1/activity?limit=50');
         assert.strictEqual(r.status, 200, r.text);
         const items = r.json().items;
         assert.ok(items.some((i) => i.id === 'public-one' && i.url === 'https://openvibe.community/p/public-one'));
+        assert.ok(items.some((i) => i.title === 'A thread about one feed' && i.url === 'https://openvibe.community/forum/general/one-feed'), 'a thread links to its own slug');
         assert.ok(!items.some((i) => i.id === 'private-one'), 'a private paste never leaves Community');
         assert.ok(items.every((i) => i.service === 'community' && i.at && i.url));
     });
