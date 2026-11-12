@@ -220,7 +220,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
     const indexable = space.visibility === 'public' && !gated;
     const first = (page - 1) * perPage;
     const replyBlock = viewer.can_reply
-        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply">
+        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply" data-ovc-compose data-ovc-preset="comment" data-ovc-user="${esc(JSON.stringify({ display_name: user.display_name || user.username || 'you' }))}">
     <h2 class="h3">Reply</h2>
     ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     <label class="field"><span class="sr-only">Your reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
@@ -267,7 +267,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
         historyTitle: thread.title,
         footerVariant: 'compact',
         styles: ['kit.css', ...(attachmentsEnabled ? ['ov-upload.css'] : [])],
-        ...(attachmentsEnabled ? { scripts: ['ov-upload.js'] } : {}),
+        scripts: ['ov-composer.js', ...(attachmentsEnabled ? ['ov-upload.js'] : [])],
         ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : []),

@@ -110,6 +110,7 @@ function threadPage({ accessId, page, user, after = null, sort = 'top', replyId 
         robots: 'noindex,nofollow',
         active: 'comments',
         footerVariant: 'compact',
+        scripts: ['ov-thread.js'],
         body: `${body}<script src="${asset('js/inline-comments.js')}" defer></script>`, styles: ['kit.css', 'thread.css'], pageCss: ['inline-comments.css'],
     });
 }

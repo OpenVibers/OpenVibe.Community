@@ -285,7 +285,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     const indexable = space.visibility === 'public' && !gated;
     const first = (page - 1) * perPage;
     const replyBlock = viewer.can_reply
-        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply">
+        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply" data-ovc-compose data-ovc-preset="comment" data-ovc-user="${esc(JSON.stringify({ display_name: user.display_name || user.username || 'you' }))}">
     ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
     <label class="field"><span>Reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
     ${imageField(attachmentsEnabled, space)}
@@ -332,7 +332,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
         historyTitle: thread.title,
         footerVariant: 'compact',
         styles: ['kit.css', ...(attachmentsEnabled ? ['ov-upload.css'] : [])],
-        ...(attachmentsEnabled ? { scripts: ['ov-upload.js'] } : {}),
+        scripts: ['ov-composer.js', ...(attachmentsEnabled ? ['ov-upload.js'] : [])],
         ...(labelBox ? { pageCss: ['labels.css'] } : {}),
         feeds: [
             ...(space.visibility === 'public' && !space.members_only ? [{ title: `OpenVibe.Community — ${space.name}`, href: `/forum/${space.slug}/feed.xml` }] : []),
@@ -349,7 +349,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
 // ── /forum/:space/new ────────────────────────────────────────────
 function newThreadPage({ space, user, values = {}, error = null, categories = [], attachments = false }) {
     const categoryField = categories.length ? `<label class="field"><span>Category</span><select name="category"><option value="">None</option>${categories.map((c) => `<option value="${esc(c.slug)}"${values.category === c.slug ? ' selected' : ''}>${esc(c.name)}${c.description ? ` — ${esc(c.description)}` : ''}</option>`).join('')}</select></label>` : '';
-    const form = user ? `<form class="paste-form" method="post" action="/forum/${esc(space.slug)}/new">
+    const form = user ? `<form class="paste-form" method="post" action="/forum/${esc(space.slug)}/new" data-ovc-compose data-ovc-preset="post" data-ovc-user="${esc(JSON.stringify({ display_name: user.display_name || user.username || 'you' }))}">
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   ${space.thread_kind === 'request' ? '<p class="muted small">A request is open to votes. Search first: if it is already here, vote for it instead.</p>' : ''}
   <label class="field"><span>Title</span><input type="text" name="title" minlength="3" maxlength="200" required value="${esc(values.title || '')}" placeholder="What is it about?"></label>
@@ -378,7 +378,8 @@ ${form}`;
         active: 'spaces',
         footerVariant: 'compact',
         ...(user ? { pageCss: ['labels.css'] } : {}),
-        ...(attachments ? { styles: ['ov-upload.css'], scripts: ['ov-upload.js'] } : {}),
+        scripts: ['ov-composer.js', ...(attachments ? ['ov-upload.js'] : [])],
+        ...(attachments ? { styles: ['ov-upload.css'] } : {}),
         body,
     });
 }
