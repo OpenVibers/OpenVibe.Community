@@ -298,6 +298,8 @@ async function createApp(opts = {}) {
         app.locals.pasteMedia = pasteMedia;
         app.locals.pasteReview = review;
         if (opts.startPasteHashWorker !== false) app.locals.pasteHashTimer = require('./pastes/content-hash').start({ db, media: mediaObjects, screenshots: pasteMedia });
+        // What an owner deleted is cleared once its ten minutes of Undo pass (pastes/undo.js).
+        if (opts.startPasteUndoSweep !== false) app.locals.pasteUndoTimer = require('./pastes/undo').start({ db, media: pasteMedia });
     }
     // One anonymous-write budget per address, shared by the API and the no-JS form (20 / 10 min).
     const anonWriteLimiter = rateLimit({

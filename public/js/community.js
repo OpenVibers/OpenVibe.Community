@@ -42,6 +42,38 @@
       .then(function (r) { return r.text().then(function (t) { var d = null; try { d = t ? JSON.parse(t) : null; } catch (e) { d = { error: t.slice(0, 200) }; } if (!r.ok) { var err = new Error((d && d.error) || ('Request failed (' + r.status + ')')); err.status = r.status; err.data = d; throw err; } return d; }); });
   }
 
+  // ── Undo a delete, right on the paste ───────────────────────
+  function showUndo(slug, undo) {
+    var main = document.querySelector('main') || document.body;
+    document.body.classList.add('paste-is-deleted');
+    var bar = document.createElement('div');
+    bar.className = 'paste-undo';
+    bar.setAttribute('role', 'status');
+    var words = document.createElement('span');
+    var left = document.createElement('small');
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-sm btn-primary'; btn.textContent = 'Undo';
+    var away = document.createElement('a');
+    away.href = '/my'; away.className = 'btn btn-sm'; away.textContent = 'Your pastes';
+    words.textContent = 'Deleted. ';
+    bar.append(words, btn, away, left);
+    main.insertBefore(bar, main.firstChild);
+    btn.focus({ preventScroll: true });
+    var until = Date.parse(undo.until) || (Date.now() + 600000);
+    var tick = function () {
+      var s = Math.max(0, Math.round((until - Date.now()) / 1000));
+      left.textContent = s > 0 ? 'Undo for ' + (s >= 60 ? Math.ceil(s / 60) + ' min' : s + ' s') : 'It is gone for good.';
+      if (s <= 0) { clearInterval(timer); btn.disabled = true; }
+    };
+    var timer = setInterval(tick, 1000); tick();
+    btn.addEventListener('click', function () {
+      btn.disabled = true; btn.textContent = 'Bringing it back…';
+      api(undo.restore || ('/api/pastes/' + encodeURIComponent(slug) + '/restore'), { method: 'POST', json: {} })
+        .then(function (out) { clearInterval(timer); location.replace((out && out.url) || location.href); })
+        .catch(function (err) { btn.textContent = 'Undo'; btn.disabled = false; left.textContent = err.message; });
+    });
+  }
+
   // ── Paste page ──────────────────────────────────────────────
   document.addEventListener('click', function (e) {
     var t = e.target.closest ? e.target.closest('[data-copy-content],[data-copy-link],[data-delete]') : null;
@@ -52,10 +84,12 @@
     } else if (t.hasAttribute('data-copy-link')) {
       copyText(t.getAttribute('data-copy-link')).then(function () { flash(t, 'Link copied'); }).catch(function () {});
     } else if (t.hasAttribute('data-delete')) {
-      if (!confirm('Delete this paste? There is no undo.')) return;
+      // 2026-11-12 (the owner: "a short undo time period on deletion, and undo right on it"): no "are you sure";
+      // the paste greys out where it is, with Undo on it for the ten minutes the server keeps it.
+      var slug = t.getAttribute('data-delete');
       t.disabled = true;
-      api('/api/pastes/' + encodeURIComponent(t.getAttribute('data-delete')), { method: 'DELETE' })
-        .then(function () { location.href = '/my'; })
+      api('/api/pastes/' + encodeURIComponent(slug), { method: 'DELETE' })
+        .then(function (out) { if (out && out.undo) showUndo(slug, out.undo); else location.href = '/my'; })
         .catch(function (err) { t.disabled = false; alert(err.message); });
     }
   });

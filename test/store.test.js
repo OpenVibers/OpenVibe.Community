@@ -245,7 +245,10 @@ async function rejects(p, status, message) {
 
     await check('delete: owner or staff; soft delete keeps the slug reserved; gone from reads and lists', async () => {
         await rejects(Promise.resolve().then(async () => await svc.remove(bob, unl)), 403);
-        assert.deepStrictEqual(await svc.remove(alice, unl), { success: true });
+        // The owner's delete can be undone for ten minutes (2026-11-12): hidden at once, cleared by the sweep after.
+        const own = await svc.remove(alice, unl);
+        assert.ok(own.success && own.undo && /\/restore$/.test(own.undo.restore), JSON.stringify(own));
+        await require('../server/pastes/undo').purgeDue(db, { now: Date.now() + 11 * 60 * 1000 });
         await rejects(svc.get(alice, unl), 404);
         assert.deepStrictEqual(await svc.remove(mod, priv), { success: true }, 'staff');
         const row = await db.prepare('SELECT slug, content, deleted_at FROM pastes WHERE slug = ?').get(unl);

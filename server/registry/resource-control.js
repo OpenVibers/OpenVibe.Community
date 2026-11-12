@@ -46,7 +46,7 @@ function router({ db, viewers, pastes, now = () => Date.now() }) {
         }
         if (request.dry_run) return result(request, 'done', { result: { dry_run: true, would: 'delete the paste' } });
         // The owner's own deletion path, as the owner (the service acts for them; their subject is checked above).
-        await pastes.remove({ kind: 'service', service: caller, subject: request.owner.id, claims: {}, staff: false }, p.slug);
+        await pastes.remove({ kind: 'service', service: caller, subject: request.owner.id, claims: {}, staff: false }, p.slug, { undo: false });
         return result(request, 'done', { result: { deleted: true } });
     }
 
