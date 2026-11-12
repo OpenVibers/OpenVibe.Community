@@ -16,6 +16,7 @@
  * server/pulse/consumer.js; no route or page is slowed by this job.
  */
 const store = require('./store');
+const { subjectsByUsername } = require('../pastes/store');
 const { sqlTime } = require('../http/v1');
 
 const MINUTE = 60_000;
@@ -46,6 +47,24 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
     const playApi = String(config.playUrl || 'https://play.openvibe.network').replace(/\/+$/, '');
     let timer = null;
     let running = null;
+
+    /**
+     * A channel's person, when a source names only the channel: the one subject Community knows by that username (its
+     * subject_projection cache), or none when two people share it. 70 of 112 Live recordings and clips since 11-01
+     * had no subject, so the Following feed never showed them and one person's evening folded as two runs.
+     */
+    function channelSubjects() {
+        const cache = new Map();
+        return async (username) => {
+            const key = clean(username, 64).toLowerCase();
+            if (!key) return null;
+            if (!cache.has(key)) {
+                const ids = (await subjectsByUsername(db, key)).filter((id) => subject(id));
+                cache.set(key, ids.length === 1 ? ids[0] : null);
+            }
+            return cache.get(key);
+        };
+    }
 
     async function getJson(url, { timeoutMs = 8000 } = {}) {
         const res = await fetchImpl(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
@@ -286,6 +305,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
         const seen = new Set();
         let cursor = null, created = 0;
         const live = await getJson(`${liveApi}/api/streams`);
+        const personOf = channelSubjects();
         const onAir = new Map();
         const liveIds = new Set();
         for (const s of (Array.isArray(live.streams) ? live.streams : [])) {
@@ -298,7 +318,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
             const name = clean(s.display_name || channel, 80);
             const r = await store.upsertItem(db, { source_service: 'live', source_type: 'stream', source_id: String(id),
                 title: `${name} went live: ${clean(s.title, 160) || 'a stream'}`, url: `${liveApi}/@${encodeURIComponent(channel)}`,
-                actor_name: name, origin: 'user', occurred_at: started });
+                actor_name: name, actor_subject: await personOf(channel), origin: 'user', occurred_at: started });
             if (r.created) created++;
         }
         for (let page = 0; page < 100; page++) {
@@ -331,7 +351,7 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
                 const r = await store.upsertItem(db, { source_service: 'live', source_type: type, source_id: id,
                     title: `${type === 'recording' ? 'Recording: ' : ''}${clean(v.title, 150) || (type === 'recording' ? 'A stream' : 'A clip')}`,
                     url: https(v.href), picture_url: https(v.thumbnail_url),
-                    actor_subject: prior && prior.actor_subject || null, actor_name: clean(v.channel && v.channel.display_name, 80),
+                    actor_subject: (prior && prior.actor_subject) || await personOf(channel), actor_name: clean(v.channel && v.channel.display_name, 80),
                     origin: 'user', occurred_at: at, text: clean(v.excerpt, 280), media_length: Number(v.duration_seconds) > 0 ? Number(v.duration_seconds) : null });
                 if (r.created) created++;
                 if (prior) await store.removeItem(db, 'live', 'stream', prior.source_id);

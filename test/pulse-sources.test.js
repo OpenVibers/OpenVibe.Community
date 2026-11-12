@@ -171,5 +171,33 @@ const day = (ms) => new Date(ms).toISOString().slice(0, 10);
         assert.ok(await item('recording', 123));
     });
 
+    await check('a Live recording names its channel\'s person (the one subject known by that username), and fills an older card', async () => {
+        const db = t.app.locals.db;
+        const { upsertProjection } = require('../server/pastes/store');
+        const store = require('../server/pulse/store');
+        const subjectOf = async (type, id) => (await db.prepare('SELECT actor_subject FROM pulse_items WHERE source_service = ? AND source_type = ? AND source_id = ?')
+            .get('live', type, String(id)) || {}).actor_subject || null;
+        await upsertProjection(db, { subject_id: alex.subject_id, username: 'alex', display_name: 'Alex' });
+        // An older card that the sync wrote before it knew the person (11-11's 70 of 112), and two people who share
+        // the username "twin": nobody is guessed for them.
+        await store.upsertItem(db, { source_service: 'live', source_type: 'recording', source_id: '126', title: 'Recording: Before', url: 'https://openvibe.video/watch?v=before',
+            actor_name: 'Alex', origin: 'user', occurred_at: badgeAt });
+        await upsertProjection(db, { subject_id: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPA', username: 'twin', display_name: 'Twin A' });
+        await upsertProjection(db, { subject_id: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPB', username: 'Twin', display_name: 'Twin B' });
+        extraContent = [
+            { id: 126, kind: 'vod', title: 'Before', href: 'https://openvibe.video/watch?v=before', created_at: badgeAt, channel: { username: 'alex', display_name: 'Alex' } },
+            { id: 127, kind: 'vod', title: 'Twin stream', href: 'https://openvibe.video/watch?v=twin', created_at: badgeAt, channel: { username: 'twin', display_name: 'Twin' } },
+        ];
+        await t.app.locals.pulseSources.runOnce({ force: true });
+        assert.strictEqual(await subjectOf('recording', 123), alex.subject_id, 'a new recording carries its channel\'s person');
+        assert.strictEqual(await subjectOf('clip', 124), alex.subject_id, 'a clip too');
+        assert.strictEqual(await subjectOf('recording', 126), alex.subject_id, 'an older card without a person is filled');
+        assert.strictEqual(await subjectOf('recording', 127), null, 'a username two people share names nobody');
+        const followed = await store.upsertItem(db, { source_service: 'live', source_type: 'recording', source_id: '126', title: 'Recording: Before', url: 'https://openvibe.video/watch?v=before',
+            actor_subject: 'usr_01JAB2C3D4E5F6G7H8J9K0MNPA', actor_name: 'Alex', origin: 'user', occurred_at: badgeAt });
+        assert.strictEqual(followed.item.actor_subject, alex.subject_id, 'a card\'s person, once known, never changes');
+        extraContent = [];
+    });
+
     await done(t);
 })();
