@@ -588,6 +588,14 @@ button.rx:hover { border-color: var(--accent); }
 .feed-media:hover img { transform: scale(1.02); }
 .feed-len, .feed-live { position: absolute; bottom: 8px; right: 8px; padding: 2px 7px; border-radius: 6px; background: rgba(0, 0, 0, .72); color: #fff; font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .feed-live { left: 8px; right: auto; background: #dc2626; letter-spacing: .04em; }
+/* A folded run (feed.js groupStrip): its first pictures side by side, two across on a phone, "+N" over the last. */
+.feed-strip { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; max-width: 560px; margin: 6px 0 0; padding: 0; border-radius: 12px; overflow: hidden; }
+.feed-strip li a { position: relative; display: block; aspect-ratio: 16 / 9; background: var(--bg-secondary, #101828); overflow: hidden; }
+.feed-strip img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .25s ease; }
+.feed-strip a:hover img { transform: scale(1.03); }
+.feed-strip-more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; font-size: 1.15rem; font-weight: 700; }
+.feed-strip[data-n="3"] li:first-child { grid-column: 1 / -1; }
+@media (min-width: 601px) { .feed-strip[data-n="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); } .feed-strip[data-n="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); } .feed-strip[data-n="3"] li:first-child { grid-column: auto; } }
 .feed-empty { display: grid; justify-items: center; gap: 4px; padding: 36px 16px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
 .feed-empty > i { font-size: 1.6rem; color: var(--text-secondary); margin-bottom: 6px; }
 .feed-empty p { margin: 0; }
@@ -595,7 +603,7 @@ button.rx:hover { border-color: var(--accent); }
 @media (max-width: 600px) {
     .feed-item { grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 12px; }
     .feed-ic { width: 28px; height: 28px; border-radius: 8px; font-size: .8rem; }
-    .feed-media { margin-left: -38px; width: calc(100% + 38px); max-width: none; }
+    .feed-media, .feed-strip { margin-left: -38px; width: calc(100% + 38px); max-width: none; }
     .feed-media.is-tall { max-width: 260px; width: auto; margin-left: 0; }
 }
 .feed-kind-tabs .tab { flex: none; white-space: nowrap; }

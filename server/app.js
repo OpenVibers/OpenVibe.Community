@@ -832,7 +832,7 @@ async function createApp(opts = {}) {
         const seen = [];
         let after = cursor;
         let nextCursor = null;
-        for (let pages = 0; pages < 8 && items.length < 12; pages++) {
+        for (let pages = 0; pages < 8 && !feedTools.filled(items, 12); pages++) {
             const out = await pulse.list({ limit: 12, after: after || undefined }, req.viewer);
             const rows = out.items || [];
             for (let index = 0; index < rows.length; index++) {
@@ -844,14 +844,14 @@ async function createApp(opts = {}) {
                 }
                 seen.push(card);
                 if ((!kind || card.kind === kind) && feedTools.searchMatches(card, q)) items.push({ row: item, card });
-                if (items.length >= 12) {
+                if (feedTools.filled(items, 12)) {
                     nextCursor = index < rows.length - 1
                         ? v1.encodeCursor([v1.sqlTime(item.occurred_at), item.id])
                         : (out.next_cursor || null);
                     break;
                 }
             }
-            if (items.length >= 12 || !out.next_cursor) break;
+            if (feedTools.filled(items, 12) || !out.next_cursor) break;
             after = out.next_cursor;
             nextCursor = after;
         }

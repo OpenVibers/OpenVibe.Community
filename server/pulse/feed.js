@@ -104,6 +104,16 @@ function foldBursts(pairs) {
     });
 }
 
+/**
+ * Is a page full? Counted after folding: twelve rows that fold into three cards are three cards, and 11-12's /feed
+ * showed three cards and "Older" (a streamer's ten recordings were one). Raw rows stop at four times the page, so a
+ * long run cannot keep a request reading.
+ */
+function filled(pairs, want) {
+    if (pairs.length < want) return false;
+    return pairs.length >= want * 4 || foldBursts(pairs).length >= want;
+}
+
 /** Community's own views, likes and comments, in a few batched reads (never one query per card). */
 async function countsFor(db, rows) {
     const out = new Map();
@@ -299,7 +309,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
         let cursor = req.query.cursor ? String(req.query.cursor) : '';
         let next = null;
         // A kind, site or word filters Pulse's pages until the page is full (at most eight pages read per call).
-        for (let pages = 0; pages < MAX_PAGE_READS && picked.length < pulseWant; pages++) {
+        for (let pages = 0; pages < MAX_PAGE_READS && !filled(picked, pulseWant); pages++) {
             const page = await pulse.list({ after: cursor || undefined, limit: 40 }, req.viewer);
             const rows = page.items || [];
             next = page.next_cursor || null;
@@ -315,7 +325,7 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
                     || String(c.actor && c.actor.name || '').toLowerCase().includes(q)
                     || c.site_name.toLowerCase().includes(q) || c.kind.includes(q))) continue;
                 picked.push({ row: i, card: c });
-                if (picked.length >= pulseWant) {
+                if (filled(picked, pulseWant)) {
                     // Resume after the last consumed row, including when Pulse's final page was only partly read.
                     if (index < rows.length - 1) next = encodeCursor([sqlTime(i.occurred_at), i.id]);
                     break;
@@ -389,4 +399,4 @@ function createFeedApi({ pulse, viewers, limits, db, networkUrl = 'https://openv
     return router;
 }
 
-module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, isCurrentLive, searchMatches, searchExamples, foldBursts, engagement, compareRankedCards, rankCards };
+module.exports = { createFeedApi, kindOf, card, countsFor, channelOf, createLiveNow, isCurrentLive, searchMatches, searchExamples, foldBursts, filled, engagement, compareRankedCards, rankCards };

@@ -29,13 +29,28 @@ function ago(iso, now = Date.now()) {
 }
 const fullDate = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? new Date(t).toUTCString().replace(' GMT', ' UTC') : ''; };
 const clock = (sec) => { const n = Math.round(Number(sec) || 0); if (!n) return ''; const h = Math.floor(n / 3600); const m = Math.floor((n % 3600) / 60); const x = n % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
+/**
+ * A folded run's pictures: its first four, each opening its own item, "+N" on the last (openvibe.design rule 136, a
+ * group shows its members: "iZoR_One added 10 videos" over one picture showed one video of ten).
+ */
+function groupStrip(c) {
+    const items = (c.group.items || []).filter((x) => x.media && x.media.thumb).slice(0, 4);
+    if (items.length < 2) return '';
+    const more = Math.max(0, Number(c.group.count) - items.length);
+    return `<ul class="feed-strip" data-n="${items.length}">${items.map((x, i) => `<li><a href="${esc(x.url)}"${x.title ? ` title="${esc(x.title)}"` : ''}>`
+        + `<img src="${esc(x.media.thumb)}" alt="${esc(x.title || '')}" loading="lazy" decoding="async">`
+        + `${i === items.length - 1 && more ? `<span class="feed-strip-more">+${more}</span>` : ''}</a></li>`).join('')}</ul>`;
+}
+
 /** One card: its mark, who and what, where and when on one line; the title; the line; the picture at its own shape. */
 function feedCard(c, now) {
-    const [what, icon] = lookOf(c.kind);
+    const [one, icon] = lookOf(c.kind);
+    const what = c.group && !/s$/.test(one) ? `${one}s` : one;
     const who = c.actor && c.actor.name ? `<span class="feed-who">${c.actor.avatar ? `<img src="${esc(c.actor.avatar)}" alt="" width="20" height="20" loading="lazy" decoding="async">` : ''}${esc(c.actor.name)}</span>` : '';
     const when = c.at ? `<time datetime="${esc(c.at)}" title="${esc(fullDate(c.at))}">${esc(ago(c.at, now))}</time>` : '';
     const ratio = c.media && Number(c.media.ratio) > 0 ? Math.min(2.4, Math.max(0.5, Number(c.media.ratio))) : 16 / 9;
-    const media = c.media ? `<a class="feed-media${ratio < 1 ? ' is-tall' : ''}" href="${esc(c.url)}" tabindex="-1" aria-hidden="true" style="aspect-ratio:${ratio.toFixed(3)}"><img src="${esc(c.media.thumb)}" alt="" loading="lazy" decoding="async">${c.media.length ? `<span class="feed-len">${esc(clock(c.media.length))}</span>` : ''}${c.kind === 'live' ? '<span class="feed-live">LIVE</span>' : ''}</a>` : '';
+    const strip = c.group ? groupStrip(c) : '';
+    const media = strip || !c.media ? strip : `<a class="feed-media${ratio < 1 ? ' is-tall' : ''}" href="${esc(c.url)}" tabindex="-1" aria-hidden="true" style="aspect-ratio:${ratio.toFixed(3)}"><img src="${esc(c.media.thumb)}" alt="" loading="lazy" decoding="async">${c.media.length ? `<span class="feed-len">${esc(clock(c.media.length))}</span>` : ''}${c.kind === 'live' ? '<span class="feed-live">LIVE</span>' : ''}</a>`;
     return `<li class="feed-item is-${esc(c.kind || 'update')}"><span class="feed-ic" aria-hidden="true"><i class="fa-solid ${icon}"></i></span><div class="feed-body">`
         + `<p class="feed-top">${who}<span class="feed-what">${esc(what)}</span>${c.site_name && !String(what).toLowerCase().startsWith(String(c.site_name).toLowerCase()) && !String(what).toLowerCase().endsWith(String(c.site_name).toLowerCase()) ? `<span class="feed-site">${esc(c.site_name)}</span>` : ''}${when}</p>`
         + `<a class="feed-title" href="${esc(c.url)}">${esc(c.title)}</a>${c.text ? `<p class="feed-text">${esc(c.text)}</p>` : ''}${media}</div></li>`;
