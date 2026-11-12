@@ -9,8 +9,13 @@
  *
  *   GET /?kind=live|stream|clip|video|pic|post|meme|game|update|wiki|quest|chat|event|member
  *        &site=<source service>&q=<title or text>&following=1&cursor=<opaque>&limit=
- *   → { items: [{ id, kind (live while on air; a go-live that is over is "stream"), url, title, text, at, site, site_name, actor: { name, avatar } | null,
- *                 media: { thumb, ratio, length } | null, counts: { views?, likes?, comments? }, live_now? }], next_cursor }
+ *   → { items: [{ id, kind (live while on air; a go-live that is over is "stream"; a Rundown episode is "rundown"),
+ *                 url, title, text, at, site, site_name,
+ *                 actor: { name, avatar } | { name: 'The Rundown', mark: 'rundown', avatar: null } | null,
+ *                 subject?: { name, handle, avatar } (the streamer a Rundown episode is about),
+ *                 image?: string (the episode's own picture; media.thumb carries it too),
+ *                 media: { thumb, ratio, length } | null, duration_s?: number (a recording's length; never a bare
+ *                 media.length badge), counts: { views?, likes?, comments? }, live_now? }], next_cursor }
  *
  * Text only (the client draws every field as text); https links only; nothing from Frame without a picture and a title.
  * following=1 is the signed-in person's Network follows; q searches the card's title and text; counts are Community's
@@ -22,7 +27,7 @@ const express = require('express');
 const contracts = require('openvibe-contracts');
 const { run, fail, isoTime, sqlTime, encodeCursor } = require('../http/v1');
 
-const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member', 'avatar', 'banner', 'paste', 'site', 'space', 'follow', 'episode'];
+const KINDS = ['live', 'stream', 'clip', 'video', 'pic', 'post', 'meme', 'game', 'update', 'wiki', 'quest', 'chat', 'event', 'member', 'avatar', 'banner', 'paste', 'site', 'space', 'follow', 'episode', 'rundown'];
 const SITE_NAMES = { live: 'Live', 'media-hub': 'Video', video: 'Video', pics: 'Pics', space: 'Space', meme: 'Meme', games: 'Games', community: 'Community', blog: 'Blog', wiki: 'Wiki', quest: 'Quest', chat: 'Chat', tools: 'Tools', news: 'News', report: 'Report', today: 'Today', network: 'Network' };
 const MAX_PAGE_READS = 8;
 const https = (u) => { try { const x = new URL(String(u)); return x.protocol === 'https:' ? x.href : null; } catch { return null; } };
@@ -39,7 +44,7 @@ function kindOf(i) {
     if (t === 'site') return 'site';
     if (t === 'space') return 'space';
     if (t === 'paste') return 'paste';
-    if (t === 'episode') return 'episode';
+    if (t === 'episode') return 'rundown';
     if (t === 'clip' || t === 'moment') return 'clip';
     if (/^(vod|video|recording|upload)$/.test(t) || s === 'media-hub' || s === 'video') return 'video';
     if (/^(pic|picture|image|photo)$/.test(t) || s === 'pics') return 'pic';
@@ -56,10 +61,18 @@ function kindOf(i) {
 
 function card(i) {
     const site = String((i.source && i.source.service) || 'community');
-    const a = i.actor || (i.actor_name ? { display_name: i.actor_name } : null);
+    const a = (i.actor && (i.actor.display_name || i.actor.username)) ? i.actor : (i.actor_name ? { display_name: i.actor_name } : null);
+    const kind = kindOf(i);
+    // A Rundown episode is its own thing: the desk is the actor (never "System"), the streamer is the subject the
+    // card is about, and the episode's own AI picture is the art (the stream thumbnail when there is none). A
+    // recording carries its length as duration_s, never as a bare media.length badge.
+    const rundown = kind === 'rundown';
+    const subject = i.subject && typeof i.subject === 'object' && !Array.isArray(i.subject)
+        ? { name: clean(i.subject.name, 80), handle: clean(i.subject.handle, 80) || null, avatar: https(i.subject.avatar) } : null;
+    const duration = Number(i.media_length) > 0 ? Number(i.media_length) : null;
     return {
         id: `p:${i.id}`,
-        kind: kindOf(i),
+        kind,
         url: https(i.url) || i.url,
         title: clean(i.title, 300),
         text: clean(i.text, 280),
@@ -67,11 +80,14 @@ function card(i) {
         ...(i.starts_at ? { starts_at: isoTime(i.starts_at) || i.starts_at } : {}),
         site,
         site_name: SITE_NAMES[site] || site.replace(/^app:/, ''),
-        actor: a ? { name: clean(a.display_name || a.username || '', 80) || null, avatar: https(a.avatar_url) } : null,
-        media: i.picture_url && https(i.picture_url) ? { thumb: https(i.picture_url), ...(i.preview_url && https(i.preview_url) ? { preview: https(i.preview_url) } : {}), ratio: Number(i.media_ratio) > 0 ? Number(i.media_ratio) : 16 / 9, ...(Number(i.media_length) > 0 ? { length: Number(i.media_length) } : {}) } : null,
+        actor: rundown ? { name: 'The Rundown', mark: 'rundown', avatar: null } : (a ? { name: clean(a.display_name || a.username || '', 80) || null, avatar: https(a.avatar_url) } : null),
+        ...(subject ? { subject } : {}),
+        ...(rundown && i.picture_url && https(i.picture_url) ? { image: https(i.picture_url) } : {}),
+        ...(duration && !rundown && kind === 'video' ? { duration_s: duration } : {}),
+        media: i.picture_url && https(i.picture_url) ? { thumb: https(i.picture_url), ...(i.preview_url && https(i.preview_url) ? { preview: https(i.preview_url) } : {}), ratio: Number(i.media_ratio) > 0 ? Number(i.media_ratio) : 16 / 9, ...(duration && kind !== 'video' ? { length: duration } : {}) } : null,
         counts: {},
         ...(i.visibility === 'followers' ? { visibility: 'followers' } : {}),
-        ...(i.label ? { label: i.label } : {}),
+        ...(!rundown && i.label ? { label: i.label } : {}),
     };
 }
 
@@ -254,7 +270,7 @@ function rankCards(cards, followedIds = new Set(), now = Date.now()) {
 function searchMatches(item, query) {
     const q = clean(query, 80).toLowerCase();
     if (!q) return true;
-    const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'paste', pastes: 'paste', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode' };
+    const aliases = { clip: 'clip', clips: 'clip', video: 'video', videos: 'video', recording: 'video', recordings: 'video', photo: 'pic', photos: 'pic', pic: 'pic', pics: 'pic', post: 'post', posts: 'post', paste: 'paste', pastes: 'paste', stream: 'stream', streams: 'stream', live: 'live', game: 'game', games: 'game', update: 'update', updates: 'update', avatar: 'avatar', avatars: 'avatar', banner: 'banner', banners: 'banner', site: 'site', sites: 'site', space: 'space', spaces: 'space', follow: 'follow', follows: 'follow', episode: 'episode', episodes: 'episode', rundown: 'rundown', rundowns: 'rundown' };
     const kindWord = (q.match(/\b[a-z]+\b/g) || []).find((word) => aliases[word]);
     const kind = kindWord && aliases[kindWord];
     if (kind && item.kind !== kind && !(kind === 'stream' && item.kind === 'live')) return false;
@@ -263,7 +279,7 @@ function searchMatches(item, query) {
     if (/\byesterday\b/.test(q) && day !== new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)) return false;
     const date = /\b\d{4}-\d{2}-\d{2}\b/.exec(q);
     if (date && day !== date[0]) return false;
-    const words = q.replace(/\b(clips?|videos?|recordings?|photos?|pics?|posts?|pastes?|streams?|live|games?|updates?|avatars?|banners?|sites?|spaces?|follows?|episodes?|from|today|yesterday|new)\b/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').trim();
+    const words = q.replace(/\b(clips?|videos?|recordings?|photos?|pics?|posts?|pastes?|streams?|live|games?|updates?|avatars?|banners?|sites?|spaces?|follows?|episodes?|rundowns?|from|today|yesterday|new)\b/g, '').replace(/\b\d{4}-\d{2}-\d{2}\b/g, '').trim();
     return !words || [item.title, item.text, item.site, item.site_name, item.kind, item.actor && item.actor.name]
         .some((v) => String(v || '').toLowerCase().includes(words));
 }

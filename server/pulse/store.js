@@ -32,6 +32,11 @@ function ms(v) {
     return Date.parse(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s) ? `${s.replace(' ', 'T')}Z` : s);
 }
 
+/** The subject a card is about (a Rundown episode's streamer), as JSON text or null. */
+function subjectJsonOf(it) {
+    return it && it.subject && typeof it.subject === 'object' && !Array.isArray(it.subject) ? JSON.stringify(it.subject) : null;
+}
+
 /** A live.stream.started item: one row per broadcast, not per reconnect. → { item, created } */
 async function upsertLiveItem(db, it) {
     it = { ...it, occurred_at: pulseTime(it.occurred_at) };
@@ -88,16 +93,16 @@ async function upsertItem(db, it) {
             // 2026-11-12); a card's person, once known, never changes.
             const person = it.actor_subject || null;
             if (it.touch) {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, actor_subject = COALESCE(actor_subject, ?), visibility = ?, occurred_at = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, person, it.visibility || 'public', it.occurred_at, ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, actor_subject = COALESCE(actor_subject, ?), visibility = ?, occurred_at = ?, subject_json = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, person, it.visibility || 'public', it.occurred_at, subjectJsonOf(it), ...key);
             } else {
-                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, actor_subject = COALESCE(actor_subject, ?), visibility = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
-                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, person, it.visibility || 'public', ...key);
+                await db.prepare('UPDATE pulse_items SET title = ?, url = ?, picture_url = ?, preview_url = ?, media_ratio = ?, media_length = ?, app_name = ?, text = ?, starts_at = ?, actor_name = ?, actor_subject = COALESCE(actor_subject, ?), visibility = ?, subject_json = ? WHERE source_service = ? AND source_type = ? AND source_id = ?')
+                    .run(it.title, it.url, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, person, it.visibility || 'public', subjectJsonOf(it), ...key);
             }
             return { item: await find.get(...key), created: false };
         }
-        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, preview_url, media_ratio, media_length, app_name, text, starts_at, actor_name)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.visibility || 'public', it.occurred_at, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null);
+        await db.prepare(`INSERT INTO pulse_items (source_service, source_type, source_id, title, url, actor_subject, origin, visibility, occurred_at, picture_url, preview_url, media_ratio, media_length, app_name, text, starts_at, actor_name, subject_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...key, it.title, it.url, it.actor_subject || null, it.origin, it.visibility || 'public', it.occurred_at, it.picture_url || null, it.preview_url || null, it.media_ratio || null, it.media_length || null, it.app_name || null, it.text == null ? null : String(it.text).slice(0, 300), pulseTime(it.starts_at) || null, it.actor_name || null, subjectJsonOf(it));
         return { item: await find.get(...key), created: true };
     });
 }

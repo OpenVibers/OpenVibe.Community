@@ -22,6 +22,7 @@ const { fail, sqlTime, isoTime, encodeCursor, decodeCursor } = require('../http/
 const { createAuthors } = require('../identity/authors');
 
 const ORIGINS = ['user', 'ai', 'system'];
+const parseJson = (v, d) => { try { const o = JSON.parse(v); return o == null ? d : o; } catch { return d; } };
 const PAGE = 30;
 const FUTURE_SKEW_MS = 5 * 60_000;
 
@@ -107,6 +108,8 @@ function createPulse({ db, network = null, config = {}, fetchImpl = globalThis.f
             ...(i.preview_url ? { preview_url: i.preview_url } : {}),
             ...(i.media_ratio ? { media_ratio: i.media_ratio } : {}),
             ...(i.media_length ? { media_length: i.media_length } : {}),
+            ...(i.media_length ? { duration_s: Number(i.media_length) } : {}),
+            ...(i.subject_json ? { subject: parseJson(i.subject_json, null) } : {}),
             ...(i.text ? { text: i.text } : {}),
             ...(i.starts_at ? { starts_at: isoTime(i.starts_at) } : {}),
             ...(i.actor_name ? { actor_name: i.actor_name } : {}),
