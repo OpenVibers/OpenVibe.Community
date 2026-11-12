@@ -234,6 +234,35 @@ async function listVersions(db, pasteId) {
     return await db.prepare('SELECT revision, title, content, language, edited_by, created_at FROM paste_versions WHERE paste_id = ? ORDER BY revision ASC').all(pasteId);
 }
 
+/**
+ * The owner's delete (2026-11-12): hidden everywhere at once, its words and picture kept until purgeAfter so the owner
+ * can undo it (./undo.js clears it after). The thread under it is hidden and community.paste.deleted goes out now.
+ */
+async function hideForUndo(db, id, purgeAfter) {
+    return await db.tx(async () => {
+        const cur = await getById(db, id);
+        const n = (await db.prepare(`UPDATE pastes SET deleted_at = ov_now(), purge_after = ?, updated_at = ov_now() WHERE id = ? AND deleted_at IS NULL`).run(purgeAfter, id)).changes;
+        if (n && cur) await require('../comments/forum-links').hidePasteThread(db, cur.slug, false);
+        if (n && cur) await require('../events').pasteDeleted(cur.slug);   // community.paste.deleted
+        return n;
+    });
+}
+
+/** A paste deleted by its owner, still inside its undo window: the row (deleted_at set), or null. */
+async function getUndoable(db, slug, now) {
+    return await db.prepare(`SELECT * FROM pastes WHERE slug = ? AND deleted_at IS NOT NULL AND purge_after IS NOT NULL AND purge_after > ?`).get(String(slug), now) || null;
+}
+
+/** Undo: the paste is back as it was, with its thread. */
+async function unhide(db, id) {
+    return await db.tx(async () => {
+        const n = (await db.prepare(`UPDATE pastes SET deleted_at = NULL, purge_after = NULL, updated_at = ov_now() WHERE id = ? AND deleted_at IS NOT NULL AND purge_after IS NOT NULL`).run(id)).changes;
+        const back = n ? await getById(db, id) : null;
+        if (back) await require('../comments/forum-links').hidePasteThread(db, back.slug, true);
+        return back;
+    });
+}
+
 /** Soft delete: the row stays (its slug stays reserved), its content and image link do not. */
 async function softDelete(db, id) {
     return await db.tx(async () => {
@@ -485,7 +514,7 @@ async function mapSet(db, system, type, id, targetType, targetId) {
 
 module.exports = { ensurePublicId, getByPublicId, canonicalForRef, canonicalSlug, publicIdOfRef,
     generateSlug, slugTaken, retireSlug, sanitizeTitle, detectLanguage,
-    getBySlug, getById, insertPaste, findOwnedHash, updatePaste, listVersions, softDelete, listPastes,
+    getBySlug, getById, insertPaste, findOwnedHash, updatePaste, listVersions, softDelete, hideForUndo, getUndoable, unhide, listPastes,
     countOwnerSince, lastPasteTime, hasLiked, toggleLike, incrementCopies, bumpViews, recordVisit, pruneVisits,
     setAi, setScreenshot, setVisibility, stats, statSeries, listForks, deleteAllForks,
     getProjections, upsertProjection, subjectsByUsername,

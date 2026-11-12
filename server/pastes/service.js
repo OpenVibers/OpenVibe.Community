@@ -87,6 +87,8 @@ function sinceParam(value) {
     return Number.isFinite(t) ? new Date(t).toISOString().replace('T', ' ').slice(0, 19) : null;
 }
 
+const undo = require('./undo');
+
 function createPasteService({ db, network = null, media = null, config = {}, limits = {}, pulse = null, indexnow = null, shares = null, review = null } = {}) {
     const L = { ...DEFAULT_LIMITS, ...limits };
     // Pulse (server/pulse) hears about public pastes written by people; a Pulse problem never fails a paste write.
@@ -784,11 +786,32 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
             return { paste: await shapeOne(row, v) };
         },
 
-        /** DELETE /api/pastes/:slug — owner (or staff) only. */
+        /** POST /api/pastes/:slug/restore — the owner's Undo, inside the ten minutes after their delete. */
+        async restore(v, slug) {
+            needIdentity(v);
+            const row = await store.getUndoable(db, slug, undo.stamp(Date.now()));
+            if (!row) fail(410, 'This paste can no longer be brought back');
+            if (!isOwner(v, row)) fail(403, 'Not authorized for this paste');
+            const back = await store.unhide(db, row.id);
+            if (!back) fail(410, 'This paste can no longer be brought back');
+            try { await require('../events').pasteCreated(back); } catch (err) { console.warn('[Pastes] restore event:', err.message); }
+            await tell((pl) => pl.pasteCreated(back));
+            pingIndexNow(back);
+            return { success: true, paste: await shapeOne(back, v), url: `/p/${canonicalSlug(back)}` };
+        },
+
+        /** DELETE /api/pastes/:slug — owner (or staff) only. The owner's can be undone for ten minutes (./undo.js). */
         async remove(v, slug) {
             needIdentity(v);
             const p = await visible(v, slug);
             if (!isOwner(v, p) && !isStaff(v)) fail(403, 'Not authorized for this paste');
+            if (isOwner(v, p) && !truthy(p.burn_after_read)) {
+                const until = Date.now() + undo.UNDO_MS;
+                await store.hideForUndo(db, p.id, undo.stamp(until));
+                await tell((pl) => pl.pasteGone(p.slug));
+                pingIndexNow(p);
+                return { success: true, undo: { until: new Date(until).toISOString(), restore: `/api/pastes/${encodeURIComponent(p.slug)}/restore` } };
+            }
             await db.tx(async () => {
                 await store.softDelete(db, p.id);
                 if (!isOwner(v, p)) await events.moderationAction(v, 'paste.deleted', { type: 'paste', id: p.slug, owner_subject: p.owner_subject || null });

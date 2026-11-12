@@ -140,6 +140,7 @@ function createPastesApi({ service, viewers, anonWriteLimiter: sharedLimiter = n
     // ── one paste ────────────────────────────────────────────
     router.get('/:slug', anyCap, run(async (req) => await service.get(req.viewer, slug(req), { ...ctx(req), noView: String(req.query.no_view || '') === '1' })));
     router.put('/:slug', guard('community.paste.write'), limits('community.paste.edit', { minute: 30, hour: 300 }), json, jsonErrors, run(async (req) => await service.update(req.viewer, slug(req), req.body || {})));
+    router.post('/:slug/restore', guard('community.paste.write'), limits('community.paste.delete', { minute: 60, hour: 600 }), run(async (req) => await service.restore(req.viewer, slug(req))));
     router.delete('/:slug', guard('community.paste.write'), limits('community.paste.delete', { minute: 60, hour: 600 }), run(async (req) => await service.remove(req.viewer, slug(req))));
 
     router.post('/:slug/censor', staffOnly, limits('community.paste.censor', { minute: 20, hour: 200 }), withFile, run(async (req) => await service.censor(req.viewer, slug(req), req.file)));

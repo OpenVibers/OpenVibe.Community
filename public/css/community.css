@@ -610,3 +610,11 @@ button.rx:hover { border-color: var(--accent); }
 /* One column a reader can follow down, at a reading width (two columns left holes beside the short cards). */
 .feed-list, .feed-find, .feed-empty { max-width: 760px; }
 @media (prefers-reduced-motion: reduce) { .feed-media img { transition: none; } .feed-media:hover img { transform: none; } }
+
+/* Undo a delete, right on the paste (2026-11-12): the bar on top, the paste greyed out under it. */
+.paste-undo { position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 14px; padding: 10px 14px; border-radius: 14px;
+  background: var(--bg-elevated, var(--bg-secondary, #151c2b)); border: 1px solid var(--border, rgba(255,255,255,.12)); box-shadow: 0 10px 28px rgba(0,0,0,.28); font-weight: 600; }
+.paste-undo small { flex-basis: 100%; color: var(--text-muted, #93a0b4); font-weight: 500; }
+@media (min-width: 560px) { .paste-undo small { flex-basis: auto; margin-left: auto; } }
+.paste-is-deleted main > :not(.paste-undo) { opacity: .35; filter: grayscale(.7); pointer-events: none; transition: opacity .25s ease; }
+html[data-ov-motion=off] .paste-is-deleted main > :not(.paste-undo) { transition: none; }

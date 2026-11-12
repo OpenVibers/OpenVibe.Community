@@ -170,8 +170,13 @@ route('put', '/api/pastes/{slug}', {
 });
 route('delete', '/api/pastes/{slug}', {
     operationId: 'deletePaste', summary: 'Delete a paste (soft: its address answers 410)', tags: ['pastes'], security: PERSON, parameters: [SLUG('slug')],
-    description: 'community.paste.write.',
-    responses: { 200: json('What was deleted'), ...errors() },
+    description: 'community.paste.write. The owner\'s delete answers undo: { until, restore } and can be undone for ten minutes; the paste is hidden at once and cleared after.',
+    responses: { 200: json('What was deleted, and until when it can be undone'), ...errors() },
+});
+route('post', '/api/pastes/{slug}/restore', {
+    operationId: 'restorePaste', summary: 'Undo the owner\'s delete, within ten minutes', tags: ['pastes'], security: PERSON, parameters: [SLUG('slug')],
+    description: 'community.paste.write. 410 once the ten minutes have passed (the paste is cleared).',
+    responses: { 200: json('The paste, back'), ...errors() },
 });
 route('post', '/api/pastes/{slug}/censor', {
     operationId: 'censorPaste', summary: 'Replace a paste\'s content with a censorship notice (staff)', tags: ['pastes-admin'], security: STAFF, parameters: [SLUG('slug')],
