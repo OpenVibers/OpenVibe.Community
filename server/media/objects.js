@@ -78,8 +78,12 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         // GIF has no EXIF orientation and Media's GIF variant path preserves animation, so do not re-encode it.
         if (!normalized && mime !== 'image/gif') buffer = await normalizeImage(buffer, mime);
         const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+        // keep_both: every picture Community stores is its own object. Without it Media answers a picture the person
+        // already stored with that object ({ duplicate: true }), whose content is already there, so the upload below
+        // got 409 "Object is ready": a paste deleted and posted again failed every time (11-12). Community finds its own
+        // duplicates first (a paste's source hash), and a post, a comment and a paste each delete their own object.
         const init = await call('POST', '', {
-            json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256,
+            json: { kind, visibility, size_bytes: buffer.length, mime_type: mime, filename, content_hash: sha256, keep_both: true,
                 metadata: { source, orientation_status: 'orientation applied' } },
             headers: /^usr_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(owner || '')) ? { 'X-OV-Subject': owner } : {},
         });
