@@ -284,11 +284,21 @@ function createPulseSources({ db, config = {}, fetchImpl = globalThis.fetch, now
                 if (!title) continue;
                 seen.add(id);
                 const prior = await db.prepare("SELECT actor_subject FROM pulse_items WHERE source_service = 'live' AND source_type = 'stream' AND source_id = ?").get(id);
+                const user = s.user || {};
+                // The card's subject is the streamer the episode is about; the actor is The Rundown itself.
+                const subject = user.username ? {
+                    name: clean(user.display_name || user.username, 80) || null,
+                    handle: `@${clean(user.username, 64)}`,
+                    avatar: https(user.avatar_url),
+                } : null;
+                // The episode's own AI picture is the art; the stream's thumbnail stays the fallback until it exists.
+                const picture = https(s.episode.picture_url);
                 const r = await store.upsertItem(db, { source_service: 'live', source_type: 'episode', source_id: id,
-                    title: `Rundown: ${title}`, url: `${liveApi}/rundown/e/${id}`,
-                    actor_subject: prior && prior.actor_subject || null, origin: prior && prior.actor_subject ? 'user' : 'system',
+                    title, url: `${liveApi}/rundown/e/${id}`,
+                    actor_name: 'The Rundown', actor_subject: prior && prior.actor_subject || null, origin: 'system',
                     occurred_at: sqlFrom(s.episode.aired_at || s.started_at, sqlTime(now())),
-                    text: clean(s.episode.logline, 280), picture_url: https(s.thumbnail_url) });
+                    text: clean(s.episode.logline, 280), picture_url: picture || https(s.thumbnail_url),
+                    media_ratio: picture ? 1200 / 630 : null, subject });
                 if (r.created) created++;
             }
             before = typeof out.next === 'string' && out.next ? out.next : null;
