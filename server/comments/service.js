@@ -128,9 +128,45 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         return out;
     }
 
-    async function shapeComments(rows, v, t) {
+    // A video whose web copy Media was still making when the comment was posted: ask Media again when the comment is
+    // read, and keep the answer once it is ready (Shared 4.247.0 draws the player only for a ready copy). At most six a
+    // read, each asked again no sooner than 30 s, never longer than 1.5 s: a slow Media leaves the link as it is.
+    const askedAt = new Map();
+    async function freshenPlayback(all) {
+        if (!media || typeof media.attachment !== 'function') return;
+        const now = Date.now();
+        const due = [];
+        for (const c of all) {
+            for (const row of (c.attachments || [])) {
+                if (due.length >= 6) break;
+                if (row.kind !== 'video' || row.playback_ready || !commentAttachments.ATTACHMENT_ID.test(String(row.media_id || '')) || !row.owner_subject) continue;
+                if (now - (askedAt.get(row.media_id) || 0) < 30_000) continue;
+                askedAt.set(row.media_id, now);
+                due.push(row);
+            }
+        }
+        if (askedAt.size > 5000) { for (const [k, at] of askedAt) if (now - at > 60_000) askedAt.delete(k); }
+        await Promise.all(due.map(async (row) => {
+            let att = null;
+            try {
+                att = await Promise.race([media.attachment(row.media_id, row.owner_subject), new Promise((r) => setTimeout(() => r(null), 1500))]);
+            } catch { att = null; }
+            const pb = att && att.playback;
+            if (!pb || !pb.ready || typeof pb.url !== 'string') return;
+            row.playback_url = pb.url; row.playback_mime = pb.mime || 'video/mp4'; row.playback_ready = 1;
+            if (typeof att.poster === 'string') row.poster = att.poster;
+            try {
+                await db.prepare('UPDATE comment_attachments SET playback_url = ?, playback_mime = ?, playback_ready = 1, poster = COALESCE(?, poster) WHERE media_id = ?')
+                    .run(row.playback_url, row.playback_mime, typeof att.poster === 'string' ? att.poster : null, row.media_id);
+            } catch { /* the next read asks again */ }
+        }));
+    }
+
+    async function shapeComments(rows, v, t, { freshen = false } = {}) {
         const all = [];
         for (const r of rows) { all.push(r); if (r.replies) all.push(...r.replies); }
+        // Only a read asks Media again: a comment just posted has the answer Media gave a moment ago.
+        if (freshen) await freshenPlayback(all);
         const targets = await store.replyTargets(db, all.map((c) => c.reply_to_id));
         const projections = await authors.projectionsFor(all.map((c) => c.author_subject).concat([...targets.values()].map((c) => c.author_subject)));
         const votes = await myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
@@ -310,7 +346,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             } else {
                 ({ rows, hasMore } = await store.listTopLevel(db, t.id, { after, sort, limit, replyLimit: REPLY_PAGE }));
             }
-            const comments = await shapeComments(rows, v, t);
+            const comments = await shapeComments(rows, v, t, { freshen: true });
             return {
                 thread: shapeThread(t, v),
                 comments,

@@ -123,6 +123,45 @@ const { boot, check, done } = require('./helpers/app');
         assert.ok(page.text.includes('from the form'), 'the comment is there');
     });
 
+    await check("Shared's composer form: one plain att_ id per file, repeated", async () => {
+        const one = `att_${ids.ulid()}`, two = `att_${ids.ulid()}`;
+        assert.deepStrictEqual(namedAttachments(one), [{ media_attachment_id: one }]);
+        assert.deepStrictEqual(namedAttachments([one, two]), [{ media_attachment_id: one }, { media_attachment_id: two }]);
+        assert.deepStrictEqual(namedAttachments([JSON.stringify({ media_attachment_id: two })]), [{ media_attachment_id: two }]);
+        t.media.addAttachment({ id: one, subject: alex.subject_id, kind: 'image', name: 'a.png', mime: 'image/png', size: 3, url: `https://openvibe.media/a/${one}/a.png` });
+        t.media.addAttachment({ id: two, subject: alex.subject_id, kind: 'image', name: 'b.png', mime: 'image/png', size: 3, url: `https://openvibe.media/a/${two}/b.png` });
+        const form = new FormData();
+        form.set('message', 'two pictures');
+        form.append('attachments', one);
+        form.append('attachments', two);
+        const r = await t.get(`/c/${thread.id}`, { method: 'POST', body: form, cookies: [`ov_token=${alexJwt}`] });
+        assert.strictEqual(r.status, 303, r.text);
+        const listed = (await call(`/api/v1/comments/threads/${thread.id}?sort=new`)).json();
+        const c = listed.comments.find((x) => x.message === 'two pictures');
+        assert.ok(c, 'the comment is there');
+        assert.deepStrictEqual(c.attachments.map((a) => a.id).sort(), [one, two].sort());
+    });
+
+    await check('a video whose web copy was still being made plays once Media says it is ready', async () => {
+        const slow = `att_${ids.ulid()}`;
+        const media = t.media.addAttachment({
+            id: slow, subject: alex.subject_id, kind: 'video', name: 'clip.mkv', mime: 'video/x-matroska', size: 900,
+            url: `https://openvibe.media/a/${slow}/clip.mkv`, poster: `https://openvibe.media/a/${slow}/thumb.jpg`,
+            playback: { url: `https://openvibe.media/a/${slow}/clip.mkv`, mime: 'video/x-matroska', ready: false },
+        });
+        const r = await post({ message: 'still copying', attachments: [{ media_attachment_id: slow }] }, { cookie: alexJwt });
+        assert.strictEqual(r.status, 201, r.text);
+        assert.strictEqual(r.json().comment.attachments[0].playback.ready, false);
+        // Media finishes the copy.
+        media.playback = { url: `https://openvibe.media/a/${slow}/playback.mp4`, mime: 'video/mp4', ready: true };
+        const listed = (await call(`/api/v1/comments/threads/${thread.id}?sort=new`)).json();
+        const a = listed.comments.find((x) => x.message === 'still copying').attachments[0];
+        assert.deepStrictEqual(a.playback, { url: `https://openvibe.media/a/${slow}/playback.mp4`, mime: 'video/mp4', ready: true });
+        const row = await t.db.prepare('SELECT playback_ready, playback_url FROM comment_attachments WHERE media_id = ?').get(slow);
+        assert.strictEqual(Number(row.playback_ready), 1, 'kept, so the next read does not ask again');
+        assert.strictEqual(row.playback_url, `https://openvibe.media/a/${slow}/playback.mp4`);
+    });
+
     await t.close();
     done();
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -19,12 +19,26 @@ function parse(req, res, next) {
 function namedAttachments(raw) {
     if (raw == null || raw === '') return [];
     let value = raw;
-    if (typeof value === 'string') {
+    if (typeof value === 'string' && /^att_[0-9A-HJKMNP-TV-Z]{26}$/.test(value.trim())) value = [value];
+    else if (typeof value === 'string') {
         try { value = JSON.parse(value); }
         catch { throw new ApiError(400, 'comment.attachment_invalid', 'That attachment list is not valid'); }
     }
     if (!Array.isArray(value)) value = [value];
-    return value.filter((v) => v && typeof v === 'object' && v.media_attachment_id);
+    // Shared's composer (4.247.0) sends one `attachments=att_…` per file it uploaded to Media: a plain id is the same
+    // as { media_attachment_id }, and each item of a repeated field may be either (or a JSON list of them).
+    const out = [];
+    for (let item of value) {
+        if (typeof item === 'string') {
+            const t = item.trim();
+            if (/^att_[0-9A-HJKMNP-TV-Z]{26}$/.test(t)) { out.push({ media_attachment_id: t }); continue; }
+            try { item = JSON.parse(t); } catch { throw new ApiError(400, 'comment.attachment_invalid', 'That attachment list is not valid'); }
+            for (const x of (Array.isArray(item) ? item : [item])) if (x && typeof x === 'object' && x.media_attachment_id) out.push(x);
+            continue;
+        }
+        if (item && typeof item === 'object' && item.media_attachment_id) out.push(item);
+    }
+    return out;
 }
 
 async function bodyFor(comments, viewer, ref, req) {
