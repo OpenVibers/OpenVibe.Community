@@ -11,6 +11,7 @@ const { renderPage, asset } = require('./layout');
 const { escapeHtml: esc } = require('./highlight');
 const { timeTag, fmtDate, num } = require('./pages');
 const { who } = require('./forum');
+const { renderThread } = require('openvibe-shared/thread');
 
 const REF_NAMES = {
     'live/vod': 'VOD', 'live/clip': 'clip', 'live/stream': 'stream', 'live/channel': 'channel',
@@ -72,7 +73,7 @@ function repliesHtml(c) {
  * page offers both orders (null: newest first, no sort links). note: HTML after "Commenting as …".
  */
 function commentPanel({ page, user, base, action = base, sort = 'top', replyId = null, expandedId = null, expandedReplies = null, error = null, draft = '' }) {
-    return require('./inline-thread').renderThread({
+    return renderThread({
         answer: page || { thread: null, comments: [], viewer: { can_comment: true } },
         base, post: action, remove: `${action}/delete`, signedIn: !!user && (!page || page.viewer.can_comment !== false),
         attachmentsAllowed: !page || ['community/paste', 'pics/picture'].includes(`${page.thread.ref.service}/${page.thread.ref.type}`),
@@ -111,7 +112,7 @@ function threadPage({ accessId, page, user, after = null, sort = 'top', replyId 
         active: 'comments',
         footerVariant: 'compact',
         scripts: ['ov-thread.js'],
-        body: `${body}<script src="${asset('js/inline-comments.js')}" defer></script>`, styles: ['kit.css', 'thread.css'], pageCss: ['inline-comments.css'],
+        body: `${body}<script src="${asset('js/inline-comments.js')}" defer></script>`, styles: ['kit.css', 'thread.css', 'thread-inline.css'],
     });
 }
 
