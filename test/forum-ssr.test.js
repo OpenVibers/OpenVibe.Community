@@ -200,10 +200,10 @@ const form = (obj) => ({ method: 'POST', body: new URLSearchParams(obj).toString
         const r = await t.get(url, as(samJwt));
         has(r.text, 'This thread is locked.');
         assert.ok(!r.text.includes(`action="${url}/reply"`));
-        has(r.text, '<h1><i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> <i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ');
+        has(r.text, '<h1><i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> <i class="ovg-fill" data-ov-icon="lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ');
         assert.ok(!r.text.includes('aria-label="Pinned"'), 'the pin does not carry an aria-label on an icon');
         const list = await t.get('/forum/general');
-        has(list.text, '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span>');
+        has(list.text, '<i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span>');
         assert.ok(!list.text.includes('aria-label="Pinned"'), 'the list pin does not carry an aria-label either');
         const admin = await t.get(url, as(adminJwt));
         has(admin.text, 'Unpin');

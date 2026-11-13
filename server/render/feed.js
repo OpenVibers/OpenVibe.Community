@@ -7,13 +7,13 @@ const { escapeHtml: esc } = require('./highlight');
 // What each kind is called on a card and its mark (Opus, 2026-11-11: "Live · video" and "Quest · quest" said the same
 // thing twice; a card now says what happened, who, where and when, in one line).
 const KIND_LOOK = {
-    live: ['Live now', 'fa-tower-broadcast'], video: ['Recording', 'fa-film'], clip: ['Clip', 'fa-scissors'], pic: ['Picture', 'fa-image'],
-    post: ['Post', 'fa-pen-nib'], paste: ['Paste', 'fa-paste'], meme: ['Meme', 'fa-face-laugh'], game: ['Game', 'fa-gamepad'],
-    quest: ['Quest', 'fa-ranking-star'], member: ['New members', 'fa-user-plus'], update: ['Update', 'fa-bolt'], avatar: ['New picture', 'fa-user'],
-    banner: ['New banner', 'fa-image'], follow: ['Follow', 'fa-user-check'], site: ['New site', 'fa-globe'], space: ['Space', 'fa-shapes'],
-    episode: ['Episode', 'fa-microphone'],
+    live: ['Live now', 'live'], video: ['Recording', 'film'], clip: ['Clip', 'scissors'], pic: ['Picture', 'image'],
+    post: ['Post', 'pencil'], paste: ['Paste', 'clipboard'], meme: ['Meme', 'laugh'], game: ['Game', 'game'],
+    quest: ['Quest', 'ranking'], member: ['New members', 'invite'], update: ['Update', 'zap'], avatar: ['New picture', 'user'],
+    banner: ['New banner', 'image'], follow: ['Follow', 'user-check'], site: ['New site', 'globe'], space: ['Space', 'shapes'],
+    episode: ['Episode', 'mic'],
 };
-const lookOf = (kind) => KIND_LOOK[kind] || [String(kind || 'Update').replace(/^./, (c) => c.toUpperCase()), 'fa-circle-nodes'];
+const lookOf = (kind) => KIND_LOOK[kind] || [String(kind || 'Update').replace(/^./, (c) => c.toUpperCase()), 'nodes'];
 /** "3 min ago", "2 h ago", "yesterday", "Nov 3": when, the way a feed says it (the full date stays in the title). */
 function ago(iso, now = Date.now()) {
     const t = Date.parse(iso || '');
@@ -50,7 +50,7 @@ function feedCard(c, now) {
     const ratio = c.media && Number(c.media.ratio) > 0 ? Math.min(2.4, Math.max(0.5, Number(c.media.ratio))) : 16 / 9;
     const strip = c.group ? groupStrip(c) : '';
     const media = strip || !c.media ? strip : `<a class="feed-media${ratio < 1 ? ' is-tall' : ''}" href="${esc(c.url)}" tabindex="-1" aria-hidden="true" style="aspect-ratio:${ratio.toFixed(3)}"><img src="${esc(c.media.thumb)}" alt="" loading="lazy" decoding="async">${c.media.length ? `<span class="feed-len">${esc(clock(c.media.length))}</span>` : ''}${c.kind === 'live' ? '<span class="feed-live">LIVE</span>' : ''}</a>`;
-    return `<li class="feed-item is-${esc(c.kind || 'update')}"><span class="feed-ic" aria-hidden="true"><i class="fa-solid ${icon}"></i></span><div class="feed-body">`
+    return `<li class="feed-item is-${esc(c.kind || 'update')}"><span class="feed-ic" aria-hidden="true"><i class="ovg-fill" data-ov-icon="${esc(icon)}"></i></span><div class="feed-body">`
         + `<p class="feed-top">${who}<span class="feed-what">${esc(what)}</span>${c.site_name && !String(what).toLowerCase().startsWith(String(c.site_name).toLowerCase()) && !String(what).toLowerCase().endsWith(String(c.site_name).toLowerCase()) ? `<span class="feed-site">${esc(c.site_name)}</span>` : ''}${when}</p>`
         + `<a class="feed-title" href="${esc(c.url)}">${esc(c.title)}</a>${c.text ? `<p class="feed-text">${esc(c.text)}</p>` : ''}${media}</div></li>`;
 }
@@ -62,10 +62,10 @@ function feedPage({ items = [], kind = '', q = '', examples = [], cursor = null,
     const cards = items.filter((item) => item && item.kind);
     const chips = KINDS.map(([id, label]) => `<a class="tab${id === kind ? ' active' : ''}" href="${esc(href(id, '', q))}"${id === kind ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     const body = `<header class="page-head"><nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Feed</span></nav><h1>Feed</h1><p class="muted">What's happening across OpenVibe.</p></header>
-<form class="feed-find" action="/feed" method="get" role="search"><label for="feed-search" class="sr-only">Search the feed</label><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input id="feed-search" type="search" name="q" value="${esc(q)}" placeholder="People, clips, sites, dates" maxlength="80">${kind ? `<input type="hidden" name="kind" value="${esc(kind)}">` : ''}<button type="submit">Search</button></form>
+<form class="feed-find" action="/feed" method="get" role="search"><label for="feed-search" class="sr-only">Search the feed</label><i class="ovg-fill" data-ov-icon="search" aria-hidden="true"></i><input id="feed-search" type="search" name="q" value="${esc(q)}" placeholder="People, clips, sites, dates" maxlength="80">${kind ? `<input type="hidden" name="kind" value="${esc(kind)}">` : ''}<button type="submit">Search</button></form>
 ${examples.length ? `<p class="feed-try"><span>Try</span>${examples.map((x) => `<a href="${esc(href('', '', x.text))}">${esc(x.text)}</a>`).join('')}</p>` : ''}
 <nav class="tabs sort-tabs feed-kind-tabs" aria-label="Feed type">${chips}</nav>
-${cards.length ? `<ol class="feed-list">${cards.map((c) => feedCard(c, now)).join('')}</ol>` : `<div class="feed-empty"><i class="fa-solid fa-wind" aria-hidden="true"></i><p><strong>${q ? 'Nothing in the feed matches that.' : 'Nothing here yet.'}</strong></p><p class="muted">${q ? 'Try a name, a site or a date.' : 'New clips, videos, pictures and posts land here as they happen.'}</p>${q || kind ? `<a class="btn" href="/feed">The whole feed</a>` : ''}</div>`}
+${cards.length ? `<ol class="feed-list">${cards.map((c) => feedCard(c, now)).join('')}</ol>` : `<div class="feed-empty"><i class="ovg-fill" data-ov-icon="wind" aria-hidden="true"></i><p><strong>${q ? 'Nothing in the feed matches that.' : 'Nothing here yet.'}</strong></p><p class="muted">${q ? 'Try a name, a site or a date.' : 'New clips, videos, pictures and posts land here as they happen.'}</p>${q || kind ? `<a class="btn" href="/feed">The whole feed</a>` : ''}</div>`}
 ${cursor || nextCursor ? `<nav class="pager" aria-label="Feed pages">${cursor ? `<a href="${esc(href(kind, '', q))}">Latest</a>` : '<span></span>'}<span></span>${nextCursor ? `<a rel="next" href="${esc(href(kind, nextCursor, q))}">Older</a>` : '<span></span>'}</nav>` : ''}`;
     const itemsLd = cards.length ? [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'OpenVibe Feed', url: 'https://openvibe.community/feed', itemListElement: cards.map((c, i) => ({ '@type': 'ListItem', position: i + 1, name: c.title, url: c.url })) }] : [];
     return renderPage({ title: `Feed${kind ? ` — ${KINDS.find(([id]) => id === kind)?.[1] || kind}` : ''}`, description: 'New clips, videos, pictures, posts, live streams and updates from across OpenVibe.', canonicalPath: href(kind), robots: cursor || q || !cards.length ? 'noindex,follow' : 'index,follow', active: 'pulse', jsonLd: [ld.breadcrumbLd([{ name: 'Home', url: '/' }, { name: 'Feed', url: '/feed' }]), ...itemsLd], body });

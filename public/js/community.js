@@ -22,7 +22,7 @@
 
   function flash(btn, text) {
     if (!btn) return;
-    var old = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i> ' + text;
+    var old = btn.innerHTML; btn.innerHTML = '<i class="ovg-fill" data-ov-icon="check" aria-hidden="true"></i> ' + text;
     setTimeout(function () { btn.innerHTML = old; }, 1600);
   }
   function copyText(text) {
@@ -167,7 +167,7 @@
     var codeWrap = $('[data-code]');
     // A Markdown paste shows its document; its source (inside "Markdown source") already wraps.
     if (codeWrap && !codeWrap.closest('.paste-source')) {
-      var wrapBtn = document.createElement('button'); wrapBtn.type = 'button'; wrapBtn.className = 'btn btn-sm'; wrapBtn.innerHTML = '<i class="fa-solid fa-align-left" aria-hidden="true"></i> Wrap';
+      var wrapBtn = document.createElement('button'); wrapBtn.type = 'button'; wrapBtn.className = 'btn btn-sm'; wrapBtn.innerHTML = '<i class="ovg-fill" data-ov-icon="align-left" aria-hidden="true"></i> Wrap';
       wrapBtn.addEventListener('click', function () { codeWrap.classList.toggle('wrap'); }, { signal });
       var actions = $('.actions'); if (actions) actions.appendChild(wrapBtn);
     }

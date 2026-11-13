@@ -26,13 +26,13 @@ const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 
 /** One space as a board-index row: icon, name, description, child boards, topics, posts, last post. */
 function boardRow(sp) {
-    const icon = sp.style === 'forum' ? 'fa-comments' : 'fa-fire';
+    const icon = sp.style === 'forum' ? 'chat' : 'fire';
     const last = sp.last_post
         ? `<a href="${esc(sp.last_post.thread.url)}#post-${Number(sp.last_post.id)}">${esc(ld.clean(sp.last_post.thread.title, 48))}</a><span class="small muted">by ${sp.last_post.author ? wearName(sp.last_post.author, sp.last_post.author.display_name || sp.last_post.author.username || 'someone') : 'someone'} · ${timeTag(sp.last_post.created_at)}</span>`
         : '<span class="muted small">No posts yet</span>';
     const children = (sp.children || []).length ? `<p class="small board-children">Child boards: ${sp.children.map((c) => `<a href="/forum/${esc(c.slug)}">${esc(c.name)}</a>`).join(', ')}</p>` : '';
     return `<tr>
-      <td class="board-name"><span class="board-icon" aria-hidden="true"><i class="fa-solid ${icon}"></i></span><div>
+      <td class="board-name"><span class="board-icon" aria-hidden="true"><i class="ovg-fill" data-ov-icon="${esc(icon)}"></i></span><div>
         <a class="board-title" href="/forum/${esc(sp.slug)}">${esc(sp.name)}</a> <span class="badge badge-style">${STYLE_LABELS[sp.style] || 'Feed'}</span>${f.visBadge(sp)}
         ${sp.description ? `<p class="muted small">${esc(sp.description)}</p>` : ''}${children}
       </div></td>
@@ -55,7 +55,7 @@ function boardIndexPage({ groups = [], user, canModerate = false }) {
   ${crumbs([['Home', '/'], ['Forum', '/forum']])}
   <h1>Forum</h1>
   <p class="muted">Forums for the people of OpenVibe. Classic forums read like a message board, newest reply on top. Feed forums rank posts by votes. Read without an account; sign in to post, rate and vote. See what is happening across the network on <a href="/pulse">Pulse</a>.</p>
-  ${canModerate ? '<p><a class="btn btn-sm" href="/forum/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> New forum</a></p>' : ''}
+  ${canModerate ? '<p><a class="btn btn-sm" href="/forum/new"><i class="ovg-fill" data-ov-icon="plus" aria-hidden="true"></i> New forum</a></p>' : ''}
 </header>
 ${groups.length ? groups.map((g) => `<section class="board-group" id="g-${esc(g.slug || 'more')}" aria-labelledby="gh-${esc(g.slug || 'more')}">
   <h2 class="board-group-h" id="gh-${esc(g.slug || 'more')}">${esc(g.name)}</h2>
@@ -84,12 +84,12 @@ function topicPages(base, pages) {
 
 function topicRow(t, space) {
     const base = `/forum/${space.slug}/${t.slug}`;
-    const icon = t.locked ? 'fa-lock' : t.pinned ? 'fa-thumbtack' : t.reply_count >= 15 ? 'fa-fire' : 'fa-comment';
+    const icon = t.locked ? 'lock' : t.pinned ? 'tack' : t.reply_count >= 15 ? 'fire' : 'chat';
     const label = t.locked ? 'Locked' : t.pinned ? 'Sticky' : t.reply_count >= 15 ? 'Hot topic' : 'Topic';
     const who = (a) => (a ? wearName(a, a.display_name || a.username || 'someone') : 'someone');
     const labels = labelsUi.inForce(t);
     return `<tr class="${t.pinned ? 'sticky' : ''}"${labelsUi.attrs(labels, { owner: t.author && t.author.subject })}>
-      <td class="topic-icon" aria-hidden="true"><i class="fa-solid ${icon}" title="${label}"></i></td>
+      <td class="topic-icon" aria-hidden="true"><i class="ovg-fill" data-ov-icon="${esc(icon)}" title="${label}"></i></td>
       <td class="topic-main"${labels.length ? ' data-ov-labels-media' : ''}>${t.pinned ? '<span class="badge badge-sticky">Sticky</span> ' : ''}<a class="topic-title" href="${esc(base)}">${esc(t.title)}</a>${f.statusBadge(t)}${f.categoryBadge(t, space)}${f.vipBadge(t)}
         ${labelsUi.chips(labels)}
         <span class="small muted topic-by">Started by ${who(t.author)} · ${timeTag(t.created_at)}${topicPages(base, t.pages || 1)}</span></td>
@@ -102,7 +102,7 @@ function topicRow(t, space) {
 /** Moderators: the space's settings (style, votes, ratings, group, description), no JS. */
 function settingsForm(space, groups = []) {
     const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
-    return `<details class="space-settings"><summary><i class="fa-solid fa-gear" aria-hidden="true"></i> Forum settings</summary>
+    return `<details class="space-settings"><summary><i class="ovg-fill" data-ov-icon="gear" aria-hidden="true"></i> Forum settings</summary>
 <form class="paste-form" method="post" action="/forum/${esc(space.slug)}/settings">
   <label class="field"><span>Name</span><input name="name" required minlength="2" maxlength="60" value="${esc(space.name)}"></label>
   <label class="field"><span>Description</span><input name="description" maxlength="300" value="${esc(space.description || '')}"></label>
@@ -126,7 +126,7 @@ function moderatorsBox(space, moderators = [], { me = null, error = null } = {})
         return `<li class="mod-row">${authorHtml(m)}${m.added_at ? ` <span class="muted small">since ${timeTag(m.added_at)}</span>` : ''}
     <form class="inline-form" method="post" action="/forum/${slug}/moderators/remove"><input type="hidden" name="subject" value="${esc(m.subject)}"><button class="btn btn-sm btn-ghost" type="submit"${self ? '' : ` aria-label="Remove ${esc(name)} as a moderator"`}>${self ? 'Step down' : 'Remove'}</button></form></li>`;
     }).join('');
-    return `<details class="space-settings" id="moderators"${error ? ' open' : ''}><summary><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Moderators (${moderators.length})</summary>
+    return `<details class="space-settings" id="moderators"${error ? ' open' : ''}><summary><i class="ovg-fill" data-ov-icon="shield" aria-hidden="true"></i> Moderators (${moderators.length})</summary>
 ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
 ${rows ? `<ul class="mod-list">${rows}</ul>` : '<p class="muted small">No one moderates this forum yet; discussion staff do.</p>'}
 <form class="paste-form" method="post" action="/forum/${slug}/moderators">
@@ -145,13 +145,13 @@ function forumSpacePage({ space, threads, page, pages, total, user, categories =
     const tags = categories.length ? `<nav class="chips" aria-label="Categories">${chip('All', href({ category: null }), !category)}${categories.map((c) => chip(esc(c.name), href({ category: c.slug }), c.slug === category)).join('')}</nav>` : '';
     const statuses = (space.statuses || []).length ? `<nav class="chips" aria-label="Status">${chip('Any status', href({ status: null }), !status)}${space.statuses.map((st) => chip(esc(f.STATUS_LABELS[st] || st), href({ status: st }), st === status)).join('')}</nav>` : '';
     const start = viewer.can_start !== false
-        ? `<a class="btn btn-primary" href="/forum/${esc(space.slug)}/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> ${space.thread_kind === 'request' ? 'New request' : 'New topic'}</a>`
+        ? `<a class="btn btn-primary" href="/forum/${esc(space.slug)}/new"><i class="ovg-fill" data-ov-icon="plus" aria-hidden="true"></i> ${space.thread_kind === 'request' ? 'New request' : 'New topic'}</a>`
         : '<span class="muted small">Staff add roadmap items; reply to one to discuss it.</span>';
     const pagerHtml = f.pager((n) => href({ page: n }), page, pages, ['Previous', 'Next']);
     const body = `
 <header class="page-head">
   ${crumbs([...trail(space), [space.name, `/forum/${space.slug}`]])}
-  <h1>${esc(space.name)}${f.visBadge(space)}${feedable ? ` <a class="rss-link" href="/forum/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="fa-solid fa-rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
+  <h1>${esc(space.name)}${f.visBadge(space)}${feedable ? ` <a class="rss-link" href="/forum/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
 </header>
 ${children.length ? `<section class="board-group" aria-label="Child boards">${boardTable(children, 'Child boards')}</section>` : ''}
@@ -198,7 +198,7 @@ function authorPanel(p) {
 
 function postbit(p, n, { base, page, catalogue, canReply, canModerate }) {
     if (p.deleted) return `<article class="postbit post-deleted" id="post-${p.id}"><div class="postbit-main"><p class="muted small">#${n} · This post was deleted.</p></div></article>`;
-    const quote = canReply ? ` <a class="small" href="${esc(base)}?quote=${Number(p.id)}#reply"><i class="fa-solid fa-quote-left" aria-hidden="true"></i> Quote</a>` : '';
+    const quote = canReply ? ` <a class="small" href="${esc(base)}?quote=${Number(p.id)}#reply"><i class="ovg-fill" data-ov-icon="quote" aria-hidden="true"></i> Quote</a>` : '';
     return `<article class="postbit${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
     ${authorPanel(p)}
     <div class="postbit-main">
@@ -226,7 +226,7 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
     <label class="field"><span class="sr-only">Your reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
     ${f.imageField(attachmentsEnabled, space)}
     ${f.pasteField()}
-    <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-reply" aria-hidden="true"></i> Post reply</button><span class="muted small">**bold**, *italic*, \`code\`, &gt; quotes, [links](https://…)</span></div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="ovg-fill" data-ov-icon="reply" aria-hidden="true"></i> Post reply</button><span class="muted small">**bold**, *italic*, \`code\`, &gt; quotes, [links](https://…)</span></div>
   </form>`
         : thread.locked ? '<p class="alert">This topic is locked.</p>'
             : !user ? `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(base)}">Sign in with your OpenVibe account</a> to reply.</p>` : '';
@@ -239,10 +239,10 @@ function forumTopicPage({ space, thread, posts, page, pages, perPage = 50, viewe
   <header class="thread-head">
     ${space.votes === false ? '' : f.voteForm(base, thread, viewer)}
     <div>
-      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
+      <h1>${thread.pinned ? '<i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="ovg-fill" data-ov-icon="lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${f.vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${f.statusBadge(thread)}${f.categoryBadge(thread, space)}</p>` : ''}
       ${labelsUi.chips(labels)}
-      <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
+      <p class="small muted">${plural(thread.reply_count, 'reply', 'replies')} · ${plural(thread.views, 'view', 'views')} · <a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
     </div>
   </header>
   ${f.crosspostBlock(crosspost, base)}

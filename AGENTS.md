@@ -120,8 +120,8 @@ on the data role (`add-service.sh community`). Record the N-1 fixtures after a d
 ## Tests
 
 `npm test` runs each `test/*.test.js` in its own process through `openvibe-shared/test-runner`
-(60 s/file) with in-process Live/Network mocks. Notable guards: `test/no-font-awesome.test.js` (no FA
-link, font or unknown `fa-` name; every icon page loads the glyph drop-in),
+(60 s/file) with in-process Live/Network mocks. Notable guards: the no-FA guard (no FA link, font or unknown
+`fa-` name; every icon page loads the glyph drop-in),
 `test/empty-states.test.js`, `test/markdown.test.js` (an unsafe
 scheme never becomes a link), `test/members-only.test.js`, `test/privacy.test.js`, the Pulse source
 rules, `test/nginx-auth-limit.test.js`, `test/nginx-internal-paths.test.js` and the N-1 fixtures.
@@ -139,7 +139,7 @@ rules, `test/nginx-auth-limit.test.js`, `test/nginx-internal-paths.test.js` and 
 
 ## Pitfalls
 
-- **No Font Awesome.** `test/no-font-awesome.test.js` fails on a page/stylesheet that links it, or on
+- **No Font Awesome.** The no-FA guard fails on a page/stylesheet that links it, or on
   an `fa-` name no glyph/brand draws. Use `openvibe-shared/glyphs` and `openvibe-shared/brands`.
 - **Community is the only paste authority.** Do not add a second store or read pastes from Media/Live.
 - **Identity comes from the verified token only** — never a body or a query.

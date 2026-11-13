@@ -11,7 +11,7 @@ const html = String(board.forumTopicPage({
     posts: [], page: 1, pages: 1, viewer: {}, user: null,
 }));
 const h1 = html.slice(html.indexOf('<h1>'), html.indexOf('</h1>') + 5);
-assert.ok(h1.includes('<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span>'), 'the pin icon is hidden; the word is in the heading');
-assert.ok(h1.includes('<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span>'), 'the lock icon is hidden; the word is in the heading');
+assert.ok(h1.includes('<i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span>'), 'the pin icon is hidden; the word is in the heading');
+assert.ok(h1.includes('<i class="ovg-fill" data-ov-icon="lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span>'), 'the lock icon is hidden; the word is in the heading');
 assert.ok(!h1.includes('aria-label='), 'no aria-label on the role-less icons');
 console.log('board pin: the icons are hidden, the words read');
