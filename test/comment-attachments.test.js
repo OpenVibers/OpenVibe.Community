@@ -14,7 +14,13 @@ const input = { id: ID, name: 'look.png', media_type: 'image/png', size: 12,
 assert.deepEqual(cleanReference(input, SUBJECT), input);
 assert.throws(() => cleanReference({ ...input, storage: { provider: 'media', key: 'different' } }, SUBJECT), { code: 'comment.attachment_invalid' });
 const output = publicReference({ media_id: ID, filename: 'look.png', mime: 'image/png', size_bytes: 12, owner_subject: SUBJECT });
-assert.deepEqual(Object.keys(output).sort(), Object.keys(input).sort());
+// The reference carries what a comment needs to show the file: the old fields, plus the kind and what plays it.
+for (const key of Object.keys(input)) assert.ok(key in output, `the reference still has ${key}`);
+assert.deepEqual(Object.keys(output).sort(), ['access', 'duration_s', 'height', 'id', 'kind', 'media_type', 'name',
+    'playback', 'poster', 'read', 'role', 'size', 'storage', 'url', 'width'].sort());
+assert.equal(output.kind, 'image');
+assert.equal(output.playback, null);
+assert.equal(output.poster, null);
 assert.equal(output.id, input.id);
 assert.equal(output.storage.key, input.storage.key);
 const html = commentPanel({ page: { thread: { ref: { service: 'community', type: 'paste', id: 'paste-1' }, comment_count: 1 },

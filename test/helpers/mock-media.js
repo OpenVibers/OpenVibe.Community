@@ -13,6 +13,8 @@ function start({ publicPem, issuer }) {
     const uploads = [];
     const deletes = [];             // v2 object ids a DELETE removed
     const pending = new Map();      // v2 objects between init and complete
+    const attachments = new Map();  // the composer's attachments (att_…), by id
+    const keeps = [];               // the keeps: { id, subject, message_id }
     let failNext = false;
     let failNextDelete = false;
     const server = http.createServer((req, res) => {
@@ -20,7 +22,31 @@ function start({ publicPem, issuer }) {
         req.on('data', (c) => chunks.push(c));
         req.on('end', () => {
             const json = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+            const body = Buffer.concat(chunks);
             if (req.method === 'GET' && req.url === '/healthz') return json(200, { ok: true, service: 'mock-media' });
+            // The composer's attachments (composer.attachment@1): a service reads one for the person it names
+            // (X-OV-Subject) and keeps it with the message it belongs to. Another person's is a 404, like one
+            // that does not exist.
+            const att = req.url.match(/^\/api\/v1\/attachments\/(att_[0-9A-HJKMNP-TV-Z]{26})(\/keep)?$/);
+            if (att) {
+                const v = serviceAuth.verifyServiceToken(String(req.headers.authorization || '').slice(7), { publicKey: publicPem, issuer, audience: 'openvibe.media' });
+                if (!v.ok) return json(401, { code: v.code, error: v.reason });
+                const caps = v.claims.cap || [];
+                if (!caps.includes('media.object.read') && !caps.includes('media.object.upload')) return json(403, { code: 'capability.denied', error: 'not granted' });
+                const subject = req.headers['x-ov-subject'] || null;
+                const one = attachments.get(att[1]);
+                if (!one || (subject && one.subject !== subject)) return json(404, { code: 'media.attachment.not_found', error: 'no such attachment for this person' });
+                if (att[2] === '/keep') {
+                    const b = JSON.parse(body.toString() || '{}');
+                    keeps.push({ id: att[1], subject, message_id: b.message_id });
+                    one.kept = (one.kept || []).concat([b.message_id]);
+                    return json(200, { id: att[1], message_id: b.message_id, kept: one.kept });
+                }
+                return json(200, { id: att[1], kind: one.kind, name: one.name, mime: one.mime, size: one.size, url: one.url,
+                    poster: one.poster || null, playback: one.playback || null,
+                    duration_s: one.duration_s != null ? one.duration_s : null,
+                    width: one.width != null ? one.width : null, height: one.height != null ? one.height : null });
+            }
             // A public object's bytes (a private one is reached through /download, below). ?w=&fmt= asks
             // for Media's resized variant: answer webp with the width in the body, as Media would.
             const open = req.url.match(/^\/o\/(med_[0-9A-Z]+)(\?[^#]*)?$/);
@@ -65,7 +91,6 @@ function start({ publicPem, issuer }) {
             if (!v.ok) return json(401, { code: v.code, error: v.reason });
             const verb = v2 && req.method === 'GET' ? 'media.object.read' : req.method === 'DELETE' ? 'media.object.delete' : 'media.object.upload';
             if (!(v.claims.cap || []).includes(verb)) return json(403, { code: 'capability.denied', error: 'not granted' });
-            const body = Buffer.concat(chunks);
             if (normalize) {
                 const { stripImageMetadata } = require('../../server/media/strip-metadata');
                 res.writeHead(200, { 'Content-Type': req.headers['content-type'] || 'application/octet-stream' });
@@ -133,7 +158,10 @@ function start({ publicPem, issuer }) {
     });
     return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({
         url: `http://127.0.0.1:${server.address().port}`,
-        uploads, deletes,
+        uploads, deletes, keeps,
+        /** Put a composer attachment in the store (what a person's upload would have left there). */
+        addAttachment: (a) => { attachments.set(a.id, a); return a; },
+        attachment: (id) => attachments.get(id),
         failNext: () => { failNext = true; },
         failNextDelete: () => { failNextDelete = true; },
         close: () => new Promise((r) => server.close(r)),

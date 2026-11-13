@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A comment may carry a file the person uploaded through Media's composer (composer.attachment@1): a video, a
+  picture, an audio, a PDF or a text file. The comment names it as `{ media_attachment_id }` (in the JSON and in
+  the no-JS form's field), Community asks Media (with its service token, naming the person) whether it exists, is
+  the person's and may be carried, keeps it with the comment so it lives as long as the comment does, and stores
+  what Media answers: the kind, the type, the poster, the playback (url, mime, ready), the length and the size.
+  The public reference carries them, so a page can show a player for a video. Another person's attachment is a
+  404, exactly like one that does not exist; an executable is refused; at most four files. The old file upload
+  path is untouched. `migrations/0039_comment_attachments_video.sql`. Test: `test/comment-media-attachments.test.js`.
+
 - The forum's reply and new thread boxes and the inline comment thread are the shared composer v2 (openvibe-shared
   4.215.0, `OpenVibeComposer.mount`): the reply and a comment use the comment preset, a new thread the post preset, and
   each keeps its form's action, a reply's parent and its no-JS post. Tests: `test/composer.test.js` at 390 px and the

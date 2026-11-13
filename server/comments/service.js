@@ -128,9 +128,45 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         return out;
     }
 
-    async function shapeComments(rows, v, t) {
+    // A video whose web copy Media was still making when the comment was posted: ask Media again when the comment is
+    // read, and keep the answer once it is ready (Shared 4.247.0 draws the player only for a ready copy). At most six a
+    // read, each asked again no sooner than 30 s, never longer than 1.5 s: a slow Media leaves the link as it is.
+    const askedAt = new Map();
+    async function freshenPlayback(all) {
+        if (!media || typeof media.attachment !== 'function') return;
+        const now = Date.now();
+        const due = [];
+        for (const c of all) {
+            for (const row of (c.attachments || [])) {
+                if (due.length >= 6) break;
+                if (row.kind !== 'video' || row.playback_ready || !commentAttachments.ATTACHMENT_ID.test(String(row.media_id || '')) || !row.owner_subject) continue;
+                if (now - (askedAt.get(row.media_id) || 0) < 30_000) continue;
+                askedAt.set(row.media_id, now);
+                due.push(row);
+            }
+        }
+        if (askedAt.size > 5000) { for (const [k, at] of askedAt) if (now - at > 60_000) askedAt.delete(k); }
+        await Promise.all(due.map(async (row) => {
+            let att = null;
+            try {
+                att = await Promise.race([media.attachment(row.media_id, row.owner_subject), new Promise((r) => setTimeout(() => r(null), 1500))]);
+            } catch { att = null; }
+            const pb = att && att.playback;
+            if (!pb || !pb.ready || typeof pb.url !== 'string') return;
+            row.playback_url = pb.url; row.playback_mime = pb.mime || 'video/mp4'; row.playback_ready = 1;
+            if (typeof att.poster === 'string') row.poster = att.poster;
+            try {
+                await db.prepare('UPDATE comment_attachments SET playback_url = ?, playback_mime = ?, playback_ready = 1, poster = COALESCE(?, poster) WHERE media_id = ?')
+                    .run(row.playback_url, row.playback_mime, typeof att.poster === 'string' ? att.poster : null, row.media_id);
+            } catch { /* the next read asks again */ }
+        }));
+    }
+
+    async function shapeComments(rows, v, t, { freshen = false } = {}) {
         const all = [];
         for (const r of rows) { all.push(r); if (r.replies) all.push(...r.replies); }
+        // Only a read asks Media again: a comment just posted has the answer Media gave a moment ago.
+        if (freshen) await freshenPlayback(all);
         const targets = await store.replyTargets(db, all.map((c) => c.reply_to_id));
         const projections = await authors.projectionsFor(all.map((c) => c.author_subject).concat([...targets.values()].map((c) => c.author_subject)));
         const votes = await myVotes(db, 'comment', all.map((c) => c.id), v && v.subject);
@@ -310,7 +346,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             } else {
                 ({ rows, hasMore } = await store.listTopLevel(db, t.id, { after, sort, limit, replyLimit: REPLY_PAGE }));
             }
-            const comments = await shapeComments(rows, v, t);
+            const comments = await shapeComments(rows, v, t, { freshen: true });
             return {
                 thread: shapeThread(t, v),
                 comments,
@@ -362,26 +398,90 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (rawAttachments.length > 4) fail(400, 'comment.attachments_too_many', 'At most four files can be attached to a comment');
             if (rawAttachments.length && !author) fail(401, 'auth.required', 'Sign in to attach a file');
             let attachmentIds = [];
+            const composerFiles = [];   // the composer attachments (att_…) the comment names
             if (rawAttachments.length) {
-                const refs = rawAttachments.map((raw) => {
-                    try { return commentAttachments.cleanReference(raw, author); }
+                const refs = [];
+                for (const raw of rawAttachments) {
+                    // A composer attachment: the person names the file Media stored for them (a video, a picture).
+                    if (raw && typeof raw === 'object' && raw.media_attachment_id) {
+                        try { composerFiles.push(commentAttachments.composerReference(raw)); }
+                        catch (err) { fail(err.status || 400, err.code || 'comment.attachment_invalid', err.message); }
+                        continue;
+                    }
+                    try { refs.push(commentAttachments.cleanReference(raw, author)); }
                     catch (err) { fail(err.status || 400, err.code || 'comment.attachment_invalid', err.message); }
-                });
+                }
                 attachmentIds = refs.map((a) => a.id);
                 if (new Set(attachmentIds).size !== attachmentIds.length) fail(400, 'comment.attachment_invalid', 'A file can only be attached once');
-                const staged = await store.stagedAttachments(db, attachmentIds, author, { service: t.ref_service, type: t.ref_type, id: t.ref_id });
-                if (!staged) fail(400, 'comment.attachment_invalid', 'Attach files uploaded through the service that owns this item');
-                for (const row of staged) {
-                    let object;
-                    try { object = await media.object(row.media_id); } catch { fail(400, 'comment.attachment_invalid', 'One of the attached files is no longer available'); }
-                    if (!object || !object.owner || object.owner.subject !== author || object.lifecycle_status !== 'ready') fail(400, 'comment.attachment_invalid', 'One of the attached files is not yours');
+                if (composerFiles.length) {
+                    // Media owns these files: it says whether the attachment exists, is the person's, and what it
+                    // is. An attachment that is not the person's is a 404, exactly like one that does not exist.
+                    if (!media || typeof media.attachment !== 'function') fail(503, 'attachment.unavailable', 'Files cannot be attached right now');
+                    for (let i = 0; i < composerFiles.length; i++) {
+                        const ref = composerFiles[i];
+                        let att;
+                        try { att = await media.attachment(ref.media_attachment_id, author); }
+                        catch (err) {
+                            if (err && err.status === 404) fail(404, 'comment.attachment_not_found', 'One of the attached files is not there');
+                            fail(502, 'attachment.unavailable', 'One of the attached files could not be checked');
+                        }
+                        const kind = commentAttachments.allowedKind(att && att.kind, att && att.mime);
+                        if (!kind) fail(415, 'comment.attachment_type', 'A comment may carry an image, a video, an audio, a PDF or a text file');
+                        composerFiles[i] = { ...att, id: ref.media_attachment_id, kind };
+                    }
+                }
+                if (attachmentIds.length) {
+                    const staged = await store.stagedAttachments(db, attachmentIds, author, { service: t.ref_service, type: t.ref_type, id: t.ref_id });
+                    if (!staged) fail(400, 'comment.attachment_invalid', 'Attach files uploaded through the service that owns this item');
+                    for (const row of staged) {
+                        let object;
+                        try { object = await media.object(row.media_id); } catch { fail(400, 'comment.attachment_invalid', 'One of the attached files is no longer available'); }
+                        if (!object || !object.owner || object.owner.subject !== author || object.lifecycle_status !== 'ready') fail(400, 'comment.attachment_invalid', 'One of the attached files is not yours');
+                    }
                 }
             }
             const forumItem = forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`] ? await forumLinks.publicExternalItem(t, fetchImpl) : null;
-            const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, reply_to_id: parent ? parent.id : null,
-                author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds, forum_item: forumItem });
-            commentLimiter.record(key, said);
-            return { comment: (await shapeComments([c], v, t))[0] };
+            // The composer attachments are stored beside the comment (the same table as the old file path).
+            const staged = [];
+            try {
+                for (const att of composerFiles) {
+                    const row = await store.createAttachment(db, {
+                        media_id: att.id, ref_service: t.ref_service, ref_type: t.ref_type, ref_id: String(t.ref_id),
+                        owner_subject: author, filename: String(att.name || 'file').slice(0, 255),
+                        mime: String(att.mime || 'application/octet-stream'), size_bytes: Number(att.size) || 0,
+                        visibility: 'unlisted', kind: att.kind, url: att.url || null, poster: att.poster || null,
+                        playback_url: att.playback && att.playback.url ? att.playback.url : null,
+                        playback_mime: att.playback && att.playback.mime ? att.playback.mime : null,
+                        playback_ready: att.playback && att.playback.ready ? 1 : 0,
+                        duration_s: att.duration_s != null ? Number(att.duration_s) : null,
+                        width: att.width != null ? Number(att.width) : null,
+                        height: att.height != null ? Number(att.height) : null,
+                    });
+                    staged.push(row.media_id);
+                    attachmentIds.push(row.media_id);
+                }
+                const c = await store.insertComment(db, { thread_id: t.id, parent_id: parentId, reply_to_id: parent ? parent.id : null,
+                    author_subject: author, anon_name: anonName, origin, message, attachment_ids: attachmentIds, forum_item: forumItem });
+                // The files live as long as the comment: Media keeps them with it.
+                for (const att of composerFiles) {
+                    try { await media.keepAttachment(att.id, author, String(c.id)); }
+                    catch (err) {
+                        console.warn('[Comments] could not keep the attachment ' + att.id + ': ' + err.message);
+                        await store.softDeleteComment(db, c.id, v.subject || v.service || null);
+                        fail(502, 'attachment.keep_failed', 'One of the attached files could not be kept with the comment');
+                    }
+                }
+                commentLimiter.record(key, said);
+                return { comment: (await shapeComments([c], v, t))[0] };
+            } catch (err) {
+                // A comment that was not written leaves no staged attachment behind.
+                if (staged.length) {
+                    for (const id of staged) {
+                        try { await db.prepare('DELETE FROM comment_attachments WHERE media_id = ? AND comment_id IS NULL').run(id); } catch { /* best effort */ }
+                    }
+                }
+                throw err;
+            }
         },
 
         /**
@@ -416,6 +516,9 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (!isAuthor && !isOwner && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
             await store.softDeleteComment(db, c.id, v.subject || v.service || null);
             for (const a of c.attachments || []) {
+                // Only Community's own Media objects are retired here; a composer attachment (att_…) is Media's
+                // and dies with the message it was kept for.
+                if (!/^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(a.media_id || ''))) continue;
                 if (media && typeof media.deleteObject === 'function') {
                     try { await media.deleteObject(a.media_id); }
                     catch (err) { console.warn(`[Comments] removed attachment ${a.media_id} from comment; Media cleanup failed: ${err.message}`); }

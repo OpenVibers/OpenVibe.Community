@@ -74,9 +74,13 @@ async function listAttachments(db, commentIds) {
 }
 
 async function createAttachment(db, row) {
-    await db.prepare(`INSERT INTO comment_attachments (media_id, ref_service, ref_type, ref_id, owner_subject, filename, mime, size_bytes, visibility)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(row.media_id, row.ref_service, row.ref_type, row.ref_id, row.owner_subject, row.filename, row.mime, row.size_bytes, row.visibility);
+    await db.prepare(`INSERT INTO comment_attachments (media_id, ref_service, ref_type, ref_id, owner_subject, filename, mime, size_bytes, visibility,
+                      kind, url, poster, playback_url, playback_mime, playback_ready, duration_s, width, height)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(row.media_id, row.ref_service, row.ref_type, row.ref_id, row.owner_subject, row.filename, row.mime, row.size_bytes, row.visibility,
+            row.kind || null, row.url || null, row.poster || null, row.playback_url || null, row.playback_mime || null,
+            row.playback_ready ? 1 : 0, row.duration_s != null ? Number(row.duration_s) : null,
+            row.width != null ? Number(row.width) : null, row.height != null ? Number(row.height) : null);
     return await db.prepare('SELECT * FROM comment_attachments WHERE media_id = ?').get(row.media_id);
 }
 

@@ -139,7 +139,28 @@ function createMediaObjects({ config, fetchImpl = globalThis.fetch } = {}) {
         return { retired: true, changed: !!(out && out.changed), ...(out && out.retention_until ? { retention_until: out.retention_until } : {}) };
     }
 
-    return { configured, uploadImage, normalizeImage, object, downloadUrl, deleteObject, retireLegacyPaste };
+    // The composer's attachments (composer.attachment@1): the files a person attaches to a message before it
+    // is sent, kept by Media under an att_ id. A site reads one for the person it names and keeps it with the
+    // message it belongs to.
+    const attachmentsBase = `${config.mediaInternalUrl}/api/v1/attachments`;
+
+    /**
+     * One composer attachment, for the person it belongs to. Media checks the owner: an attachment that is not
+     * the named person's is a 404, exactly like one that does not exist.
+     */
+    async function attachment(id, subject) {
+        if (!configured) { const e = new Error('Attachments need Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
+        return await request('GET', `${attachmentsBase}/${encodeURIComponent(String(id))}`, { headers: { 'X-OV-Subject': String(subject || '') } });
+    }
+
+    /** Keep an attachment with the message it belongs to (the comment), so it lives as long as that message. */
+    async function keepAttachment(id, subject, messageId) {
+        if (!configured) { const e = new Error('Attachments need Community\'s service principal (OV_OAUTH_CLIENT_SECRET)'); e.status = 503; throw e; }
+        return await request('POST', `${attachmentsBase}/${encodeURIComponent(String(id))}/keep`,
+            { json: { message_id: String(messageId) }, headers: { 'X-OV-Subject': String(subject || '') } });
+    }
+
+    return { configured, uploadImage, normalizeImage, object, downloadUrl, deleteObject, retireLegacyPaste, attachment, keepAttachment };
 }
 
 module.exports = { createMediaObjects };
