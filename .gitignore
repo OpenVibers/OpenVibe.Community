@@ -10,3 +10,5 @@ dist/
 *.log
 *.pem
 *.key
+# a node_modules link (not only a folder): a worktree links its parent checkout's
+node_modules
