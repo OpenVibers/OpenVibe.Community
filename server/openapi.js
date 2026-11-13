@@ -687,7 +687,7 @@ route('post', '/api/v1/relay/inbound/{id}/dismiss', {
     responses: { 200: json('The message'), ...errors([401, 403, 404, 429]) },
 });
 route('get', '/api/v1/relay/mappings', {
-    operationId: 'relayMappings', summary: 'Space → Discord channel mappings (staff)', tags: ['relay'], security: STAFF,
+    operationId: 'relayMappings', summary: 'Space to Discord channel mappings (staff)', tags: ['relay'], security: STAFF,
     description: 'Webhook URLs and the bot token never leave the environment: only variable names and whether they are set.',
     responses: { 200: json('{ enabled, mappings }'), ...errors([401, 403, 429]) },
 });

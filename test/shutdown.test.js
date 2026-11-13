@@ -43,7 +43,7 @@ const freePort = () => new Promise((resolve) => { const s = net.createServer(); 
             if (!up) await sleep(100);
         }
         assert.ok(up, `the server did not start:\n${out}`);
-        assert.match(out, /\[Events\] community →/, 'the outbox is on');
+        assert.match(out, /\[Events\] community to/, 'the outbox is on');
         assert.match(out, /\[Relay\] Discord relay on: creates queued by the Events worker; events worker on; inbound on/, 'the relay, its Events worker and the gateway are on');
 
         // An idle keep-alive connection (the server keeps them 65 s).

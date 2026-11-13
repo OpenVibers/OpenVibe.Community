@@ -20,7 +20,7 @@ const config = require('../config');
 
 const STYLE_LABELS = { forum: 'Classic', feed: 'Feed' };   // the two styles, as the Forum page and the settings name them
 const monthYear = (iso) => { const d = iso ? new Date(iso) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : null; };
-const crumbs = (items) => `<nav class="crumbs" aria-label="Breadcrumb">${items.map(([label, href], i) => (i === items.length - 1 ? `<span aria-current="page">${esc(label)}</span>` : `<a href="${esc(href)}">${esc(label)}</a>`)).join(' › ')}</nav>`;
+const crumbs = (items) => `<nav class="crumbs" aria-label="Breadcrumb">${items.map(([label, href], i) => (i === items.length - 1 ? `<span aria-current="page">${esc(label)}</span>` : `<a href="${esc(href)}">${esc(label)}</a>`)).join(' <i data-ov-icon="chevron" aria-hidden="true"></i> ')}</nav>`;
 const trail = (space) => [['Home', '/'], ['Forum', '/forum'], ...(space.group ? [[space.group.name, `/forum#g-${space.group.slug}`]] : []), ...(space.parent ? [[space.parent.name, `/forum/${space.parent.slug}`]] : [])];
 const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 
@@ -95,7 +95,7 @@ function topicRow(t, space) {
         <span class="small muted topic-by">Started by ${who(t.author)} · ${timeTag(t.created_at)}${topicPages(base, t.pages || 1)}</span></td>
       <td class="num" data-label="Replies">${num(t.reply_count)}</td>
       <td class="num" data-label="Views">${num(t.views)}</td>
-      <td class="board-last" data-label="Last post">${timeTag(t.last_activity_at)}<span class="small muted">by ${who(t.last_post ? t.last_post.author : t.author)}${t.last_post ? ` <a href="${esc(base)}${t.pages > 1 ? `?page=${t.pages}` : ''}#post-${Number(t.last_post.id)}" aria-label="Go to the last post">»</a>` : ''}</span></td>
+      <td class="board-last" data-label="Last post">${timeTag(t.last_activity_at)}<span class="small muted">by ${who(t.last_post ? t.last_post.author : t.author)}${t.last_post ? ` <a href="${esc(base)}${t.pages > 1 ? `?page=${t.pages}` : ''}#post-${Number(t.last_post.id)}" aria-label="Go to the last post"><i data-ov-icon="chevrons-right" aria-hidden="true"></i></a>` : ''}</span></td>
     </tr>`;
 }
 

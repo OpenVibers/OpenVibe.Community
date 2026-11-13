@@ -66,7 +66,7 @@ function submissionsPage({ items, kind = '', mine = false, after = null, nextCur
     const links = user ? `<p class="muted small">${mine ? '<a href="/submissions">All accepted submissions</a>' : '<a href="/submissions?mine=1">Your submissions</a>'}${moderator ? ' · <a href="/submissions/review">Review queue</a>' : ''}</p>` : '';
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Submissions</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Submissions</span></nav>
   <h1>${mine ? 'Your submissions' : 'Submissions'}</h1>
   <p class="muted">Clips, art, ideas and reports from the people of OpenVibe. Anyone signed in can submit; moderators review each one, and what they accept appears here and in <a href="/pulse">Pulse</a>.</p>
   ${links}
@@ -110,7 +110,7 @@ function submissionPage({ submission: s, user = null, error = null }) {
     const body = `
 <article>
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/submissions">Submissions</a> › <span aria-current="page">${esc(s.title)}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/submissions">Submissions</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">${esc(s.title)}</span></nav>
   <h1>${esc(s.title)}</h1>
   <p class="thread-meta">${kindBadge(s)}${statusBadge(s)} ${who(s.author)} <span class="sep">·</span> ${timeTag(s.created_at)}</p>
 </header>
@@ -142,7 +142,7 @@ ${reviewForm}`;
 function reviewQueuePage({ items, after = null, nextCursor = null }) {
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/submissions">Submissions</a> › <span aria-current="page">Review queue</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/submissions">Submissions</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Review queue</span></nav>
   <h1>Review queue</h1>
   <p class="muted">Submissions waiting for a decision, newest first. Open one to accept or reject it.</p>
 </header>

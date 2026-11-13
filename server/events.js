@@ -40,7 +40,7 @@ function init(db, { eventsUrl = process.env.EVENTS_URL, clientSecret = config.oa
     outbox.start();
     pruneTimer = setInterval(() => { outbox.prune().catch(() => { /* next time */ }); }, PRUNE_EVERY_MS);
     if (pruneTimer.unref) pruneTimer.unref();
-    outbox.pending().then((n) => console.log(`[Events] community → ${eventsUrl} (${n} pending)`), () => {});
+    outbox.pending().then((n) => console.log(`[Events] community to ${eventsUrl} (${n} pending)`), () => {});
     return outbox;
 }
 

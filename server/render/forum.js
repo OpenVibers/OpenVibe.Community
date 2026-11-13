@@ -80,7 +80,7 @@ function spacesPage({ spaces }) {
   </ul>` : kit.empty({ icon: 'chat', title: 'No forums yet', text: 'No forum has been started here yet.', action: { href: '/pulse', label: 'See what is happening', icon: 'live' } });
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Forum</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Forum</span></nav>
   <h1>Forum</h1>
   <p class="muted">Long-form discussion for the people of OpenVibe. Read without an account; sign in to start a thread or reply. See what is happening across the network on <a href="/pulse">Pulse</a>.</p>
 </header>
@@ -145,7 +145,7 @@ function spacePage({ space, threads, sort, page, pages, total, user, categories 
     const categoryName = category ? (categories.find((c) => c.slug === category) || {}).name : null;
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <span aria-current="page">${esc(space.name)}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum">Forum</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">${esc(space.name)}</span></nav>
   <h1>${esc(space.name)}${visBadge(space)}${feedable ? ` <a class="rss-link" href="/forum/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
   ${start}
@@ -300,7 +300,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
 
     const body = `
 <article class="thread">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum">Forum</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span></nav>
   <header class="thread-head">
     ${space.votes === false ? '' : voteForm(base, thread, viewer)}
     <div>
@@ -366,7 +366,7 @@ function newThreadPage({ space, user, values = {}, error = null, categories = []
 </form>` : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/forum/${space.slug}/new`)}">Sign in with your OpenVibe account</a> to start a thread. Reading needs no account.</p>`;
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">New thread</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum">Forum</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">New thread</span></nav>
   <h1>New thread in ${esc(space.name)}</h1>
 </header>
 ${form}`;
@@ -396,7 +396,7 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
         : reason === 'vip_unavailable' || reason === 'entitlement_unknown'
             ? '<p class="muted">We could not confirm your membership just now. Try again in a moment.</p>'
             : '<p class="muted">Your account does not have an active membership for this.</p>';
-    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › ${thread ? `<a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
+    const crumbs = `<nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum">Forum</a> <i data-ov-icon="chevron" aria-hidden="true"></i> ${thread ? `<a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">${esc(ld.clean(thread.title, 60))}</span>` : `<span aria-current="page">${esc(space.name)}</span>`}</nav>`;
     const body = `
 <header class="page-head">
   ${crumbs}
@@ -444,7 +444,7 @@ function moderationLogPage({ space, entries }) {
     </tr>`).join('');
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> › <span aria-current="page">Moderation log</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum">Forum</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/forum/${esc(space.slug)}">${esc(space.name)}</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Moderation log</span></nav>
   <h1>Moderation log</h1>
   <p class="muted">What moderation did in ${esc(space.name)} and why. Newest first; who acted is shown by role only.</p>
 </header>
