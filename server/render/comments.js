@@ -77,6 +77,9 @@ function commentPanel({ page, user, base, action = base, sort = 'top', replyId =
         answer: page || { thread: null, comments: [], viewer: { can_comment: true } },
         base, post: action, remove: `${action}/delete`, signedIn: !!user && (!page || page.viewer.can_comment !== false),
         attachmentsAllowed: !page || ['community/paste', 'pics/picture'].includes(`${page.thread.ref.service}/${page.thread.ref.type}`),
+        // Shared 4.247.0 (plan §Z.9): the box sends its files to Media's composer attachments (any video plays) and posts
+        // their ids in `attachments`, which the comment form reads (#439). An older Shared ignores it.
+        mediaAttachments: true,
         sort, replyId, expandedId, expandedReplies, error, draft,
     });
 }
