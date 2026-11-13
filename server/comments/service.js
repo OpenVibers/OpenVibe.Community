@@ -480,6 +480,9 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (!isAuthor && !isOwner && !moderator(v)) fail(403, 'comment.not_yours', 'Not authorized to delete this comment');
             await store.softDeleteComment(db, c.id, v.subject || v.service || null);
             for (const a of c.attachments || []) {
+                // Only Community's own Media objects are retired here; a composer attachment (att_…) is Media's
+                // and dies with the message it was kept for.
+                if (!/^med_[0-9A-HJKMNP-TV-Z]{26}$/.test(String(a.media_id || ''))) continue;
                 if (media && typeof media.deleteObject === 'function') {
                     try { await media.deleteObject(a.media_id); }
                     catch (err) { console.warn(`[Comments] removed attachment ${a.media_id} from comment; Media cleanup failed: ${err.message}`); }
