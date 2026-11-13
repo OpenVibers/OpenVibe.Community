@@ -15,8 +15,8 @@ const pathOf = (url) => { try { const u = new URL(url); return u.pathname + u.se
 function resultItem(r) {
     const f = r.facets || {};
     const kind = r.type === 'thread'
-        ? `<span class="badge"><i class="fa-solid fa-comments" aria-hidden="true"></i> Thread${f.space ? ` in ${esc(f.space)}` : ''}</span>`
-        : `<span class="badge"><i class="fa-solid fa-${f.kind === 'screenshot' ? 'image' : 'code'}" aria-hidden="true"></i> ${f.kind === 'screenshot' ? 'Screenshot' : 'Paste'}${f.syntax && f.syntax !== 'text' ? ` · ${esc(f.syntax)}` : ''}</span>`;
+        ? `<span class="badge"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> Thread${f.space ? ` in ${esc(f.space)}` : ''}</span>`
+        : `<span class="badge"><i class="ovg-fill" data-ov-icon="${f.kind === 'screenshot' ? 'image' : 'code'}" aria-hidden="true"></i> ${f.kind === 'screenshot' ? 'Screenshot' : 'Paste'}${f.syntax && f.syntax !== 'text' ? ` · ${esc(f.syntax)}` : ''}</span>`;
     const when = r.updated_at || r.published_at;
     return `<li class="search-hit">
   <a class="search-title" href="${esc(pathOf(r.canonical_url))}">${esc(r.title || 'Untitled')}</a>
@@ -39,7 +39,7 @@ function searchPage({ q = '', type = '', results = [], nextCursor = null, unavai
   <p class="muted">Threads and pastes${q ? ` matching “${esc(q)}”` : ''}. <a href="https://search.openvibe.network/?q=${encodeURIComponent(q)}">Search the whole OpenVibe network</a></p>
 </header>
 <form class="filters" method="get" action="/search" role="search">
-  <label class="search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" name="q" value="${esc(q)}" placeholder="Search threads and pastes" aria-label="Search threads and pastes" maxlength="200" autofocus></label>
+  <label class="search"><i class="ovg-fill" data-ov-icon="search" aria-hidden="true"></i><input type="search" name="q" value="${esc(q)}" placeholder="Search threads and pastes" aria-label="Search threads and pastes" maxlength="200" autofocus></label>
   <label>Show <select name="type">${opt('', 'Everything')}${opt('thread', 'Threads')}${opt('paste', 'Pastes')}</select></label>
   <button class="btn" type="submit">Search</button>
 </form>

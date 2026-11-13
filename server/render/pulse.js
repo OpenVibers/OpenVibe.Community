@@ -54,7 +54,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null, origin
 <section data-results${after ? '' : ' data-pulse-live'}>
   <p class="pulse-new" hidden><button type="button" class="btn btn-sm" data-pulse-show></button></p>
   ${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : kit.empty({ icon: 'live', title: 'Nothing here yet', text: origin ? 'Nothing from this part of the network has arrived yet.' : 'New public clips, threads, pastes and posts land here as they happen.', action: origin ? { href: '/pulse', label: 'Everything', icon: 'live' } : { href: '/forum', label: 'Visit the forum', icon: 'chat' } })}
-  ${after || nextCursor ? `<nav class="pager" aria-label="Pages">${after ? `<a href="${esc(href(origin))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Latest</a>` : '<span></span>'}<span></span>${nextCursor ? `<a rel="next" href="${esc(href(origin, nextCursor))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}
+  ${after || nextCursor ? `<nav class="pager" aria-label="Pages">${after ? `<a href="${esc(href(origin))}"><i class="ovg-fill" data-ov-icon="back" aria-hidden="true"></i> Latest</a>` : '<span></span>'}<span></span>${nextCursor ? `<a rel="next" href="${esc(href(origin, nextCursor))}">Older <i class="ovg-fill" data-ov-icon="chevron" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}
 </section>`;
     return renderPage({
         title: `Pulse${origin ? ` — ${FILTERS.find(([id]) => id === origin)[1]}` : ''}`,

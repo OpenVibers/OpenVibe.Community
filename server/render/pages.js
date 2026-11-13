@@ -98,7 +98,7 @@ function authorHtml(p, { link = true } = {}) {
     return `<a class="author" href="${esc(config.liveUrl)}/@${encodeURIComponent(p.username)}" rel="author">${inner}</a>`;
 }
 function langBadge(p) {
-    if (p.type === 'screenshot') return `<span class="badge badge-lang"><i class="fa-solid fa-image" aria-hidden="true"></i> image</span>`;
+    if (p.type === 'screenshot') return `<span class="badge badge-lang"><i class="ovg-fill" data-ov-icon="image" aria-hidden="true"></i> image</span>`;
     const l = p.language || 'text';
     return `<a class="badge badge-lang" href="/pastes?lang=${encodeURIComponent(l)}">${esc(languageLabel(l))}</a>`;
 }
@@ -119,11 +119,11 @@ function pasteCard(p, { eager = false } = {}) {
     const isShot = p.type === 'screenshot';
     const locked = !!p.locked;
     const preview = locked
-        ? `<div class="card-locked"><i class="fa-solid fa-lock" aria-hidden="true"></i> Locked — OpenVibe can’t read what’s inside</div>`
+        ? `<div class="card-locked"><i class="ovg-fill" data-ov-icon="lock" aria-hidden="true"></i> Locked — OpenVibe can’t read what’s inside</div>`
         : isShot
             ? (p.screenshot_url ? `<div class="card-shot">${screenshotImg(p, { eager })}</div>` : '')
             : `<pre class="card-code" aria-hidden="true">${esc(String(p.content || '').slice(0, 220))}${String(p.content || '').length > 220 ? '…' : ''}</pre>`;
-    const flags = `${p.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="fa-solid fa-fire" title="Burns after reading"></i> ' : ''}${locked ? '<i class="fa-solid fa-lock" title="Locked"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
+    const flags = `${p.pinned ? '<i class="ovg-fill" data-ov-icon="tack" title="Pinned"></i> ' : ''}${p.burn_after_read ? '<i class="ovg-fill" data-ov-icon="fire" title="Burns after reading"></i> ' : ''}${locked ? '<i class="ovg-fill" data-ov-icon="lock" title="Locked"></i> ' : ''}${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}`;
     return `<article class="card${p.is_nsfw ? ' card-nsfw' : ''}${locked ? ' card-is-locked' : ''}">
   <a class="card-link" href="/p/${esc(pastePathSlug(p))}">
     ${preview}
@@ -131,7 +131,7 @@ function pasteCard(p, { eager = false } = {}) {
   </a>
   <div class="card-meta">
     ${authorHtml(p)}
-    <span class="card-right">${langBadge(p)}<span class="stat" title="Views"><i class="fa-solid fa-eye" aria-hidden="true"></i> ${num(p.views)}</span>${timeTag(p.created_at)}</span>
+    <span class="card-right">${langBadge(p)}<span class="stat" title="Views"><i class="ovg-fill" data-ov-icon="eye" aria-hidden="true"></i> ${num(p.views)}</span>${timeTag(p.created_at)}</span>
   </div>
 </article>`;
 }
@@ -341,8 +341,8 @@ function homePage({ latest, fromStreams = [], languages, user, spaces = [], road
         lede: 'Paste code, logs, configs or a screenshot and get a short link that works anywhere. No account needed to read or share.',
         // Two, side by side on a phone: the paste itself, then the list (signed in: your own; See all opens everyone's).
         actions: [
-            { label: 'Start a paste', href: '/new', primary: true, icon: 'fa-plus' },
-            user ? { label: 'My pastes', href: '/my', icon: 'fa-user' } : { label: 'Browse pastes', href: '/pastes', icon: 'fa-paste' },
+            { label: 'Start a paste', href: '/new', primary: true, icon: 'ov:paste' },
+            user ? { label: 'My pastes', href: '/my', icon: 'ov:account' } : { label: 'Browse pastes', href: '/pastes', icon: 'ov:paste' },
         ],
         // The terminal beside the words on a computer; a phone skips it (community.css), and the API fold has it too.
         aside: { html: `<pre class="cm-hero-code" aria-label="Paste a file from a terminal"><code>${esc(TERMINAL)}</code></pre>` },
@@ -397,9 +397,9 @@ function browsePage(result, languages) {
     if (lang && !(languages || []).some((l) => l.language === lang)) langOptions.push(opt(lang, languageLabel(lang)));
 
     const pager = pages > 1 ? `<nav class="pager" aria-label="Pages">
-    ${page > 1 ? `<a rel="prev" href="${esc(pagerHref({ q, sort, lang, type, from }, page - 1))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newer</a>` : '<span></span>'}
+    ${page > 1 ? `<a rel="prev" href="${esc(pagerHref({ q, sort, lang, type, from }, page - 1))}"><i class="ovg-fill" data-ov-icon="back" aria-hidden="true"></i> Newer</a>` : '<span></span>'}
     <span class="pager-info">Page ${page} of ${pages}</span>
-    ${page < pages ? `<a rel="next" href="${esc(pagerHref({ q, sort, lang, type, from }, page + 1))}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}
+    ${page < pages ? `<a rel="next" href="${esc(pagerHref({ q, sort, lang, type, from }, page + 1))}">Older <i class="ovg-fill" data-ov-icon="chevron" aria-hidden="true"></i></a>` : '<span></span>'}
   </nav>` : '';
 
     const body = `
@@ -408,7 +408,7 @@ function browsePage(result, languages) {
   <p class="muted">${num(total)} ${total === 1 ? 'paste' : 'pastes'}${from === 'streams' ? ' from streams, written up by OpenVibe.AI' : from === 'people' ? ' by people' : ''}${windowed ? ` in the latest ${windowSize}` : ''}${q ? ` matching “${esc(q)}”` : ''}</p>
 </header>
 <form class="filters" method="get" action="/pastes" role="search" data-browse>
-  <label class="search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" name="q" value="${esc(q)}" placeholder="Search titles and content" aria-label="Search pastes"></label>
+  <label class="search"><i class="ovg-fill" data-ov-icon="search" aria-hidden="true"></i><input type="search" name="q" value="${esc(q)}" placeholder="Search titles and content" aria-label="Search pastes"></label>
   <label>From <select name="from"><option value="people"${from === 'people' ? ' selected' : ''}>People</option><option value="streams"${from === 'streams' ? ' selected' : ''}>Streams (AI)</option><option value="all"${from === 'all' ? ' selected' : ''}>Everyone</option></select></label>
   <label>Show <select name="type"><option value="pastes"${type === 'pastes' ? ' selected' : ''}>Pastes</option><option value="images"${type === 'images' ? ' selected' : ''}>Images</option><option value="all"${type === 'all' ? ' selected' : ''}>All</option></select></label>
   <label>Sort <select name="sort"><option value="new"${sort === 'new' ? ' selected' : ''}>Newest</option><option value="views"${sort === 'views' ? ' selected' : ''}>Most viewed</option></select></label>
@@ -507,7 +507,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'to
         // away. Copy, Raw and Download still give the source.
         bodyBlock = isDoc ? `<div class="md paste-doc">${renderMarkdown(withoutTitle(p.content, title), { headingShift: 1, document: true })}</div>
   <details class="paste-source">
-    <summary><i class="fa-solid fa-code" aria-hidden="true"></i> Markdown source <span class="muted small">${num(hl.lines)} lines</span></summary>
+    <summary><i class="ovg-fill" data-ov-icon="code" aria-hidden="true"></i> Markdown source <span class="muted small">${num(hl.lines)} lines</span></summary>
     ${code}
   </details>` : code;
     }
@@ -515,16 +515,16 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'to
     // The primary action of a locked paste is the card's own (unlock your locker, the password, the link's key): the
     // ordinary actions here are Share, and Delete for its owner. The envelope as a file is a quiet line under the card.
     const actions = locked ? `<div class="actions">
-    <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
-    ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
+    <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="ovg-fill" data-ov-icon="nodes" aria-hidden="true"></i> Share</button>
+    ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="ovg-fill" data-ov-icon="trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>` : `<div class="actions">
-    ${!isShot ? `<button type="button" class="btn btn-sm btn-primary" data-copy-content="${esc(p.slug)}"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copy</button>` : ''}
-    ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(pageSlug)}/raw"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(pageSlug)}/screenshot"><i class="fa-solid fa-image" aria-hidden="true"></i> Full image</a>`}
-    <a class="btn btn-sm" href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.${esc(isShot ? 'png' : ext)}"><i class="fa-solid fa-download" aria-hidden="true"></i> Download</a>
-    ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="fa-solid fa-code-fork" aria-hidden="true"></i> Fork</a>` : ''}
-    <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Share</button>
-    ${!restricted && p.visibility === 'public' && !p.burn_after_read ? `<a class="btn btn-sm" href="${esc(comments && comments.thread.forum_url || '#comments')}"><i class="fa-solid fa-comments" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
-    ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>` : ''}
+    ${!isShot ? `<button type="button" class="btn btn-sm btn-primary" data-copy-content="${esc(p.slug)}"><i class="ovg-fill" data-ov-icon="copy" aria-hidden="true"></i> Copy</button>` : ''}
+    ${!isShot ? `<a class="btn btn-sm" href="/p/${esc(pageSlug)}/raw"><i class="ovg-fill" data-ov-icon="file" aria-hidden="true"></i> Raw</a>` : `<a class="btn btn-sm" href="/p/${esc(pageSlug)}/screenshot"><i class="ovg-fill" data-ov-icon="image" aria-hidden="true"></i> Full image</a>`}
+    <a class="btn btn-sm" href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.${esc(isShot ? 'png' : ext)}"><i class="ovg-fill" data-ov-icon="download" aria-hidden="true"></i> Download</a>
+    ${!isShot ? `<a class="btn btn-sm" href="/new?fork=${esc(p.slug)}"><i class="ovg-fill" data-ov-icon="branch" aria-hidden="true"></i> Fork</a>` : ''}
+    <button type="button" class="btn btn-sm" data-ov-share-sheet data-title="${esc(title)}" data-kind="paste" data-id="${esc(p.slug)}"><i class="ovg-fill" data-ov-icon="nodes" aria-hidden="true"></i> Share</button>
+    ${!restricted && p.visibility === 'public' && !p.burn_after_read ? `<a class="btn btn-sm" href="${esc(comments && comments.thread.forum_url || '#comments')}"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> Discuss in the forum</a>` : ''}
+    ${isOwner ? `<button type="button" class="btn btn-sm btn-danger" data-delete="${esc(p.slug)}"><i class="ovg-fill" data-ov-icon="trash" aria-hidden="true"></i> Delete</button>` : ''}
   </div>`;
 
     const offer = share && share.transfer ? `<div id="paste-offer" data-transfer="${esc(share.transfer.id)}" data-username="${esc(p.username || '')}" data-display-name="${esc(p.display_name || '')}" data-expires="${esc(share.transfer.expires_at || '')}" data-keep-access="${share.transfer.keep_access ? '1' : '0'}"></div>` : '';
@@ -538,17 +538,17 @@ ${offer}
       ${authorHtml(p)}
       ${locked ? '' : `<span class="sep">·</span>${langBadge(p)}`}
       <span class="sep">·</span><time datetime="${esc(ld.isoDate(p.created_at) || '')}" itemprop="datePublished">${esc(fmtDate(p.created_at))}</time>
-      <span class="sep">·</span><span class="stat" title="Views"><i class="fa-solid fa-eye" aria-hidden="true"></i> ${num(p.views)} views</span>
+      <span class="sep">·</span><span class="stat" title="Views"><i class="ovg-fill" data-ov-icon="eye" aria-hidden="true"></i> ${num(p.views)} views</span>
       ${!isShot && !locked && hl ? `<span class="sep">·</span><span class="stat">${num(hl.lines)} lines</span>` : ''}
-      ${locked ? `<span class="sep">·</span><span class="badge badge-lock"><i class="fa-solid fa-lock" aria-hidden="true"></i> locked</span>` : ''}
-      ${share && share.audience && share.audience !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="fa-solid fa-${share.audience === 'private' ? 'lock' : share.audience === 'people' ? 'users' : 'eye-slash'}" aria-hidden="true"></i> ${esc(share.audience === 'link' ? 'anyone with the link' : share.audience === 'people' ? 'specific people' : 'only me')}</span>` : ''}
-      ${p.burn_after_read ? `<span class="sep">·</span><span class="badge badge-burn"><i class="fa-solid fa-fire" aria-hidden="true"></i> burns after reading</span>` : ''}
+      ${locked ? `<span class="sep">·</span><span class="badge badge-lock"><i class="ovg-fill" data-ov-icon="lock" aria-hidden="true"></i> locked</span>` : ''}
+      ${share && share.audience && share.audience !== 'public' ? `<span class="sep">·</span><span class="badge badge-vis"><i class="ovg-fill" data-ov-icon="${share.audience === 'private' ? 'lock' : share.audience === 'people' ? 'members' : 'eye-off'}" aria-hidden="true"></i> ${esc(share.audience === 'link' ? 'anyone with the link' : share.audience === 'people' ? 'specific people' : 'only me')}</span>` : ''}
+      ${p.burn_after_read ? `<span class="sep">·</span><span class="badge badge-burn"><i class="ovg-fill" data-ov-icon="fire" aria-hidden="true"></i> burns after reading</span>` : ''}
     </p>
-    ${p.ai_summary ? `<p class="summary" itemprop="description"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> ${esc(p.ai_summary)}</p>` : ''}
+    ${p.ai_summary ? `<p class="summary" itemprop="description"><i class="ovg-fill" data-ov-icon="wand" aria-hidden="true"></i> ${esc(p.ai_summary)}</p>` : ''}
     ${actions}
   </header>
   ${bodyBlock}
-  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.ovlk"><i class="fa-solid fa-lock" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
+  ${locked ? `<p class="locked-file muted small"><a href="/p/${esc(pageSlug)}/download" download="${esc(pageSlug)}.ovlk"><i class="ovg-fill" data-ov-icon="lock" aria-hidden="true"></i> Download the locked file (.ovlk)</a> — it opens only with its key, in the Locker.</p>` : ''}
   <footer class="paste-foot">
     <p class="muted small">Stored by <a href="${esc(config.mediaUrl)}" rel="noopener">OpenVibe.Media</a>, account by <a href="${NETWORK_URL}" rel="noopener">OpenVibe.Network</a>. Something wrong with this paste? <a href="${esc(config.liveUrl)}/dmca">Report it</a>.</p>
   </footer>
@@ -558,7 +558,7 @@ ${p.burn_after_read ? '' : `<section class="section">
   ${require('./comments').commentPanel({ page: comments, user, base: `/p/${pageSlug}`, action: `/p/${pageSlug}/comments`, sort: commentSort, replyId, expandedId, expandedReplies })}
 </section>`}
 ${!locked && related && related.length ? `<section class="section" id="related">
-  <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a></div>
+  <div class="section-head"><h2>More like this</h2><a class="more" href="${!isShot && p.language && p.language !== 'text' ? `/pastes?lang=${encodeURIComponent(p.language)}` : '/pastes'}">Browse <i class="ovg-fill" data-ov-icon="arrow-right" aria-hidden="true"></i></a></div>
   ${cardGrid(related, { title: 'No related pastes yet', text: 'Related pastes appear here when this one is linked with others.' })}
 </section>` : ''}
 <script src="${ovServe.url('ov-share.js')}" defer></script>${locked ? `

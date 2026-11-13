@@ -40,7 +40,7 @@ function itemHtml(s) {
 
 function listBlock(items, { empty, action = null, prev, next }) {
     return `${items.length ? `<ol class="thread-list pulse-list">${items.map(itemHtml).join('')}</ol>` : kit.empty({ icon: 'mail', title: empty.title, text: empty.text, action })}
-  ${prev || next ? `<nav class="pager" aria-label="Pages">${prev ? `<a href="${esc(prev)}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> Newest</a>` : '<span></span>'}<span></span>${next ? `<a rel="next" href="${esc(next)}">Older <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}`;
+  ${prev || next ? `<nav class="pager" aria-label="Pages">${prev ? `<a href="${esc(prev)}"><i class="ovg-fill" data-ov-icon="back" aria-hidden="true"></i> Newest</a>` : '<span></span>'}<span></span>${next ? `<a rel="next" href="${esc(next)}">Older <i class="ovg-fill" data-ov-icon="chevron" aria-hidden="true"></i></a>` : '<span></span>'}</nav>` : ''}`;
 }
 
 function submitForm({ user, values = {}, error = null }) {
@@ -54,7 +54,7 @@ function submitForm({ user, values = {}, error = null }) {
   <label class="field"><span>Link (a clip, a picture, anything with an address)</span><input type="url" name="url" maxlength="2000" value="${esc(values.url || '')}" placeholder="https://"></label>
   <label class="field"><span>Description (Markdown)</span><textarea name="body" rows="8" maxlength="10000">${esc(values.body || '')}</textarea></label>
   <div class="form-actions">
-    <button class="btn btn-primary" type="submit"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Submit for review</button>
+    <button class="btn btn-primary" type="submit"><i class="ovg-fill" data-ov-icon="plane" aria-hidden="true"></i> Submit for review</button>
     <span class="muted small">Sending as <strong>${esc(user.display_name || user.username || 'you')}</strong>. Moderators review it before it is public. By submitting you agree to the <a href="/terms">rules</a>.</span>
   </div>
 </form>`;
@@ -94,7 +94,7 @@ ${submitForm({ user, values, error })}`;
 
 /** GET /submissions/:slug */
 function submissionPage({ submission: s, user = null, error = null }) {
-    const link = s.url ? `<p><a class="btn" href="${esc(s.url)}" rel="nofollow ugc noopener" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open the link</a> <span class="muted small">${esc(s.url)}</span></p>` : '';
+    const link = s.url ? `<p><a class="btn" href="${esc(s.url)}" rel="nofollow ugc noopener" target="_blank"><i class="ovg-fill" data-ov-icon="open" aria-hidden="true"></i> Open the link</a> <span class="muted small">${esc(s.url)}</span></p>` : '';
     const media = s.media_ref ? `<p class="muted small">OpenVibe.Media object <code>${esc(s.media_ref)}</code></p>` : '';
     const review = s.status !== 'pending' && (s.review_note || s.reviewer)
         ? `<aside class="alert"><strong>${esc(STATUS_LABELS[s.status])}</strong>${s.reviewer ? ` by ${who(s.reviewer)}` : ''}${s.reviewed_at ? ` · ${timeTag(s.reviewed_at)}` : ''}${s.review_note ? `<p>${esc(s.review_note)}</p>` : ''}</aside>` : '';

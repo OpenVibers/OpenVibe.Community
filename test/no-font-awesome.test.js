@@ -62,18 +62,21 @@ for (const f of LAYOUTS) {
     assert.ok(/shell\.page|ov-glyphs\.js|\/shared\/navbar/.test(t), `${f} renders pages without the navbar or /shared/ov-glyphs.js`);
 }
 
-// Every fa- name in the pages, the scripts and the server views is drawn by a glyph or a brand.
-const MOD = /^(solid|regular|light|thin|duotone|brands|sharp|classic|fw|lg|xl|xs|sm|2xs|2xl|\d+x|li|ul|border|inverse|pull-left|pull-right|rotate-\d+|rotate-by|flip-horizontal|flip-vertical|flip-both|width-auto|spin|spin-pulse|spin-reverse|pulse|beat|beat-fade|bounce|fade|flip|shake|stack|stack-1x|stack-2x|layers|layers-text|layers-counter|swap-opacity|stack-text)$/;
+// No Font Awesome markup is left: every icon names an OpenVibe glyph or brand, and the name is one that is drawn.
 const files = [];
 for (const r of CODE_ROOTS) files.push(...walk(path.join(ROOT, r), /\.(html|js)$/));
 const missing = new Map();
 for (const f of files) {
-    for (const m of fs.readFileSync(f, 'utf8').matchAll(/\bfa-([a-z0-9]+(?:-[a-z0-9]+)*)\b/g)) {
-        const n = m[1];
-        if (MOD.test(n) || glyphs.fromFa(n) || brands.fromFa(n)) continue;
-        if (!missing.has(n)) missing.set(n, rel(f));
+    const t = fs.readFileSync(f, 'utf8');
+    const fa = t.match(/class=["'][^"']*\bfa-[a-z][^"']*["']/);
+    assert.ok(!fa, `${rel(f)} still uses Font Awesome markup: ${fa ? fa[0] : ''}`);
+    assert.ok(!/\bfa-(solid|regular|brands|light)\b/.test(t), `${rel(f)} still names a Font Awesome style class`);
+    for (const m of t.matchAll(/data-ov-(icon|brand)="([a-z0-9-]+)"/g)) {
+        const [kind, name] = [m[1], m[2]];
+        const drawn = kind === 'icon' ? glyphs.NAMES.includes(name) : Boolean(brands.BRANDS[name]);
+        if (!drawn && !missing.has(`${kind}:${name}`)) missing.set(`${kind}:${name}`, rel(f));
     }
 }
-assert.deepStrictEqual([...missing].map(([n, f]) => `fa-${n} (${f})`), [], 'every icon this site names is drawn by the OpenVibe glyphs or brands');
+assert.deepStrictEqual([...missing].map(([n, f]) => `${n} (${f})`), [], 'every icon this site names is drawn by the OpenVibe glyphs or brands');
 
-console.log(`no font awesome: ${pages.length} pages, ${files.length} files, every fa- name drawn`);
+console.log(`no font awesome: ${pages.length} pages, ${files.length} files, every icon named is drawn`);

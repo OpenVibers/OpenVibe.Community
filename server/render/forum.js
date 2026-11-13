@@ -52,21 +52,21 @@ function moderationFields(id) {
 
 /** A moderator's form to remove one post (its opening post removes the thread instead). */
 function postModerationForm(base, post) {
-    return `<form class="post-mod inline-form" method="post" action="${esc(base)}/post/${Number(post.id)}/delete">${moderationFields(`post-${post.id}`)}<button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete post</button></form>`;
+    return `<form class="post-mod inline-form" method="post" action="${esc(base)}/post/${Number(post.id)}/delete">${moderationFields(`post-${post.id}`)}<button class="btn btn-sm btn-danger" type="submit"><i class="ovg-fill" data-ov-icon="trash" aria-hidden="true"></i> Delete post</button></form>`;
 }
 
 function pager(href, page, pages, labels = ['Newer', 'Older']) {
     if (pages <= 1) return '';
     return `<nav class="pager" aria-label="Pages">
-    ${page > 1 ? `<a rel="prev" href="${esc(href(page - 1))}"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i> ${labels[0]}</a>` : '<span></span>'}
+    ${page > 1 ? `<a rel="prev" href="${esc(href(page - 1))}"><i class="ovg-fill" data-ov-icon="back" aria-hidden="true"></i> ${labels[0]}</a>` : '<span></span>'}
     <span class="pager-info">Page ${page} of ${pages}</span>
-    ${page < pages ? `<a rel="next" href="${esc(href(page + 1))}">${labels[1]} <i class="fa-solid fa-chevron-right" aria-hidden="true"></i></a>` : '<span></span>'}
+    ${page < pages ? `<a rel="next" href="${esc(href(page + 1))}">${labels[1]} <i class="ovg-fill" data-ov-icon="chevron" aria-hidden="true"></i></a>` : '<span></span>'}
   </nav>`;
 }
 
-const visBadge = (s) => (VIS_LABELS[s.visibility] ? ` <span class="badge badge-vis"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${esc(VIS_LABELS[s.visibility])}</span>` : '') + vipBadge(s);
+const visBadge = (s) => (VIS_LABELS[s.visibility] ? ` <span class="badge badge-vis"><i class="ovg-fill" data-ov-icon="lock" aria-hidden="true"></i> ${esc(VIS_LABELS[s.visibility])}</span>` : '') + vipBadge(s);
 /** A members-only (OpenVibe.VIP) space or thread. */
-const vipBadge = (x) => (x && x.members_only ? ` <span class="badge badge-vis badge-vip" title="For this creator's OpenVibe.VIP members"><i class="fa-solid fa-star" aria-hidden="true"></i> VIP members only</span>` : '');
+const vipBadge = (x) => (x && x.members_only ? ` <span class="badge badge-vis badge-vip" title="For this creator's OpenVibe.VIP members"><i class="ovg-fill" data-ov-icon="star" aria-hidden="true"></i> VIP members only</span>` : '');
 const vipJoin = (mo, label = 'Join on OpenVibe.VIP') => (mo && mo.join_url ? `<a class="btn btn-primary" href="${esc(mo.join_url)}" rel="noopener">${esc(label)}</a>` : '');
 
 // ── /forum ───────────────────────────────────────────────────────
@@ -98,14 +98,14 @@ ${list}`;
 
 // ── /forum/:space ────────────────────────────────────────────────
 function threadRow(t, space) {
-    const flags = `${t.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${t.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}`;
+    const flags = `${t.pinned ? '<i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${t.locked ? '<i class="ovg-fill" data-ov-icon="lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}`;
     const labels = labelsUi.inForce(t);
     return `<li class="thread-row${space.votes === false ? ' no-votes' : ''}"${labelsUi.attrs(labels, { owner: t.author && t.author.subject })}>
     ${space.votes === false ? '' : `<span class="thread-score" title="Score">${num(t.score)}</span>`}
     <div class="thread-main">
       <a class="thread-title" href="/forum/${esc(space.slug)}/${esc(t.slug)}">${flags}${esc(t.title)}</a>${statusBadge(t)}${categoryBadge(t, space)}${vipBadge(t)}
       ${labelsUi.chips(labels)}
-      <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
+      <p class="thread-meta">${who(t.author)} <span class="sep">·</span> ${timeTag(t.created_at)} <span class="sep">·</span> <span class="stat"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> ${num(t.reply_count)} ${t.reply_count === 1 ? 'reply' : 'replies'}</span>${t.reply_count ? ` <span class="sep">·</span> active ${timeTag(t.last_activity_at)}` : ''}</p>
     </div>
   </li>`;
 }
@@ -118,7 +118,7 @@ function chatRoomBox(space, { canManage = false, error = null } = {}) {
     const r = space.chat_room;
     if (!r && !canManage) return '';
     const kind = r ? ({ call: 'Call room', system: 'Announcements' }[r.kind] || 'Chat room') : '';
-    const link = r ? `<p><a class="btn" href="${esc(r.url)}" rel="noopener"><i class="fa-solid fa-comments" aria-hidden="true"></i> ${esc(r.name)}</a> <span class="muted small">${kind} on OpenVibe.Chat${r.visibility === 'private' ? ' · members only' : ''}</span></p>` : '';
+    const link = r ? `<p><a class="btn" href="${esc(r.url)}" rel="noopener"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> ${esc(r.name)}</a> <span class="muted small">${kind} on OpenVibe.Chat${r.visibility === 'private' ? ' · members only' : ''}</span></p>` : '';
     const manage = canManage ? `<details class="space-settings"${error ? ' open' : ''}><summary>${r ? 'Change or detach the chat room' : 'Attach a chat room'}</summary>
   ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
   <form class="paste-form" method="post" action="/forum/${esc(space.slug)}/chat-room">
@@ -140,13 +140,13 @@ function spacePage({ space, threads, sort, page, pages, total, user, categories 
     const statusNav = (space.statuses || []).length ? `<nav class="chips" aria-label="Status">${chip('Any status', spaceHref(space.slug, { sort, category }), !status)}${space.statuses.map((st) => chip(esc(STATUS_LABELS[st] || st), spaceHref(space.slug, { sort, category, status: st }), st === status)).join('')}</nav>` : '';
     const canStart = viewer.can_start !== false;
     const startLabel = space.thread_kind === 'request' ? 'New request' : space.thread_kind === 'roadmap' ? 'New roadmap item' : 'New thread';
-    const start = canStart ? `<p><a class="btn btn-primary" href="/forum/${esc(space.slug)}/new"><i class="fa-solid fa-plus" aria-hidden="true"></i> ${startLabel}</a>${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</p>`
+    const start = canStart ? `<p><a class="btn btn-primary" href="/forum/${esc(space.slug)}/new"><i class="ovg-fill" data-ov-icon="plus" aria-hidden="true"></i> ${startLabel}</a>${user ? '' : ' <span class="muted small">Sign in with your OpenVibe account to post.</span>'}</p>`
         : `<p class="muted small">Staff add roadmap items. Open one to ask about it or argue for it, or suggest something new in <a href="/forum/feedback">Feedback</a>.</p>`;
     const categoryName = category ? (categories.find((c) => c.slug === category) || {}).name : null;
     const body = `
 <header class="page-head">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/forum">Forum</a> › <span aria-current="page">${esc(space.name)}</span></nav>
-  <h1>${esc(space.name)}${visBadge(space)}${feedable ? ` <a class="rss-link" href="/forum/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="fa-solid fa-rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
+  <h1>${esc(space.name)}${visBadge(space)}${feedable ? ` <a class="rss-link" href="/forum/${esc(space.slug)}/feed.xml" title="RSS feed of ${esc(space.name)}"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i> RSS</a>` : ''}</h1>
   ${space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
   ${start}
 </header>
@@ -174,10 +174,10 @@ ${footer}
 /** The pin / lock / delete / members-only / status / category buttons (no JS), each with rule and reason. */
 function modActions({ base, space, thread, viewer, categories = [] }) {
     return viewer.can_moderate || viewer.can_delete ? `<div class="actions mod-actions">
-    ${viewer.can_moderate ? `<form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}">${moderationFields('pin')}<button class="btn btn-sm" type="submit"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
-    <form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}">${moderationFields('lock')}<button class="btn btn-sm" type="submit"><i class="fa-solid fa-lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
-    ${viewer.can_delete ? `<form class="mod-form" method="post" action="${esc(base)}/delete">${viewer.can_moderate ? moderationFields('delete') : ''}<button class="btn btn-sm btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
-    ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="fa-solid fa-star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
+    ${viewer.can_moderate ? `<form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}">${moderationFields('pin')}<button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="tack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
+    <form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}">${moderationFields('lock')}<button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
+    ${viewer.can_delete ? `<form class="mod-form" method="post" action="${esc(base)}/delete">${viewer.can_moderate ? moderationFields('delete') : ''}<button class="btn btn-sm btn-danger" type="submit"><i class="ovg-fill" data-ov-icon="trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
+    ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
     ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="mod-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select>${moderationFields('status')}<button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
     ${categories.length && (viewer.can_moderate || viewer.can_delete) ? `<form class="inline-form" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : ''}
   </div>` : '';
@@ -201,7 +201,7 @@ function pasteCards(p) {
     if (!list.length) return '';
     const { highlight, languageLabel } = require('./highlight');
     return `<div class="paste-embeds">${list.map((x) => `<figure class="paste-embed">
-      <figcaption><a href="${esc(x.url)}"><i class="fa-solid fa-${x.type === 'screenshot' ? 'image' : 'code'}" aria-hidden="true"></i> ${esc(x.title || 'Untitled')}</a>
+      <figcaption><a href="${esc(x.url)}"><i class="ovg-fill" data-ov-icon="${x.type === 'screenshot' ? 'image' : 'code'}" aria-hidden="true"></i> ${esc(x.title || 'Untitled')}</a>
         <span class="muted small">${x.type === 'screenshot' ? 'screenshot' : `${esc(languageLabel ? languageLabel(x.language) : x.language)} · ${num(x.lines)} ${x.lines === 1 ? 'line' : 'lines'}`}${x.visibility === 'unlisted' ? ' · unlisted' : ''}</span></figcaption>
       ${x.type === 'screenshot' && x.screenshot_url ? `<a href="${esc(x.url)}"><img src="${esc(x.screenshot_url)}" alt="${esc(x.title || 'Screenshot')}" loading="lazy"></a>` : `<pre class="paste-embed-code"><code class="hljs">${highlight(x.excerpt || '', x.language).html}</code></pre>${x.lines > 12 ? `<a class="small" href="${esc(x.url)}">See all ${num(x.lines)} lines</a>` : ''}`}
     </figure>`).join('')}</div>`;
@@ -212,9 +212,9 @@ function pasteCards(p) {
  */
 function crosspostBlock(c, base) {
     if (!c) return '';
-    const from = c.from ? `<p class="crosspost-note"><i class="fa-solid fa-right-left" aria-hidden="true"></i> Crossposted from <strong>${esc(c.from.space)}</strong>: <a href="${esc(c.from.url)}">${esc(c.from.title)}</a></p>` : '';
+    const from = c.from ? `<p class="crosspost-note"><i class="ovg-fill" data-ov-icon="swap" aria-hidden="true"></i> Crossposted from <strong>${esc(c.from.space)}</strong>: <a href="${esc(c.from.url)}">${esc(c.from.title)}</a></p>` : '';
     const to = (c.to || []).length ? `<p class="crosspost-note small muted">Also in ${c.to.map((x) => `<a href="${esc(x.url)}">${esc(x.space)}</a>`).join(', ')}</p>` : '';
-    const form = (c.targets || []).length ? `<details class="crosspost-form"><summary><i class="fa-solid fa-right-left" aria-hidden="true"></i> Crosspost</summary>
+    const form = (c.targets || []).length ? `<details class="crosspost-form"><summary><i class="ovg-fill" data-ov-icon="swap" aria-hidden="true"></i> Crosspost</summary>
       <form class="inline-form" method="post" action="${esc(base)}/crosspost"><label class="sr-only" for="crosspost-to">Crosspost to</label><select id="crosspost-to" name="to">${c.targets.map((t) => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Crosspost</button></form></details>` : '';
     return from || to || form ? `<div class="crosspost">${from}${to}${form}</div>` : '';
 }
@@ -236,7 +236,7 @@ function reactionBar(p, base, page, catalogue = []) {
     const chip = (r) => (p.can_react
         ? `<button class="rx rx-${esc(r.group || 'positive')}${r.mine ? ' mine' : ''}" type="submit" name="reaction" value="${esc(r.key)}" title="${esc(title(r))}" aria-pressed="${r.mine ? 'true' : 'false'}" aria-label="${esc(`${r.label}, ${r.count}`)}"><span aria-hidden="true">${r.emoji}</span> ${num(r.count)}</button>`
         : `<span class="rx rx-${esc(r.group || 'positive')}" title="${esc(title(r))}"><span aria-hidden="true">${r.emoji}</span> ${num(r.count)}<span class="sr-only"> ${esc(r.label)}</span></span>`);
-    const picker = p.can_react && catalogue.length ? `<details class="rx-pick"><summary><i class="fa-regular fa-face-smile" aria-hidden="true"></i> Rate</summary><div class="rx-menu">${['positive', 'negative', 'utility'].map((g) => {
+    const picker = p.can_react && catalogue.length ? `<details class="rx-pick"><summary><i data-ov-icon="smile" aria-hidden="true"></i> Rate</summary><div class="rx-menu">${['positive', 'negative', 'utility'].map((g) => {
         const list = catalogue.filter((r) => r.group === g);
         return list.length ? `<div class="rx-row">${list.map((r) => `<button class="rx-btn rx-${g}" type="submit" name="reaction" value="${esc(r.key)}" title="${esc(r.label)}"><span aria-hidden="true">${r.emoji}</span> ${esc(r.label)}</button>`).join('')}</div>` : '';
     }).join('')}</div></details>` : '';
@@ -257,9 +257,9 @@ function voteForm(base, thread, viewer) {
     if (!viewer.can_vote) return `<div class="vote"><span class="vote-score" title="Score">${num(thread.score)}</span></div>`;
     const btn = (value, icon, label) => {
         const active = thread.my_vote === value;
-        return `<button class="vote-btn${active ? ' active' : ''}" type="submit" name="value" value="${active ? 0 : value}" aria-pressed="${active}" aria-label="${label}"><i class="fa-solid ${icon}" aria-hidden="true"></i></button>`;
+        return `<button class="vote-btn${active ? ' active' : ''}" type="submit" name="value" value="${active ? 0 : value}" aria-pressed="${active}" aria-label="${label}"><i class="ovg-fill" data-ov-icon="${icon}" aria-hidden="true"></i></button>`;
     };
-    return `<form class="vote" method="post" action="${esc(base)}/vote">${btn(1, 'fa-arrow-up', 'Upvote')}<span class="vote-score" title="Score">${num(thread.score)}</span>${btn(-1, 'fa-arrow-down', 'Downvote')}</form>`;
+    return `<form class="vote" method="post" action="${esc(base)}/vote">${btn(1, 'arrow-up', 'Upvote')}<span class="vote-score" title="Score">${num(thread.score)}</span>${btn(-1, 'arrow-down', 'Downvote')}</form>`;
 }
 
 /**
@@ -270,7 +270,7 @@ function labelsBox(base, thread, viewer) {
     if (!viewer || !viewer.can_label) return '';
     const now = labelsUi.inForce(thread);
     const line = now.length ? now.map((l) => labelsUi.NAMES[l]).join(', ') : 'None set';
-    return `<details class="labels-box" id="labels"><summary><span class="labels-box-title"><i class="fa-solid fa-tag" aria-hidden="true"></i> Labels</span> <span class="labels-box-line">${esc(line)}</span></summary>
+    return `<details class="labels-box" id="labels"><summary><span class="labels-box-title"><i class="ovg-fill" data-ov-icon="tag" aria-hidden="true"></i> Labels</span> <span class="labels-box-line">${esc(line)}</span></summary>
   <form method="post" action="${esc(base)}/labels" class="labels-form">
   ${labelsUi.picker({ current: now, suggested: labelsUi.suggestedOf(thread), id: 'thread-labels' })}
   <div class="form-actions"><button class="btn btn-primary" type="submit">Save labels</button></div>
@@ -290,7 +290,7 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     <label class="field"><span>Reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
     ${imageField(attachmentsEnabled, space)}
     ${pasteField()}
-    <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="fa-solid fa-reply" aria-hidden="true"></i> Reply</button><span class="muted small">**bold**, *italic*, \`code\`, \`\`\` blocks, [links](https://…), &gt; quotes and lists.</span></div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="ovg-fill" data-ov-icon="reply" aria-hidden="true"></i> Reply</button><span class="muted small">**bold**, *italic*, \`code\`, \`\`\` blocks, [links](https://…), &gt; quotes and lists.</span></div>
   </form>`
         : thread.locked ? '<p class="alert">This thread is locked.</p>'
             : !user ? `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(base)}">Sign in with your OpenVibe account</a> to reply.</p>` : '';
@@ -304,11 +304,11 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
   <header class="thread-head">
     ${space.votes === false ? '' : voteForm(base, thread, viewer)}
     <div>
-      <h1>${thread.pinned ? '<i class="fa-solid fa-thumbtack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="fa-solid fa-lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
+      <h1>${thread.pinned ? '<i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="ovg-fill" data-ov-icon="lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       ${labelsUi.chips(labels)}
-      <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="fa-solid fa-comment" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
-      <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="fa-solid fa-rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
+      <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
+      <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
     </div>
   </header>
   ${crosspostBlock(crosspost, base)}
@@ -360,7 +360,7 @@ function newThreadPage({ space, user, values = {}, error = null, categories = []
   ${labelsUi.picker({ current: values.labels || [], id: 'new-labels' })}
   <label class="check"><input type="checkbox" name="members_only" value="1"${values.members_only ? ' checked' : ''}> Only my OpenVibe.VIP members can read and reply</label>
   <div class="form-actions">
-    <button class="btn btn-primary" type="submit" data-ov-guide="community.thread"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Post thread</button>
+    <button class="btn btn-primary" type="submit" data-ov-guide="community.thread"><i class="ovg-fill" data-ov-icon="plane" aria-hidden="true"></i> Post thread</button>
     <span class="muted small">Posting as <strong>${esc(user.display_name || user.username || 'you')}</strong>. By posting you agree to the <a href="/terms">rules</a>.</span>
   </div>
 </form>` : `<p class="alert"><a href="/auth/login?next=${encodeURIComponent(`/forum/${space.slug}/new`)}">Sign in with your OpenVibe account</a> to start a thread. Reading needs no account.</p>`;
@@ -400,7 +400,7 @@ function membersOnlyPage({ space, thread = null, members_only: mo = null, reason
     const body = `
 <header class="page-head">
   ${crumbs}
-  <h1>${esc(thread ? thread.title : space.name)} <span class="badge badge-vis badge-vip"><i class="fa-solid fa-star" aria-hidden="true"></i> VIP members only</span></h1>
+  <h1>${esc(thread ? thread.title : space.name)} <span class="badge badge-vis badge-vip"><i class="ovg-fill" data-ov-icon="star" aria-hidden="true"></i> VIP members only</span></h1>
   ${!thread && space.description ? `<p class="muted">${esc(space.description)}</p>` : ''}
 </header>
 <section class="members-only">
