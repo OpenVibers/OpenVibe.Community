@@ -61,7 +61,7 @@ const href = (kind, cursor = '', search = '') => { const q = new URLSearchParams
 function feedPage({ items = [], kind = '', q = '', examples = [], cursor = null, nextCursor = null, now = Date.now() } = {}) {
     const cards = items.filter((item) => item && item.kind);
     const chips = KINDS.map(([id, label]) => `<a class="tab${id === kind ? ' active' : ''}" href="${esc(href(id, '', q))}"${id === kind ? ' aria-current="page"' : ''}>${label}</a>`).join('');
-    const body = `<header class="page-head"><nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Feed</span></nav><h1>Feed</h1><p class="muted">What's happening across OpenVibe.</p></header>
+    const body = `<header class="page-head"><nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Feed</span></nav><h1>Feed</h1><p class="muted">What's happening across OpenVibe.</p></header>
 <form class="feed-find" action="/feed" method="get" role="search"><label for="feed-search" class="sr-only">Search the feed</label><i class="ovg-fill" data-ov-icon="search" aria-hidden="true"></i><input id="feed-search" type="search" name="q" value="${esc(q)}" placeholder="People, clips, sites, dates" maxlength="80">${kind ? `<input type="hidden" name="kind" value="${esc(kind)}">` : ''}<button type="submit">Search</button></form>
 ${examples.length ? `<p class="feed-try"><span>Try</span>${examples.map((x) => `<a href="${esc(href('', '', x.text))}">${esc(x.text)}</a>`).join('')}</p>` : ''}
 <nav class="tabs sort-tabs feed-kind-tabs" aria-label="Feed type">${chips}</nav>

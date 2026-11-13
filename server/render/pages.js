@@ -531,7 +531,7 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'to
     const body = `
 ${offer}
 <article class="paste" itemscope itemtype="https://schema.org/${isShot ? 'ImageObject' : 'Article'}">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/pastes">Pastes</a> › <span aria-current="page">${esc(ld.clean(title, 60))}</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <a href="/pastes">Pastes</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">${esc(ld.clean(title, 60))}</span></nav>
   <header class="paste-head">
     <h1 itemprop="headline">${p.is_nsfw ? '<span class="badge badge-nsfw">NSFW</span> ' : ''}${esc(title)}</h1>
     <p class="paste-meta">

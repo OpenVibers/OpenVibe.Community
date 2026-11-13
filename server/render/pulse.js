@@ -46,7 +46,7 @@ function pulsePage({ items, origin = '', after = null, nextCursor = null, origin
     const tabs = offered.map(([id, label]) => `<a class="tab${id === origin ? ' active' : ''}" href="${esc(href(id))}"${id === origin ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     const body = `
 <header class="page-head">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Pulse</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Pulse</span></nav>
   <h1>Pulse</h1>
   <p class="muted">Public activity from across OpenVibe as it happens: new pastes, threads and replies here, and what the other sites share. Only public things appear, and anything made by AI is labelled as AI.</p>
 </header>

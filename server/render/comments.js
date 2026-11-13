@@ -96,7 +96,7 @@ function threadPage({ accessId, page, user, after = null, sort = 'top', replyId 
 
     const body = `
 <article class="thread comment-thread">
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <span aria-current="page">Comments</span></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Home</a> <i data-ov-icon="chevron" aria-hidden="true"></i> <span aria-current="page">Comments</span></nav>
   <header class="page-head">
     <h1>Comments on ${esc(label)}</h1>
     <p class="muted">${num(thread.comment_count)} ${thread.comment_count === 1 ? 'comment' : 'comments'} · one thread, shown here and on ${esc(product)}${src ? ` · <a href="${esc(src)}">Open the ${esc(what)} on ${esc(product)}</a>` : ''}</p>
