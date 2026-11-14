@@ -212,13 +212,12 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .feed-kind-tabs { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; }
 body:has(.feed-kind-tabs) { overflow-x: clip; }
 html:has(.feed-kind-tabs) { overflow-x: clip; }
-.thread-row, .pulse-item { display: flex; gap: 14px; align-items: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
+.thread-row { display: flex; gap: 14px; align-items: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; }
 .thread-score { min-width: 2.6em; text-align: center; font-weight: 700; color: var(--text-secondary); padding-top: 2px; }
-.thread-main, .pulse-main { min-width: 0; flex: 1; }
+.thread-main { min-width: 0; flex: 1; }
 .thread-title { font-weight: 600; color: var(--text-primary); word-break: break-word; }
 .thread-title i { color: var(--accent-light); font-size: .85em; }
 .thread-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 4px 0 0; font-size: .82rem; color: var(--text-secondary); }
-.pulse-source { flex: none; margin-top: 2px; }
 .badge-ai { border-color: var(--info); color: var(--info-text, var(--info)); }
 .badge-relay { border-color: var(--accent-light); color: var(--accent-light); }
 .badge-vis { font-size: .7rem; vertical-align: middle; }
@@ -315,7 +314,7 @@ h1 .rss-link { font-size: .68rem; margin-left: 6px; }
   .code-wrap { max-height: none; }
   .gutter { display: none; }
   .code-wrap { grid-template-columns: 1fr; }
-  .thread-row, .pulse-item { flex-wrap: wrap; }
+  .thread-row { flex-wrap: wrap; }
   .thread-head { gap: 10px; }
   .paste-doc { padding: 2px 15px 16px; line-height: 1.6; }
   .paste-doc ul, .paste-doc ol { padding-left: 1.15em; }
@@ -430,9 +429,8 @@ button.rx:hover { border-color: var(--accent); }
 .search-snippet { margin: 4px 0 0; color: var(--text-secondary); overflow-wrap: anywhere; }
 .search-snippet mark { background: rgba(var(--accent-rgb), .22); color: inherit; border-radius: 3px; padding: 0 2px; }
 
-/* Pulse: new activity from Events realtime */
-.pulse-new { position: sticky; top: 8px; z-index: 5; display: flex; justify-content: center; margin: 0 0 10px; }
-.pulse-new[hidden] { display: none; }
+/* /pulse: the first page of the shared feed is drawn with the site's own thread rows (no rules of its own);
+   the shared feed (openvibe-shared/ov-home.js) replaces those cards in the browser. */
 
 /* A link inside running text is underlined: colour alone did not tell it apart (WCAG 1.4.1). Held to an element's weight
    (:where), so it beats the bare `a` rule but not a shared piece's own link style (showcase's "All forums →"). */

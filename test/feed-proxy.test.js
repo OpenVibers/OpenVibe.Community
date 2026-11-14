@@ -2,7 +2,8 @@
 /**
  * Pulse reads Network's one feed (feed.item@1): GET /api/v1/feed and /api/v1/pulse are the proxy, the
  * same ids as the menu; GET /api/v1/activity is Community's own public rows for Network's collector;
- * /feed and /pulse render those cards. No Pulse store is read or written.
+ * /feed renders those cards, and /pulse mounts the shared feed (test/pulse.test.js). No Pulse store is read
+ * or written.
  */
 const assert = require('assert');
 const { boot, check, done } = require('./helpers/app');
@@ -50,12 +51,6 @@ const ITEM = {
         assert.strictEqual(r.status, 200);
         assert.match(r.text, /Hello from the one feed/);
         assert.match(r.text, /new photos/);
-    });
-
-    await check('the /pulse page keeps its look, drawing the same feed rows', async () => {
-        const r = await t.get('/pulse');
-        assert.strictEqual(r.status, 200);
-        assert.match(r.text, /Hello from the one feed/);
     });
 
     await check('GET /api/v1/activity is Community\'s public rows only', async () => {

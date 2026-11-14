@@ -843,15 +843,12 @@ async function createApp(opts = {}) {
     app.use(createCommentPages({ comments, viewers, config }));
     app.use(createSubmissionPages({ submissions, viewers, config }));
     app.get('/pulse', viewers.middleware({ services: false }), wrap(async (req, res) => {
-        const origin = ['user', 'ai', 'system'].includes(String(req.query.origin || '')) ? String(req.query.origin) : '';
-        // Pulse is Network's one feed now (server/feed/proxy.js): its wall view keeps this page's look.
-        const out = await feedProxy.read('/api/v1/feed/wall', { limit: '24', cursor: String(req.query.after || '') }, require('./auth/routes').extractToken(req));
-        const all = ((out.body && out.body.items) || []).map((i) => ({
-            id: i.id, source: i.source, title: i.title, text: i.text, url: i.url, origin: i.origin, label: i.label,
-            actor: i.actor, occurred_at: i.occurred_at, picture_url: i.picture_url || (i.media && i.media.thumb) || null,
-        }));
-        const items = origin ? all.filter((i) => i.origin === origin) : all;
-        html(res, pulsePage({ items, origin, after: req.query.after || null, nextCursor: out.body && out.body.next_cursor, origins: all.length ? [...new Set(all.map((i) => i.origin))] : ['user', 'ai', 'system'] }));
+        // The one feed, the same one the menu's Feed tab shows (server/feed/proxy.js): the first page is
+        // rendered here for the crawlers and for a reader without JavaScript; the shared feed
+        // (openvibe-shared/ov-home.js) takes it over in the browser. Network is asked briefly: a page that
+        // waits is worse than a page that says the feed is loading.
+        const out = await feedProxy.read('/api/v1/feed', { limit: '20' }, null, 3000);
+        html(res, pulsePage({ items: (out.body && out.body.items) || [] }));
     }));
 
     app.get('/feed', viewers.middleware({ services: false }), wrap(async (req, res) => {

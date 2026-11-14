@@ -545,28 +545,25 @@ token. Setup, owner steps, limits and operations: [docs/discord-relay.md](docs/d
 
 ## Pulse
 
-A read model of public activity across the network, with provenance (`pulse_items`, unique
-per source service/type/id).
+The one feed of the whole network, owned by OpenVibe.Network (`feed.item@1`). Community reads it
+through its own proxy (`server/feed/proxy.js`), so the menu's Feed on every site and this site's
+`/pulse` show the same rows and the same ids.
 
-- **Community's own**: new public pastes written by a person (not burn-after-read, not NSFW),
-  new threads and replies in public spaces, and submissions once accepted — recorded at write time,
-  removed when deleted, made non-public, withdrawn or rejected, and re-checked against their source
-  on every read, so private, unlisted or unreviewed things never show.
-- **Other services** publish with `community.pulse.write`:
-  `POST /api/v1/pulse/items { ref, title, url, origin?, occurred_at?, visibility? }` — the
-  ref's `service` must be the caller's own (`svc:live` → `live`), `visibility` other than
-  `public` is refused, `X-OV-Subject` names the person for origin `user`. Re-posting a source
-  updates its title and link; origin, actor and time stay the first record's.
-  `DELETE /api/v1/pulse/items/:service/:type/:id` retracts one.
-- **From Events** (`POST /internal/events`, `server/pulse/consumer.js`):
-  - go-lives (`live.stream.started`), plus public, indexable Blog posts, Wiki pages and News stories;
-  - game milestones (roadmap WS-M task 2): Network's `network.module.updated` for a person's
-    `games.progress.summary`, whose `level` is a public field. The first record seen for a person is a
-    baseline. Each later record that crosses a multiple of 5 becomes one item, "Reached level 10 in Scraplandia"
-    (Games · level), with the person as actor. The last level per person is kept in `game_progress`.
-- **Reading**: `GET /api/v1/pulse?origin=user|ai|system&after=<cursor>&limit=` (newest first,
-  keyset cursor), and the `/pulse` page. AI items carry `label: 'AI'` and never an actor —
-  they are never attributed to a person (roadmap §33); system items name no one either.
+- **Reading**: `GET /api/v1/feed` (the feed itself), `GET /api/v1/feed/examples` (the example
+  searches) and `GET /api/v1/feed/search?q=` (a search in the feed). A signed-in person's own token
+  goes along, so the feed is theirs; a guest gets the public one. The old wall path
+  `GET /api/v1/pulse` still answers, with the same rows as `GET /api/v1/feed/wall`.
+- **The page**: `/pulse` mounts the shared feed (openvibe-shared/ov-home.js, `OpenVibeHome.feed`) —
+  the same component the menu's Feed tab draws. The first page is rendered on the server as well,
+  for the crawlers and for a reader whose JavaScript does not run; the script replaces those cards
+  with the shared ones. When Network does not answer, the page still answers and says the feed is
+  loading.
+- **Community's own rows**: `GET /api/v1/activity` — the public pastes, threads, replies and
+  accepted submissions Network's feed reads. Only public things leave here: a private, unlisted or
+  unreviewed row is filtered in SQL.
+- **What is left of the old Pulse**: the Events consumer (`server/pulse/consumer.js`) keeps
+  Community's own state — token cutoffs, blocks, the members-only cache and the account export and
+  deletion — and no longer builds feed rows.
 
 ## Submissions
 
