@@ -116,7 +116,7 @@ function createSpacesApi({ forum, viewers, limits }) {
     return router;
 }
 
-function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', mediaUrl = 'https://openvibe.media' }) {
+function createPostsApi({ forum, pulse = null, viewers, limits, db = null, baseUrl = '', mediaUrl = 'https://openvibe.media' }) {
     const router = express.Router();
     router.use(contracts.http.middleware());
     router.use(viewers.middleware());
@@ -169,8 +169,18 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', me
         // A picture-only post is named by what it shows (its alt text), so two of them are not "the same thread".
         const firstAlt = String((pictures[0] && pictures[0].alt) || '').trim();
         const title = `Status: ${text.replace(/https?:\/\/[^\s<>]+/gi, '').trim().slice(0, 110) || firstAlt.slice(0, 110) || `Shared a picture · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`}`;
-        const { thread, post } = await forum.createThread(v, 'status', { title, body: text, pictures: pictures.map((p) => ({ media_id: p.media_id, alt: String(p.alt || '') })) });
-        if (files.length) await forum.attachComposerFiles(v, post.id, files);
+        // The post, its paste and the thread they share are written together (plan §AB.36): a post with
+        // pictures also makes one paste, and the paste opens this post's thread, so the three are one thing.
+        // A post without pictures makes no paste, and nothing else changes.
+        const write = async () => {
+            const { thread, post } = await forum.createThread(v, 'status', { title, body: text, pictures: pictures.map((p) => ({ media_id: p.media_id, alt: String(p.alt || '') })) });
+            if (files.length) await forum.attachComposerFiles(v, post.id, files);
+            const paste = await forum.ensurePostPaste(v, { thread, post, spaceSlug: 'status' });
+            return { thread, post, paste };
+        };
+        const made = db ? await db.tx(write) : await write();
+        const { thread, post } = made;
+        const paste = made.paste ? made.paste.paste : null;
         if (pulse) {
             await pulse.forgetLocal('thread', thread.id);
             const first = (post.attachments || [])[0];
@@ -180,6 +190,8 @@ function createPostsApi({ forum, pulse = null, viewers, limits, baseUrl = '', me
             url: `${String(baseUrl).replace(/\/$/, '')}/forum/status/${thread.slug}`,
             pictures: (post.attachments || []).filter((a) => /^image\//.test(a.mime)).map((a) => ({ media_id: a.media_id, alt: a.alt || null, url: a.url })),
             attachments: files,
+            // The paste this post made (plan §AB.36): its address, and the thread they share.
+            paste: paste ? { slug: paste.slug, url: `${String(baseUrl).replace(/\/$/, '')}${made.paste.url}`, thread_url: `${String(baseUrl).replace(/\/$/, '')}/forum/status/${thread.slug}` } : null,
             created_at: thread.created_at };
     }, 201));
 

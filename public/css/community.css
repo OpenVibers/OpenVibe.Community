@@ -79,7 +79,7 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 .stat { display: inline-flex; align-items: center; gap: 4px; }
 
 /* Browse */
-.page-head { padding: 16px 0 8px; }
+.page-head { padding: 2px 0 6px; }
 .page-head h1 { margin-bottom: 4px; }
 .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 12px 0 20px; }
 .filters label { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: var(--text-secondary); }
@@ -92,7 +92,7 @@ a.badge:hover { border-color: var(--accent); text-decoration: none; color: var(-
 [data-results].loading { opacity: .5; pointer-events: none; }
 
 /* Paste page */
-.crumbs { font-size: .85rem; color: var(--text-muted); margin: 4px 0 14px; }
+.crumbs { font-size: .85rem; color: var(--text-muted); margin: 0 0 6px; }
 /* Underlined: a crumb link sits in muted text and must not be told apart by colour alone (axe link-in-text-block). */
 .crumbs a { text-decoration: underline; text-underline-offset: 2px; }
 .paste-head h1 { word-break: break-word; }
@@ -658,7 +658,16 @@ html[data-ov-motion=off] .paste-is-deleted main > :not(.paste-undo) { transition
 @media (hover: hover) and (pointer: fine) { .post .post-menu > .tool-btn { opacity: .35; transition: opacity .15s; } .post:hover .post-menu > .tool-btn, .post-menu[open] > .tool-btn, .post-menu > .tool-btn:focus-visible { opacity: 1; } }
 @media (max-width: 640px) { .tool-word { display: none; } .tool-btn { padding: 0; width: 40px; } .menu-pop { position: fixed; left: 12px !important; right: 12px !important; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); max-width: none; } }
 .reply-form .field > span:not(.sr-only) { display: none; }
-/* Design rule 201: the intro is one line on a computer, at most two on a phone. */
-@media (max-width: 640px) { .lede, .cm-fold-lede { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } }
-/* Design rule 201 (the owner, 11-14): a page starts within 12 px of the bar, 8 px on a phone. */
-@media (max-width: 640px) { .page { padding-top: 8px; } }
+
+/* 11-14 (the owner, on /forum with a phone: "this shit is a waste of space … more compact, especially on mobile"): a page
+   starts right under the bar, its intro is one short line (two at most on a phone), the title and its main action share
+   a row, and sections sit closer. */
+.page-head > p.muted { margin: 2px 0 0; font-size: .92rem; line-height: 1.45; }
+.page-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.page-head-row > h1 { margin: 0; }
+@media (max-width: 640px) {
+  .page { padding-top: 8px; }
+  .page-head h1 { font-size: 1.5rem; }
+  .page-head > p.muted { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: .88rem; }
+  .board-group { margin-top: 18px; }
+}

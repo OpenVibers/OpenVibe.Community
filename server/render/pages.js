@@ -467,6 +467,15 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'to
     const description = pasteDescription(p);
     // The screenshot is Community's own address: the proxy checks canView, never the Media object's URL.
     const shot = isShot ? screenshotSrc(p) : null;
+    // A paste made from a forum post (plan §AB.36): every picture of that post, and the post it came from.
+    const meta = (() => {
+        const raw = p.metadata;
+        if (!raw) return null;
+        if (typeof raw === 'object') return raw;
+        try { const o = JSON.parse(raw); return o && typeof o === 'object' ? o : null; } catch { return null; }
+    })();
+    const morePictures = Array.isArray(meta && meta.pictures) ? meta.pictures.filter((x) => x && x.url).slice(1) : [];
+    const fromPost = meta && meta.source_post && meta.source_post.url ? meta.source_post : null;
     // Specific people and Only me get a generic link preview, even for someone allowed to read them:
     // a crawler or a chat client must never learn the title, the description or the picture. A locked paste always
     // does: its words are not ours to describe.
@@ -495,7 +504,9 @@ function pastePage({ paste: p, related, user, comments = null, commentSort = 'to
         bodyBlock = `<figure class="shot${p.is_nsfw ? ' nsfw' : ''}">
     <a href="${esc(shot)}" target="_blank" rel="noopener"><img src="${esc(shot)}" alt="${esc(title)}"></a>
     ${p.content ? `<figcaption>${esc(p.content)}</figcaption>` : ''}
-  </figure>`;
+  </figure>${morePictures.map((x) => `<figure class="shot">
+    <a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.alt || title)}" loading="lazy"></a>
+  </figure>`).join('')}`;
     } else {
         const gutter = Array.from({ length: hl.lines }, (_, i) => i + 1).join('\n');
         // It scrolls (long lines, long pastes), so keyboard users must be able to reach and scroll it: a labelled region
@@ -546,6 +557,7 @@ ${offer}
       ${p.burn_after_read ? `<span class="sep">·</span><span class="badge badge-burn"><i class="ovg-fill" data-ov-icon="fire" aria-hidden="true"></i> burns after reading</span>` : ''}
     </p>
     ${p.ai_summary ? `<p class="summary" itemprop="description"><i class="ovg-fill" data-ov-icon="wand" aria-hidden="true"></i> ${esc(p.ai_summary)}</p>` : ''}
+    ${fromPost ? `<p class="paste-meta"><a href="${esc(fromPost.url)}"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> Posted in the forum</a></p>` : ''}
     ${actions}
   </header>
   ${bodyBlock}

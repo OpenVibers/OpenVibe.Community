@@ -88,11 +88,23 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
     // The id a thread is named by in every answer: its access id, for services as for browsers (C-14).
     const threadIdFor = (t) => t.access_id;
 
-    function shapeThread(t, v) {
+    /**
+     * The forum thread a comment thread is shown in: the thread it is bound to (a post that made a paste
+     * opens its own thread, plan §AB.36), or the item board it was mapped to (an item's own discussion).
+     */
+    async function forumUrlOf(t) {
+        if (!t.forum_thread_id) return null;
+        const row = await db.prepare('SELECT th.slug AS thread_slug, s.slug AS space FROM threads th JOIN spaces s ON s.id = th.space_id WHERE th.id = ?').get(t.forum_thread_id);
+        if (row) return `/forum/${row.space}/${row.thread_slug}`;
+        const board = t.ref_service === 'community' ? 'pastes' : forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`];
+        return board ? `/forum/${board}/item-${t.id}` : null;
+    }
+
+    async function shapeThread(t, v) {
         const id = threadIdFor(t, v);
         if (t.visibility === 'hidden' && !moderator(v)) return { id, access_id: t.access_id, ref: refOf(t), visibility: 'hidden', comment_count: null };
         return { id, access_id: t.access_id, ref: refOf(t), visibility: t.visibility, comment_count: t.comment_count,
-            forum_url: t.forum_thread_id ? `/forum/${t.ref_service === 'community' ? 'pastes' : forumLinks.BOARDS[`${t.ref_service}/${t.ref_type}`]}/item-${t.id}` : null,
+            forum_url: await forumUrlOf(t),
             created_at: isoTime(t.created_at), updated_at: isoTime(t.updated_at) };
     }
 
@@ -274,10 +286,14 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
                 if (!types || !types.includes(ref.type)) fail(403, 'ref.type_not_allowed', `Comments on ${ref.service}/${ref.type} can only be opened by that service`);
             }
             await checkCommunityRef(ref, v);
+            // A post that made a paste (plan §AB.36) has one conversation: the paste's thread. The post's
+            // own ref opens it instead of a second thread beside it.
+            const shared = await store.aliasThreadForRef(db, ref);
+            if (shared) return { thread: await shapeThread(shared, v), created: false };
             // Labels are display caches; only a service's word is taken for them.
             const label = v.kind === 'service' && ref.label ? String(ref.label).slice(0, 200) : null;
             const { thread, created } = await store.resolveThread(db, ref, { label, createdBy: v.subject || (v.kind === 'service' ? v.service : null) });
-            return { thread: shapeThread(thread, v), created };
+            return { thread: await shapeThread(thread, v), created };
         },
 
         /** Stage an attachment received by the service that owns the item. */
@@ -322,7 +338,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
          */
         async forRef(v, ref, q = {}) {
             await checkCommunityRef(ref, v);
-            const t = await store.getThreadByRef(db, ref);
+            const t = await store.threadForRef(db, ref);
             if (!t || (t.visibility === 'hidden' && !moderator(v))) return null;
             return await this.get(v, t.access_id, q);
         },
@@ -348,7 +364,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             }
             const comments = await shapeComments(rows, v, t, { freshen: true });
             return {
-                thread: shapeThread(t, v),
+                thread: await shapeThread(t, v),
                 comments,
                 next_cursor: hasMore && rows.length ? (sort === 'top' && q.parent == null
                     ? `${rows[rows.length - 1].score}:${rows[rows.length - 1].id}` : String(rows[rows.length - 1].id)) : null,
@@ -491,7 +507,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
         async getComment(v, commentId) {
             if (!v || v.kind !== 'service') fail(404, 'comment.not_found', 'Comment not found');
             const { comment: c, thread: t } = await visibleComment(v, commentId);
-            return { comment: (await shapeComments([c], v, t))[0], thread: shapeThread(t, v) };
+            return { comment: (await shapeComments([c], v, t))[0], thread: await shapeThread(t, v) };
         },
 
         /** PATCH /:commentId { message } — the author only. */
@@ -576,7 +592,7 @@ function createCommentService({ db, network = null, limits = {}, canViewPaste = 
             if (!VISIBILITIES.includes(visibility)) fail(400, 'thread.invalid_visibility', `visibility must be one of ${VISIBILITIES.join(', ')}`);
             const t = await threadById(v, id);
             if (!t) fail(404, 'thread.not_found', 'Comment thread not found');
-            return { thread: shapeThread(await store.setThreadVisibility(db, t.id, visibility), v) };
+            return { thread: await shapeThread(await store.setThreadVisibility(db, t.id, visibility), v) };
         },
     };
 }
