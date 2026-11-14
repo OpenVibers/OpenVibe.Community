@@ -53,7 +53,11 @@ function createActivity({ db, config = {} } = {}) {
     async function pastes(since, limit) {
         const rows = await db.prepare(`SELECT p.slug, p.title, p.content, p.origin, p.type, p.screenshot_url, p.views, p.likes, p.created_at,
                 p.owner_subject,
-                ct.comment_count
+                ct.comment_count,
+                (SELECT s2.slug || '/' || t2.slug FROM post_pastes pp JOIN posts o ON o.id = pp.post_id
+                    JOIN threads t2 ON t2.id = o.thread_id JOIN spaces s2 ON s2.id = t2.space_id
+                    WHERE pp.paste_id = p.id AND o.deleted_at IS NULL AND t2.deleted_at IS NULL AND s2.visibility = 'public'
+                    LIMIT 1) AS forum_path
             FROM pastes p
             LEFT JOIN comment_threads ct ON ct.ref_service = 'community' AND ct.ref_type = 'paste' AND ct.ref_id = p.slug
             WHERE p.visibility = 'public' AND p.deleted_at IS NULL AND COALESCE(p.is_nsfw, 0) = 0
@@ -67,6 +71,9 @@ function createActivity({ db, config = {} } = {}) {
                 service: 'community', type: 'paste', id: p.slug,
                 title: title || clean(p.title, 300) || (pic ? 'A picture' : 'A paste'), text: clean(p.content, 280),
                 url: `${base}/p/${encodeURIComponent(p.slug)}`,
+                // A paste that came from a forum post (plan §AB.36) also carries the thread it shares with that
+                // post: the post, the paste and the thread are one thing, and the feed card names both.
+                forum_url: p.forum_path ? `${base}/forum/${p.forum_path}` : null,
                 // Who posted it: their Network subject, so the feed can name them (feed.item@1 1.1.0).
                 actor: p.owner_subject || null, origin: p.origin === 'ai' ? 'ai' : 'user',
                 at: iso(p.created_at), kind: pic ? 'pic' : 'paste',
@@ -82,6 +89,10 @@ function createActivity({ db, config = {} } = {}) {
             FROM threads t JOIN spaces s ON s.id = t.space_id
             WHERE s.visibility = 'public' AND s.members_only_owner IS NULL AND t.members_only_owner IS NULL
               AND t.deleted_at IS NULL AND t.created_at >= ?
+              -- A thread whose opening post made a paste is in the feed as that paste (plan §AB.36): one item,
+              -- not two for the same post.
+              AND NOT EXISTS (SELECT 1 FROM post_pastes pp JOIN posts o ON o.id = pp.post_id JOIN pastes pa ON pa.id = pp.paste_id
+                    WHERE o.thread_id = t.id AND o.is_opening = 1 AND pa.deleted_at IS NULL AND pa.visibility = 'public' AND pa.burn_after_read = 0)
             ORDER BY t.created_at DESC LIMIT ?`).all(since, limit);
         return rows.map((t) => ({
             service: 'community', type: 'thread', id: String(t.id),

@@ -607,7 +607,7 @@ route('delete', '/api/v1/spaces/{space}/moderators/{subject}', {
 // ── /api/v1/posts — one forum post (server/forum/api.js) ────────────────────────────────────
 route('post', '/api/v1/posts', {
     operationId: 'createPost', summary: 'Post a status with pictures and files, in the Feed at once', tags: ['posts'], security: PERSON,
-    description: 'People only. Pictures are Media objects the person owns, each with required alt text. Other files are composer attachments from Media; the post is a thread in the Status space.',
+    description: 'People only. Pictures are Media objects the person owns, each with required alt text. Other files are composer attachments from Media; the post is a thread in the Status space. A post with pictures also makes one paste, which opens the post\'s thread: the answer carries the paste\'s address and the thread\'s, and a comment on the post and a comment on the paste are the same comment.',
     requestBody: body({ type: 'object', required: ['text'], properties: {
         text: str({ minLength: 1, maxLength: 2000 }),
         pictures: { type: 'array', maxItems: 4, items: { type: 'object', required: ['media_id', 'alt'], properties: {

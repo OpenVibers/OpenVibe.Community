@@ -41,6 +41,7 @@
  */
 const store = require('./store');
 const { spacePath, threadPath, RESERVED_SPACE_SLUGS } = require('./paths');
+const { canonicalSlug } = require('../pastes/url');
 const events = require('../events');
 const { applyVote, myVotes, parseVote } = require('../votes');
 const { fail, isoTime } = require('../http/v1');
@@ -100,6 +101,7 @@ const contentLabels = require('./labels');
 
 function createForumService({ db, network = null, pulse = null, relay = null, vip = null, media = null, chatRooms = null, limits = {}, config = {}, indexnow = null, fetchImpl = globalThis.fetch } = {}) {
     let commentService = null;
+    let pasteService = null;
     const authors = createAuthors({ db, network });
     const threadLimiter = createPersonLimiter({ cooldownSec: 30, perMinute: 3, noun: 'threads', ...(limits.threads || {}) });
     const postLimiter = createPersonLimiter({ cooldownSec: 10, perMinute: 6, noun: 'posts', ...(limits.posts || {}) });
@@ -407,6 +409,56 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         return out;
     }
 
+    /**
+     * A post with pictures also makes one paste (plan §AB.36, the owner: "when you put images in the feed, it
+     * should go to paste automatically, which also makes a community forum post … interconnected"): the post's
+     * pictures, the post's words as the paste's text, the poster as its owner, public as the post is.
+     *
+     * The paste opens the post's own forum thread, so the three are one thing: the post's feed item carries
+     * the paste's address and the thread's, the paste's page links back to the post, and a comment on the post
+     * and a comment on the paste are the same comment (the paste's thread is the post's thread).
+     *
+     * Idempotent on the post id: the same post again — a retry, a second call — makes nothing new.
+     * → { paste, created, url } | null (a post without pictures, or no paste service)
+     */
+    async function ensurePostPaste(v, { thread, post, spaceSlug }) {
+        if (!pasteService || !thread || !post) return null;
+        const pictures = await db.prepare(`SELECT media_id, url, mime, alt FROM attachments
+            WHERE post_id = ? AND mime LIKE 'image/%' ORDER BY position, media_id`).all(post.id);
+        if (!pictures.length) return null;
+        const made = await db.prepare(`SELECT p.* FROM post_pastes pp JOIN pastes p ON p.id = pp.paste_id
+            WHERE pp.post_id = ? ORDER BY pp.position LIMIT 1`).get(post.id);
+        if (made) return { paste: made, created: false };
+        const space = await store.getSpace(db, String(spaceSlug || ''));
+        const audience = space && space.visibility === 'public' && !space.members_only_owner ? 'public' : 'private';
+        const shown = pictures.map((p) => ({ media_id: p.media_id, url: p.url, alt: p.alt || '' }));
+        const source = {
+            id: post.id,
+            thread_id: thread.id,
+            space: space ? space.slug : null,
+            slug: thread.slug,
+            url: `${site}${threadPath((space && space.slug) || '', thread.slug)}#post-${post.id}`,
+        };
+        // The paste is named after the post: its words, or what the first picture shows. Never "Status: …":
+        // a paste is not a status, and the name is its address.
+        const words = String(post.body_markdown || '').replace(/\s+/g, ' ').trim();
+        const title = (words || shown[0].alt || 'A picture').slice(0, 120);
+        const paste = await pasteService.createPostPaste(v, {
+            title,
+            content: post.body_markdown,
+            pictures: shown,
+            audience,
+            metadata: { pictures: shown, source_post: source },
+        });
+        await db.prepare('INSERT INTO post_pastes (post_id, paste_id, position) VALUES (?, ?, 0) ON CONFLICT DO NOTHING').run(post.id, paste.id);
+        // One place to reply: the paste's comment thread is the post's thread, so a comment on the paste and a
+        // reply in the thread are the same conversation.
+        const { thread: ct } = await commentStore.resolveThread(db, { service: 'community', type: 'paste', id: paste.slug },
+            { label: thread.title, createdBy: post.author_subject || (v.kind === 'service' ? v.service : null) });
+        await db.prepare('UPDATE comment_threads SET forum_thread_id = ? WHERE id = ? AND forum_thread_id IS NULL').run(thread.id, ct.id);
+        return { paste, created: true, url: `/p/${canonicalSlug(paste)}` };
+    }
+
     async function attach(rows, postId) {
         const set = db.prepare('UPDATE attachments SET post_id = ?, position = ? WHERE media_id = ? AND post_id IS NULL');
         const linked = await db.prepare(`SELECT p.comment_id, ct.ref_service, ct.ref_type, ct.ref_id FROM posts p
@@ -468,12 +520,29 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         if (relay) await hook(async () => await relay.hideThreads(threadIds, 'made members-only'));
     }
 
+    /**
+     * The paste a deleted thread made goes with it (plan §AB.36): the post, the paste and the thread are
+     * one thing, so a picture the person took back is not left in the feed as a paste of its own.
+     */
+    async function removePostPastes(threadId) {
+        const rows = await db.prepare(`SELECT p.id, p.slug FROM post_pastes pp JOIN posts o ON o.id = pp.post_id
+            JOIN pastes p ON p.id = pp.paste_id
+            WHERE o.thread_id = ? AND o.is_opening = 1 AND p.deleted_at IS NULL`).all(threadId);
+        for (const row of rows) {
+            await db.prepare("UPDATE pastes SET deleted_at = ov_now(), visibility = 'private', updated_at = ov_now() WHERE id = ?").run(row.id);
+            // The share row is the authority: a closed paste is nobody's but its owner's.
+            await db.prepare("UPDATE shares SET audience = 'private' WHERE service = 'community' AND kind = 'paste' AND resource_id = ?").run(row.slug);
+        }
+        return rows.length;
+    }
+
     async function removeThread(v, thread, space, body = {}) {
         const mine = person(v) && thread.author_subject === v.subject;
         if (!mine && !await moderates(v, space)) fail(403, 'thread.not_yours', 'Only the author or a moderator deletes a thread');
         const fields = moderation.fields(body);
         await db.tx(async () => {
             await store.softDeleteThread(db, thread.id);
+            await removePostPastes(thread.id);
             if (!mine) {
                 await events.moderationAction(v, 'thread.deleted', { type: 'thread', id: String(thread.id), owner_subject: thread.author_subject || null });
                 await logModeration(v, space, { thread, action: 'delete', ...fields });
@@ -575,7 +644,15 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
     // ═════════════════════════════════════════════════════════
     return {
         setCommentService(service) { commentService = service; },
+        /** The paste service: a post with pictures also makes a paste (plan §AB.36). */
+        setPasteService(service) { pasteService = service; },
         SORTS: store.SORTS,
+
+        /**
+         * A post with pictures also makes one paste and opens the post's thread on it (plan §AB.36).
+         * → { paste, created, url } | null (a post without pictures makes no paste)
+         */
+        ensurePostPaste(v, { thread, post, spaceSlug }) { return ensurePostPaste(v, { thread, post, spaceSlug }); },
         THREADS_PER_PAGE,
         POSTS_PER_PAGE,
 
