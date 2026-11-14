@@ -53,9 +53,8 @@ function boardIndexPage({ groups = [], user, canModerate = false }) {
     const body = `
 <header class="page-head">
   ${crumbs([['Home', '/'], ['Forum', '/forum']])}
-  <h1>Forum</h1>
-  <p class="muted">Forums for the people of OpenVibe. Classic forums read like a message board, newest reply on top. Feed forums rank posts by votes. Read without an account; sign in to post, rate and vote. See what is happening across the network on <a href="/pulse">Pulse</a>.</p>
-  ${canModerate ? '<p><a class="btn btn-sm" href="/forum/new"><i class="ovg-fill" data-ov-icon="plus" aria-hidden="true"></i> New forum</a></p>' : ''}
+  <div class="page-head-row"><h1>Forum</h1>${canModerate ? '<a class="btn btn-sm" href="/forum/new"><i class="ovg-fill" data-ov-icon="plus" aria-hidden="true"></i> New forum</a>' : ''}</div>
+  <p class="muted">Talk with the people of OpenVibe. Read freely; <a href="/auth/login?next=%2Fforum">sign in</a> to post and vote. What is happening everywhere: <a href="/pulse">Pulse</a>.</p>
 </header>
 ${groups.length ? groups.map((g) => `<section class="board-group" id="g-${esc(g.slug || 'more')}" aria-labelledby="gh-${esc(g.slug || 'more')}">
   <h2 class="board-group-h" id="gh-${esc(g.slug || 'more')}">${esc(g.name)}</h2>
