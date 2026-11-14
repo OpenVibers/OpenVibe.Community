@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- /pulse is the shared feed now: the same component the menu's Feed tab draws (openvibe-shared's ov-home.js,
+  `OpenVibeHome.feed`), on the same Network feed, so the two can never drift apart. Community's own Pulse list —
+  its "Everything / People / AI / System" tabs, its rows and its "Older" links — is gone, and so is the Events
+  "show N new items" bar it carried. The page renders the first page of that same feed on the server for the
+  crawlers and for a reader without JavaScript; the script replaces those cards with the shared ones. When Network
+  does not answer, the page still answers and says the feed is loading. Test: `test/pulse.test.js`.
+
 - A comment may carry a file the person uploaded through Media's composer (composer.attachment@1): a video, a
   picture, an audio, a PDF or a text file. The comment names it as `{ media_attachment_id }` (in the JSON and in
   the no-JS form's field), Community asks Media (with its service token, naming the person) whether it exists, is

@@ -21,7 +21,12 @@ function createFeedProxy({ config, fetchImpl = globalThis.fetch }) {
     const base = String(config.networkInternalUrl || config.networkUrl || 'https://openvibe.network').replace(/\/+$/, '');
     const publicCache = new Map();
 
-    async function read(path, params, token) {
+    /**
+     * One read of Network's feed. The person's own token goes along when there is one (their own rows);
+     * a public read is cached for half a minute. A Network that does not answer gives an empty feed and
+     * `unavailable: true`, never an error: a feed is not a reason to fail a page.
+     */
+    async function read(path, params, token, timeoutMs = 8000) {
         const u = new URL(path, base);
         for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, String(v));
         const key = `${path}?${u.searchParams}`;
@@ -30,7 +35,7 @@ function createFeedProxy({ config, fetchImpl = globalThis.fetch }) {
             if (kept && Date.now() - kept.at < 30_000) return { status: 200, body: kept.body, cached: true };
         }
         try {
-            const r = await fetchImpl(u.href, { headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, signal: AbortSignal.timeout(8000) });
+            const r = await fetchImpl(u.href, { headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, signal: AbortSignal.timeout(timeoutMs) });
             const text = await r.text();
             if (!r.ok) throw new Error(`Network answered ${r.status}`);
             let body;
@@ -41,9 +46,9 @@ function createFeedProxy({ config, fetchImpl = globalThis.fetch }) {
             }
             return { status: 200, body, cached: false };
         } catch {
-            if (path === '/api/v1/feed/examples') return { status: 200, body: { examples: [] }, cached: false };
-            if (path === '/api/v1/feed/wall') return { status: 200, body: { items: [], next_cursor: null }, cached: false };
-            return { status: 200, body: { items: [], next_cursor: null }, cached: false };
+            if (path === '/api/v1/feed/examples') return { status: 200, body: { examples: [] }, cached: false, unavailable: true };
+            if (path === '/api/v1/feed/wall') return { status: 200, body: { items: [], next_cursor: null }, cached: false, unavailable: true };
+            return { status: 200, body: { items: [], next_cursor: null }, cached: false, unavailable: true };
         }
     }
 

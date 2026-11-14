@@ -4,7 +4,6 @@
  * empty state instead, and the one next action is a kit button. Each page that can show one loads kit.css.
  */
 const assert = require('assert');
-const { pulsePage } = require('../server/render/pulse');
 const { boardIndexPage, forumSpacePage } = require('../server/render/board');
 const { searchPage } = require('../server/render/search');
 const { submissionsPage, reviewQueuePage } = require('../server/render/submissions');
@@ -35,11 +34,6 @@ const checks = [
         const html = forumSpacePage({ space, threads: [], page: 1, pages: 1, total: 0, category: 'other', viewer: { can_start: true } });
         emptyState(html, 'Nothing here yet');
         has(html, 'See every topic');
-    }],
-    ['Pulse with nothing', () => {
-        const html = pulsePage({ items: [] });
-        emptyState(html, 'Nothing here yet');
-        has(html, 'Visit the forum');
     }],
     ['Search before a query', () => {
         const html = searchPage({ q: '', results: [] });
