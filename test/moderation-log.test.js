@@ -176,7 +176,8 @@ const has = (text, s, msg) => assert.ok(text.includes(s), msg || `expected to fi
         has(page.text, 'Rule applied…');
         has(page.text, 'name="reason"');
         has(page.text, 'maxlength="280"');
-        has(page.text, `<form class="mod-form" method="post" action="/forum/general/${thread2.slug}/state">`);
+        has(page.text, `<form class="menu-form" method="post" action="/forum/general/${thread2.slug}/state">`);
+        has(page.text, `formaction="/forum/general/${thread2.slug}/delete"`);
         has(page.text, `action="/forum/general/${thread2.slug}/post/${reply.json().post.id}/delete"`);
         has(page.text, 'Delete post');
     });

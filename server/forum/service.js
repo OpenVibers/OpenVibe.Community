@@ -382,6 +382,31 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
         return out;
     }
 
+    /**
+     * The paste an opening post only links to (an item's own discussion thread opens with "[its title](/p/slug)"), as the
+     * same card an attached paste gets (2026-11-14, the owner: "it should actually show the paste as an attachment on the
+     * person's post"). Shareable pastes only, at most two, and only where the post has none attached.
+     */
+    async function linkedPastes(rows, have) {
+        const out = new Map();
+        const SLUG = /(?:https:\/\/openvibe\.community)?\/p\/([A-Za-z0-9][A-Za-z0-9_-]{2,80})(?=[)\s"'#?]|$)/g;
+        for (const p of rows) {
+            if (!p || !p.is_opening || (have.get(p.id) || []).length) continue;
+            const slugs = [...new Set([...String(p.body_markdown || '').matchAll(SLUG)].map((m) => m[1]))].slice(0, 2);
+            for (const slug of slugs) {
+                const r = await db.prepare(`SELECT slug, title, language, type, screenshot_url, visibility, content FROM pastes
+                    WHERE slug = ? AND deleted_at IS NULL AND visibility != 'private' AND burn_after_read = 0`).get(slug);
+                if (!r) continue;
+                const lines = String(r.content || '').split('\n');
+                if (!out.has(p.id)) out.set(p.id, []);
+                out.get(p.id).push({ slug: r.slug, title: r.title, language: r.language || 'text', type: r.type, url: `/p/${r.slug}`,
+                    screenshot_url: r.type === 'screenshot' && r.screenshot_url ? `/p/${encodeURIComponent(r.slug)}/screenshot` : null,
+                    lines: r.content ? lines.length : 0, excerpt: r.type === 'screenshot' ? null : lines.slice(0, 12).join('\n').slice(0, 1500), linked: true });
+            }
+        }
+        return out;
+    }
+
     async function attach(rows, postId) {
         const set = db.prepare('UPDATE attachments SET post_id = ?, position = ? WHERE media_id = ? AND post_id IS NULL');
         const linked = await db.prepare(`SELECT p.comment_id, ct.ref_service, ct.ref_type, ct.ref_id FROM posts p
@@ -971,6 +996,7 @@ function createForumService({ db, network = null, pulse = null, relay = null, vi
             const ids = rows.map((p) => p.id);
             const att = await attachmentsOf(ids);
             const pasted = await pastesOf(ids);
+            for (const [id, cards] of await linkedPastes(rows, pasted)) pasted.set(id, cards);
             const rated = space.reactions !== 0 ? await reactions.reactionsFor(db, ids, person(v) ? v.subject : null) : new Map();
             const authorSubjects = rows.map((p) => p.author_subject);
             const stats = await store.authorStats(db, authorSubjects);

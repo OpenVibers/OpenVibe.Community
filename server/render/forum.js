@@ -50,6 +50,13 @@ function moderationFields(id) {
     return `<label class="sr-only" for="rule-${suffix}">Rule applied</label><select class="mod-rule" id="rule-${suffix}" name="rule"><option value="">Rule applied…</option>${MODERATION_RULES.map((r) => `<option value="${esc(r)}">${esc(label(r))}</option>`).join('')}</select><label class="sr-only" for="reason-${suffix}">Reason (optional, 280 characters)</label><input class="mod-reason" id="reason-${suffix}" name="reason" maxlength="280" placeholder="Reason (optional)" autocomplete="off">`;
 }
 
+/** A post's ⋯ menu: its link, and for a moderator the delete with its rule and reason (2026-11-14: "fixed buttons that look
+ *  nice and on hover or mobile aware layout"). */
+function postMenu(base, post, canModerate) {
+    return `<details class="tool-menu post-menu"><summary class="tool-btn is-quiet" title="More" aria-label="More for this post"><i class="ovg-fill" data-ov-icon="more" aria-hidden="true"></i></summary>
+    <div class="menu-pop" role="menu"><a class="menu-act" href="#post-${Number(post.id)}"><i class="ovg-fill" data-ov-icon="link" aria-hidden="true"></i><span>Link to this post</span></a>
+    ${canModerate && !post.is_opening ? postModerationForm(base, post) : ''}</div></details>`;
+}
 /** A moderator's form to remove one post (its opening post removes the thread instead). */
 function postModerationForm(base, post) {
     return `<form class="post-mod inline-form" method="post" action="${esc(base)}/post/${Number(post.id)}/delete">${moderationFields(`post-${post.id}`)}<button class="btn btn-sm btn-danger" type="submit"><i class="ovg-fill" data-ov-icon="trash" aria-hidden="true"></i> Delete post</button></form>`;
@@ -171,28 +178,45 @@ ${footer}
     });
 }
 
-/** The pin / lock / delete / members-only / status / category buttons (no JS), each with rule and reason. */
+/**
+ * The thread's moderation as one menu (2026-11-14, the owner: the rows of "Rule applied… / Reason / Pin / Lock / Delete" were
+ * "hella confusing and duplicate options"): a shield button opens it; the rule and the reason are asked once, and each
+ * action is a button that sends that one form to its own route (formaction; no JS). Status and category keep their own
+ * small forms inside the same menu.
+ */
 function modActions({ base, space, thread, viewer, categories = [] }) {
-    return viewer.can_moderate || viewer.can_delete ? `<div class="actions mod-actions">
-    ${viewer.can_moderate ? `<form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="pinned" value="${thread.pinned ? 0 : 1}">${moderationFields('pin')}<button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="tack" aria-hidden="true"></i> ${thread.pinned ? 'Unpin' : 'Pin'}</button></form>
-    <form class="mod-form" method="post" action="${esc(base)}/state"><input type="hidden" name="locked" value="${thread.locked ? 0 : 1}">${moderationFields('lock')}<button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="lock" aria-hidden="true"></i> ${thread.locked ? 'Unlock' : 'Lock'}</button></form>` : ''}
-    ${viewer.can_delete ? `<form class="mod-form" method="post" action="${esc(base)}/delete">${viewer.can_moderate ? moderationFields('delete') : ''}<button class="btn btn-sm btn-danger" type="submit"><i class="ovg-fill" data-ov-icon="trash" aria-hidden="true"></i> Delete thread</button></form>` : ''}
-    ${viewer.can_gate ? `<form method="post" action="${esc(base)}/members-only"><input type="hidden" name="on" value="${thread.members_only ? 0 : 1}"><button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="star" aria-hidden="true"></i> ${thread.members_only ? 'Open to everyone' : 'VIP members only'}</button></form>` : ''}
-    ${viewer.can_moderate && (space.statuses || []).length && thread.status ? `<form class="mod-form" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select>${moderationFields('status')}<button class="btn btn-sm" type="submit">Set status</button></form>` : ''}
-    ${categories.length && (viewer.can_moderate || viewer.can_delete) ? `<form class="inline-form" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : ''}
-  </div>` : '';
+    if (!(viewer.can_moderate || viewer.can_delete)) return '';
+    const act = (icon, label, attrs, cls = '') => `<button class="menu-act${cls}" type="submit" ${attrs}><i class="ovg-fill" data-ov-icon="${icon}" aria-hidden="true"></i><span>${label}</span></button>`;
+    const acts = [
+        viewer.can_moderate ? act('tack', thread.pinned ? 'Unpin' : 'Pin to the top', `formaction="${esc(base)}/state" name="pinned" value="${thread.pinned ? 0 : 1}"`) : '',
+        viewer.can_moderate ? act('lock', thread.locked ? 'Unlock replies' : 'Lock replies', `formaction="${esc(base)}/state" name="locked" value="${thread.locked ? 0 : 1}"`) : '',
+        viewer.can_gate ? act('star', thread.members_only ? 'Open to everyone' : 'VIP members only', `formaction="${esc(base)}/members-only" name="on" value="${thread.members_only ? 0 : 1}"`) : '',
+        viewer.can_delete ? act('trash', 'Delete thread', `formaction="${esc(base)}/delete"`, ' is-danger') : '',
+    ].filter(Boolean).join('');
+    const statusForm = viewer.can_moderate && (space.statuses || []).length && thread.status
+        ? `<form class="menu-row" method="post" action="${esc(base)}/status"><label class="sr-only" for="thread-status">Status</label><select id="thread-status" name="status">${space.statuses.map((st) => `<option value="${esc(st)}"${st === thread.status ? ' selected' : ''}>${esc(STATUS_LABELS[st] || st)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set status</button></form>` : '';
+    const categoryForm = categories.length
+        ? `<form class="menu-row" method="post" action="${esc(base)}/category"><label class="sr-only" for="thread-category">Category</label><select id="thread-category" name="category"><option value="">No category</option>${categories.map((c) => `<option value="${esc(c.slug)}"${thread.category && thread.category.slug === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit">Set category</button></form>` : '';
+    return `<details class="tool-menu mod-menu"><summary class="tool-btn" title="Moderate" aria-label="Moderate this thread"><i class="ovg-fill" data-ov-icon="shield" aria-hidden="true"></i><span class="tool-word">Moderate</span></summary>
+    <div class="menu-pop" role="menu">
+      <form class="menu-form" method="post" action="${esc(base)}/state">
+        ${viewer.can_moderate ? `<div class="menu-why">${moderationFields('thread')}</div>` : ''}
+        ${acts}
+      </form>
+      ${statusForm}${categoryForm}
+    </div>
+  </details>`;
 }
 
 // ── /forum/:space/:slug ────────────────────────────────────────
 function postHtml(p, n, { base = '', page = 1, catalogue = [], canModerate = false } = {}) {
     if (p.deleted) return `<article class="post post-deleted" id="post-${p.id}"><p class="muted small">#${n} · This post was deleted.</p></article>`;
     return `<article class="post${p.is_opening ? ' post-opening' : ''}" id="post-${p.id}">
-    <header class="post-head">${who(p.author)} <span class="sep">·</span> <a class="muted small" href="#post-${p.id}">${timeTag(p.created_at)}</a>${p.revision > 1 ? ` <span class="sep">·</span> <span class="muted small" title="Edited ${esc(fmtDate(p.updated_at))}">edited</span>` : ''}<span class="post-num muted small">#${n}</span></header>
+    <header class="post-head">${who(p.author)} <span class="sep">·</span> <a class="muted small" href="#post-${p.id}">${timeTag(p.created_at)}</a>${p.revision > 1 ? ` <span class="sep">·</span> <span class="muted small" title="Edited ${esc(fmtDate(p.updated_at))}">edited</span>` : ''}<span class="post-num muted small">#${n}</span>${postMenu(base, p, canModerate)}</header>
     <div class="md">${p.body_html}</div>
     ${postImages(p)}
     ${pasteCards(p)}
     ${reactionBar(p, base, page, catalogue)}
-    ${canModerate && !p.is_opening ? postModerationForm(base, p) : ''}
   </article>`;
 }
 /** Pastes attached to a post: a card with the first lines (highlighted), or the screenshot. */
@@ -207,6 +231,19 @@ function pasteCards(p) {
     </figure>`).join('')}</div>`;
 }
 
+/** Where a thread came from and where else it lives (the notes under its title). */
+function crosspostNotes(c) {
+    if (!c) return '';
+    const from = c.from ? `<p class="crosspost-note"><i class="ovg-fill" data-ov-icon="swap" aria-hidden="true"></i> Crossposted from <strong>${esc(c.from.space)}</strong>: <a href="${esc(c.from.url)}">${esc(c.from.title)}</a></p>` : '';
+    const to = (c.to || []).length ? `<p class="crosspost-note small muted">Also in ${c.to.map((x) => `<a href="${esc(x.url)}">${esc(x.space)}</a>`).join(', ')}</p>` : '';
+    return from || to ? `<div class="crosspost">${from}${to}</div>` : '';
+}
+/** The thread's ⋯ menu: crosspost it to another space (signed in, when there is one). */
+function moreMenu(c, base) {
+    if (!c || !(c.targets || []).length) return '';
+    return `<details class="tool-menu more-menu"><summary class="tool-btn" title="More" aria-label="More for this thread"><i class="ovg-fill" data-ov-icon="more" aria-hidden="true"></i></summary>
+    <div class="menu-pop" role="menu"><form class="menu-row" method="post" action="${esc(base)}/crosspost"><label class="sr-only" for="crosspost-to">Crosspost to</label><select id="crosspost-to" name="to">${c.targets.map((t) => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select><button class="btn btn-sm" type="submit"><i class="ovg-fill" data-ov-icon="swap" aria-hidden="true"></i> Crosspost</button></form></div></details>`;
+}
 /**
  * Where a thread came from, where else it lives, and (signed in) a form to crosspost it to another space.
  */
@@ -285,9 +322,9 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
     const indexable = space.visibility === 'public' && !gated;
     const first = (page - 1) * perPage;
     const replyBlock = viewer.can_reply
-        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply" data-ovc-compose data-ovc-preset="comment" data-ovc-user="${esc(JSON.stringify({ display_name: user.display_name || user.username || 'you' }))}">
+        ? `<form class="paste-form reply-form" method="post" action="${esc(base)}/reply" id="reply" data-ovc-compose data-ovc-preset="comment">
     ${error ? `<p class="alert alert-error" role="alert">${esc(error)}</p>` : ''}
-    <label class="field"><span>Reply (Markdown)</span><textarea name="body" rows="7" maxlength="40000" required placeholder="Say it, own it.">${esc(draft)}</textarea></label>
+    <label class="field"><span class="sr-only">Reply (Markdown)</span><textarea name="body" rows="4" maxlength="40000" required placeholder="Write a reply…">${esc(draft)}</textarea></label>
     ${imageField(attachmentsEnabled, space)}
     ${pasteField()}
     <div class="form-actions"><button class="btn btn-primary" type="submit"><i class="ovg-fill" data-ov-icon="reply" aria-hidden="true"></i> Reply</button><span class="muted small">**bold**, *italic*, \`code\`, \`\`\` blocks, [links](https://…), &gt; quotes and lists.</span></div>
@@ -307,12 +344,11 @@ function threadPage({ space, thread, posts, page, pages, perPage = 50, viewer, u
       <h1>${thread.pinned ? '<i class="ovg-fill" data-ov-icon="tack" title="Pinned" aria-hidden="true"></i><span class="sr-only">Pinned</span> ' : ''}${thread.locked ? '<i class="ovg-fill" data-ov-icon="lock" title="Locked" aria-hidden="true"></i><span class="sr-only">Locked</span> ' : ''}${esc(thread.title)}${vipBadge(thread)}</h1>
       ${thread.status || thread.category ? `<p class="thread-tags">${statusBadge(thread)}${categoryBadge(thread, space)}</p>` : ''}
       ${labelsUi.chips(labels)}
-      <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
-      <p class="thread-follow"><a class="rss-link" href="${esc(base)}/feed.xml" title="RSS feed of this thread"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i> Follow this thread by RSS</a> ${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</p>
+      <p class="paste-meta">${who(thread.author)} <span class="sep">·</span> <time datetime="${esc(thread.created_at || '')}" data-ov-time="day">${esc(fmtDate(thread.created_at))}</time> <span class="sep">·</span> <span class="stat"><i class="ovg-fill" data-ov-icon="chat" aria-hidden="true"></i> ${num(thread.reply_count)} ${thread.reply_count === 1 ? 'reply' : 'replies'}</span></p>
+      <div class="thread-tools"><a class="tool-btn" href="${esc(base)}/feed.xml" title="Follow this thread by RSS"><i class="ovg-fill" data-ov-icon="rss" aria-hidden="true"></i><span class="tool-word">Follow</span></a>${moreMenu(crosspost, base)}${modBlock}<span class="tool-ask">${kit.askAgent({ text: `About the forum thread “${thread.title}” (${config.baseUrl}${base}): ` })}</span></div>
     </div>
   </header>
-  ${crosspostBlock(crosspost, base)}
-  ${modBlock}
+  ${crosspostNotes(crosspost)}
   ${labelBox}
   <div class="posts"${labelsUi.attrs(labels, { owner: thread.author && thread.author.subject, opened: true })}>${posts.map((p, i) => postHtml(p, first + i + 1, { base, page, catalogue: reactions, canModerate: viewer.can_moderate })).join('\n')}</div>
   ${pager((n) => `${base}${n > 1 ? `?page=${n}` : ''}`, page, pages, ['Earlier', 'Later'])}
