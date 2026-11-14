@@ -648,6 +648,12 @@ html[data-ov-motion=off] .paste-is-deleted main > :not(.paste-undo) { transition
 .menu-act.is-danger, .menu-act.is-danger > i { color: var(--danger-text, #f87171); }
 .menu-row { display: flex; gap: 6px; align-items: center; padding: 6px; margin: 0; }
 .menu-row select { flex: 1; min-width: 0; }
+/* One size and one look for every field and button in a menu (the owner, 11-14: "sized the same, pixel perfect … considers theme"). */
+.menu-pop :is(select, input[type=text], input:not([type]), .mod-reason, .mod-rule) { box-sizing: border-box; height: 40px; min-height: 40px; padding: 0 12px; border-radius: var(--ov-radius-1, 10px); border: 1px solid var(--border); background: var(--bg-primary, transparent); color: var(--text-primary); font: inherit; font-size: .9rem; }
+.menu-pop :is(select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.menu-pop .menu-row .btn { box-sizing: border-box; height: 40px; min-width: 76px; padding: 0 14px; border-radius: var(--ov-radius-1, 10px); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.menu-pop .menu-act { min-height: 44px; }
+
 .post-head .post-menu { margin-left: auto; }
 .post-menu .post-mod { display: grid; gap: 6px; margin: 4px 0 0; padding: 6px; border-top: 1px solid var(--border); }
 .post-menu .post-mod .mod-rule, .post-menu .post-mod .mod-reason { width: 100%; box-sizing: border-box; }
