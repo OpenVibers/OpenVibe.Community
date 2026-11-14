@@ -63,7 +63,8 @@ function fmtDate(v) {
 }
 function timeTag(v) {
     const iso = ld.isoDate(v);
-    return iso ? `<time datetime="${esc(iso)}" title="${esc(fmtDate(v))}">${esc(timeAgo(v))}</time>` : '';
+    // "5 minutes ago" as written; its title becomes the moment in the reader's own zone and clock (openvibe-shared 4.248.0).
+    return iso ? `<time datetime="${esc(iso)}" data-ov-time="ago" title="${esc(fmtDate(v))}">${esc(timeAgo(v))}</time>` : '';
 }
 function num(n) { return Number(n || 0).toLocaleString('en-US'); }
 function authorName(p) { return p.display_name || p.username || 'Anonymous'; }

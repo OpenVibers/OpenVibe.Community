@@ -618,3 +618,39 @@ button.rx:hover { border-color: var(--accent); }
 @media (min-width: 560px) { .paste-undo small { flex-basis: auto; margin-left: auto; } }
 .paste-is-deleted main > :not(.paste-undo) { opacity: .35; filter: grayscale(.7); pointer-events: none; transition: opacity .25s ease; }
 html[data-ov-motion=off] .paste-is-deleted main > :not(.paste-undo) { transition: none; }
+
+/* ── The thread's tools and menus (2026-11-14; the owner: "hella confusing and duplicate options … icon buttons … fixed
+   buttons that look nice and on hover or mobile aware layout"). One row of icon buttons under the title; Moderate and
+   ⋯ open small menus (no JS: <details>); a post's ⋯ sits at the end of its head, quiet until hovered on a computer. ── */
+.thread-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 0; }
+.tool-btn { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 40px; height: 40px; padding: 0 12px;
+  border-radius: var(--ov-radius-1, 10px); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary);
+  font: inherit; font-size: .88rem; font-weight: 650; text-decoration: none; cursor: pointer; list-style: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 3px 8px -5px rgba(0,0,0,.5); transition: border-color .15s, background-color .15s; }
+.tool-btn::-webkit-details-marker { display: none; }
+.tool-btn:hover, .tool-btn:focus-visible { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); outline: 0; }
+.tool-btn > i { display: grid; place-items: center; width: 18px; height: 18px; font-size: 16px; }
+.tool-btn.is-quiet { min-width: 34px; height: 34px; padding: 0; border-color: transparent; background: transparent; box-shadow: none; color: var(--text-secondary); }
+.tool-btn.is-quiet:hover, .tool-btn.is-quiet:focus-visible, .tool-menu[open] > .tool-btn.is-quiet { background: color-mix(in srgb, var(--text-primary) 8%, transparent); color: var(--text-primary); }
+.thread-tools .tool-ask { display: inline-flex; }
+.tool-menu { position: relative; }
+.tool-menu[open] > .tool-btn:not(.is-quiet) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-card)); }
+.menu-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 240px; max-width: min(340px, calc(100vw - 32px)); padding: 6px;
+  border-radius: var(--ov-radius-2, 14px); border: 1px solid var(--border); background: var(--bg-card); box-shadow: 0 18px 44px -14px rgba(0,0,0,.65); display: grid; gap: 2px; }
+.post-menu .menu-pop { left: auto; right: 0; }
+.menu-form { display: grid; gap: 2px; margin: 0; }
+.menu-why { display: grid; gap: 6px; padding: 6px 6px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.menu-why .mod-rule, .menu-why .mod-reason { width: 100%; box-sizing: border-box; min-height: 40px; padding: 8px 10px; border-radius: var(--ov-radius-1, 10px); border: 1px solid var(--border); background: var(--bg-primary, transparent); color: var(--text-primary); font: inherit; font-size: .9rem; }
+.menu-act { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 8px 10px; border: 0; border-radius: var(--ov-radius-1, 10px);
+  background: transparent; color: var(--text-primary); font: inherit; font-size: .92rem; font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; }
+.menu-act > i { width: 18px; display: grid; place-items: center; color: var(--text-secondary); }
+.menu-act:hover, .menu-act:focus-visible { background: color-mix(in srgb, var(--text-primary) 8%, transparent); outline: 0; }
+.menu-act.is-danger, .menu-act.is-danger > i { color: var(--danger-text, #f87171); }
+.menu-row { display: flex; gap: 6px; align-items: center; padding: 6px; margin: 0; }
+.menu-row select { flex: 1; min-width: 0; }
+.post-head .post-menu { margin-left: auto; }
+.post-menu .post-mod { display: grid; gap: 6px; margin: 4px 0 0; padding: 6px; border-top: 1px solid var(--border); }
+.post-menu .post-mod .mod-rule, .post-menu .post-mod .mod-reason { width: 100%; box-sizing: border-box; }
+@media (hover: hover) and (pointer: fine) { .post .post-menu > .tool-btn { opacity: .35; transition: opacity .15s; } .post:hover .post-menu > .tool-btn, .post-menu[open] > .tool-btn, .post-menu > .tool-btn:focus-visible { opacity: 1; } }
+@media (max-width: 640px) { .tool-word { display: none; } .tool-btn { padding: 0; width: 40px; } .menu-pop { position: fixed; left: 12px !important; right: 12px !important; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); max-width: none; } }
+.reply-form .field > span:not(.sr-only) { display: none; }
