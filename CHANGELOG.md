@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A post with pictures also makes one paste (plan §AB.36, the owner: "when you put images in the feed, it should go to paste automatically, which also makes a community forum post … interconnected"): the post's pictures, the post's words as the paste's text, the poster as its owner, public as the post is. The paste opens the post's own forum thread, so the post, the paste and the thread are one thing: the post's feed item carries the paste's address and the thread's, the paste's page links back to the post, and a comment on the post and a comment on the paste are the same comment. A post without pictures makes no paste, and the same post again makes nothing new (it is idempotent on the post id). Test: `test/feed-post-paste.test.js`.
+
 - /pulse is the shared feed now: the same component the menu's Feed tab draws (openvibe-shared's ov-home.js,
   `OpenVibeHome.feed`), on the same Network feed, so the two can never drift apart. Community's own Pulse list —
   its "Everything / People / AI / System" tabs, its rows and its "Older" links — is gone, and so is the Events

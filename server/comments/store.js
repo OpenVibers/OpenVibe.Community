@@ -27,6 +27,23 @@ async function getThreadByRef(db, ref) {
 }
 
 /**
+ * The thread of a Community post that is also a paste (plan §AB.36): the post and the paste it made are
+ * one conversation, so the post's own ref finds the paste's thread. Null when the post has no public paste.
+ */
+async function aliasThreadForRef(db, ref) {
+    if (!ref || ref.service !== 'community' || ref.type !== 'post' || !/^\d{1,15}$/.test(String(ref.id))) return null;
+    const slug = await db.prepare(`SELECT p.slug FROM post_pastes pp JOIN pastes p ON p.id = pp.paste_id
+        WHERE pp.post_id = ? AND p.deleted_at IS NULL AND p.visibility = 'public' AND p.burn_after_read = 0`).get(Number(ref.id));
+    if (!slug) return null;
+    return await getThreadByRef(db, { service: 'community', type: 'paste', id: slug.slug });
+}
+
+/** The thread of a ref: its own, or the one it shares with the paste it became (aliasThreadForRef). */
+async function threadForRef(db, ref) {
+    return await getThreadByRef(db, ref) || await aliasThreadForRef(db, ref);
+}
+
+/**
  * Get-or-create the thread of an entity. Idempotent and race-safe: the UNIQUE(service, type, id)
  * constraint decides, INSERT … ON CONFLICT DO NOTHING never fails, and the row is read back.
  * A label (from a service) refreshes the cached one. → { thread, created }
@@ -208,4 +225,4 @@ async function listNewest(db, threadId, { limit = 50, offset = 0 } = {}) {
     return top;
 }
 
-module.exports = { getThread, getThreadByAccessId, getThreadByRef, resolveThread, setThreadVisibility, getComment, replyTargets, listAttachments, createAttachment, stagedAttachments, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };
+module.exports = { getThread, getThreadByAccessId, getThreadByRef, aliasThreadForRef, threadForRef, resolveThread, setThreadVisibility, getComment, replyTargets, listAttachments, createAttachment, stagedAttachments, insertComment, editComment, softDeleteComment, listTopLevel, listReplies, listNewest };

@@ -607,6 +607,45 @@ function createPasteService({ db, network = null, media = null, config = {}, lim
         /** POST /api/pastes with locked: true */
         async createLocked(v, body = {}) { return await lockedCreate(v, body); },
 
+        /**
+         * A paste made from a forum post (plan §AB.36: pictures in the feed become a paste): the post's
+         * pictures, the post's words as the paste's text, the poster as its owner, public as the post is.
+         *
+         * It is one paste per post, made by the forum service (server/forum/service.js: ensurePostPaste),
+         * which links it back to the post and opens the post's thread on it. The paste is an image paste:
+         * its first picture is the one the feed card shows, and every picture is in its metadata, so the
+         * page shows them all.
+         *
+         * The unsafe-image review does not run here: the picture was already accepted by the forum's own
+         * upload (the same bytes are already public on the post), and a review that made the paste
+         * private would leave the post public and the paste not — the two would disagree.
+         * → the stored row
+         */
+        async createPostPaste(v, { title, content = '', pictures = [], audience = 'public', metadata = null } = {}) {
+            if (!pictures.length) fail(400, 'paste.no_pictures', 'A post paste carries at least one picture');
+            const who = audience === 'public' ? 'public' : 'private';
+            const row = await db.tx(async () => {
+                const r = await store.insertPaste(db, {
+                    slug: await store.generateSlug(db, { secret: false }),
+                    owner_subject: v.subject || null,
+                    origin: v.origin === 'ai' ? 'ai' : 'user',
+                    type: 'screenshot',
+                    title: store.sanitizeTitle(title),
+                    content: String(content == null ? '' : content),
+                    language: 'text',
+                    visibility: visibilityFor(who),
+                    screenshot_url: String(pictures[0].url || ''),
+                    metadata: metadata ? JSON.stringify(metadata) : null,
+                    burn_after_read: 0,
+                    is_nsfw: 0,
+                });
+                await registerShare(v, r, who);
+                return r;
+            });
+            await tell((p) => p.pasteCreated(row));
+            return row;
+        },
+
         /** POST /api/pastes (text) */
         async createText(v, body = {}) {
             if (truthy(body.locked)) return await lockedCreate(v, body);

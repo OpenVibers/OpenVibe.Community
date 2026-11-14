@@ -295,6 +295,8 @@ async function createApp(opts = {}) {
         const service = createPasteService({ db, network, media: pasteMedia, config, limits: opts.pasteLimits, pulse, indexnow, shares: sharing, review });
         source.use(service);
         app.locals.pastes = service;
+        // A post with pictures also makes a paste (plan §AB.36): the forum service writes it.
+        forum.setPasteService(service);
         app.locals.pasteMedia = pasteMedia;
         app.locals.pasteReview = review;
         if (opts.startPasteHashWorker !== false) app.locals.pasteHashTimer = require('./pastes/content-hash').start({ db, media: mediaObjects, screenshots: pasteMedia });
@@ -357,7 +359,7 @@ async function createApp(opts = {}) {
     // and these deliveries carry token cutoffs and account deletions.
     app.use('/internal/events', pulseConsumer.router);
     app.use('/api/v1/spaces', createSpacesApi({ forum, viewers, limits }));
-    app.use('/api/v1/posts', createPostsApi({ forum, pulse, viewers, limits, baseUrl: config.baseUrl, mediaUrl: config.mediaUrl }));
+    app.use('/api/v1/posts', createPostsApi({ forum, pulse, viewers, limits, db, baseUrl: config.baseUrl, mediaUrl: config.mediaUrl }));
     app.use('/api/v1/space-groups', createGroupsApi({ forum, viewers, limits }));
     app.use('/api/v1/relay', createRelayApi({ relay, db, viewers, inbound: relayInbound, limits }));
     // OpenVibe.Services reads a person's pastes and spaces here (community.resource.read, a service token on loopback;
