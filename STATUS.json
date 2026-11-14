@@ -8,7 +8,7 @@
   "port": 4200,
   "domain": "openvibe.community",
   "contracts": "openvibe-contracts v0.425.0",
-  "sdk": "openvibe-sdk v0.167.0",
+  "sdk": "openvibe-sdk v0.168.0",
   "shared": "openvibe-shared v4.247.0",
   "capabilities": [
     "community.paste.create",
@@ -44,5 +44,5 @@
     "N-1 compatibility tests",
     "per-actor limits (openvibe-sdk/limits)"
   ],
-  "updated": "2026-11-13"
+  "updated": "2026-11-14"
 }
