@@ -879,3 +879,9 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 - Tools: https://openvibe.tools (OpenVibers/OpenVibe.Tools)
 - Media: https://openvibe.media (OpenVibers/OpenVibe.Media)
 - Games: https://openvibe.games (OpenVibers/OpenVibe.Games)
+
+<!-- versions:start -->
+- openvibe-contracts: v0.443.0
+- openvibe-sdk: v0.177.0
+- openvibe-shared: v4.288.0
+<!-- versions:end -->
