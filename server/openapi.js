@@ -113,6 +113,12 @@ route('post', '/api/pastes', {
     } },
     responses: { 201: json('The paste', { type: 'object', properties: { paste: ref('Paste') } }), ...errors() },
 });
+route('post', '/api/forum/preview', {
+    operationId: 'previewForumPost', summary: 'A post as it will be published', tags: ['forum'], security: PERSON,
+    description: 'The Markdown of a forum post or reply drawn by the site\'s own renderer, for the person writing it (same site only; stores nothing). At most 40,000 characters are read.',
+    requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { body: str({ maxLength: 40000 }) } } } } },
+    responses: { 200: json('The sanitised HTML', { type: 'object', properties: { html: str() } }), ...errors([401, 403, 429]) },
+});
 route('get', '/api/pastes/config', {
     operationId: 'getPasteConfig', summary: 'The paste editor\'s limits and languages', tags: ['pastes'], security: ANONYMOUS,
     responses: { 200: json('Limits, languages and options'), ...errors([429]) },
