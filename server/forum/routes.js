@@ -35,6 +35,7 @@ const pages = require('../render/pages');
 const forumPages = require('../render/forum');
 const boardPages = require('../render/board');
 const { ApiError } = require('../http/v1');
+const { renderMarkdown } = require('../render/markdown');
 const { spacePath, threadPath, legacyForumPath } = require('./paths');
 const { draftPrefill } = require('./prefill');
 
@@ -101,6 +102,17 @@ function createForumRoutes({ forum, viewers, config }) {
             html(res, boardPages.newSpacePage({ groups: await forum.groups() }));
         } catch (err) { failPage(req, res, err, next); }
     }));
+    /**
+     * A post's preview (plan 2026-11-13 §Y.1 A9: "Forum needs a Markdown preview"): the words exactly as this site will
+     * publish them, from the same renderer, for the person writing them. Signed in, same site, under /api/'s rate limit;
+     * it stores nothing. Up to the post's own 40,000 characters.
+     */
+    router.post('/api/forum/preview', withViewer, sameOrigin, express.json({ limit: '128kb' }), wrap(async (req, res) => {
+        if (!req.user) return res.status(401).json({ error: { code: 'auth.required', message: 'Sign in to preview a post' } });
+        const source = String((req.body && req.body.body) || '').slice(0, 40000);
+        res.set('Cache-Control', 'no-store').json({ html: source.trim() ? renderMarkdown(source) : '' });
+    }));
+
     router.post('/forum/new', withViewer, sameOrigin, form, wrap(async (req, res, next) => {
         const b = req.body || {};
         const values = { name: b.name, slug: b.slug, description: b.description, style: b.style === 'feed' ? 'feed' : 'forum', votes: b.votes === '1', reactions: b.reactions === '1', group: b.group || null };

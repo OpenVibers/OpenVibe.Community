@@ -267,6 +267,17 @@ h1 .rss-link { font-size: .68rem; margin-left: 6px; }
 .post-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .88rem; color: var(--text-secondary); }
 .post-num { margin-left: auto; }
 .md { overflow-wrap: anywhere; }
+/* A post's preview (public/js/composer.js): a quiet switch under the box, and the words as the site will publish them. */
+.ovc-preview-bar { display: flex; justify-content: flex-end; margin: 6px 0 0; }
+.ovc-preview-btn { min-height: 36px; padding: 6px 14px; border: 1px solid var(--border, rgba(148, 163, 184, .3)); border-radius: 999px;
+  background: transparent; color: var(--text-secondary, #96a7c2); font: inherit; font-size: .88rem; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+.ovc-preview-btn:hover, .ovc-preview-btn:focus-visible { color: var(--text-primary, #e6edf7); border-color: var(--accent, #4f8cff); }
+.ovc-preview-btn[aria-pressed="true"] { color: var(--text-primary, #e6edf7); background: color-mix(in srgb, var(--accent, #4f8cff) 14%, transparent); border-color: var(--accent, #4f8cff); }
+.ovc-preview { margin: 8px 0 0; padding: 12px 14px; border: 1px dashed var(--border, rgba(148, 163, 184, .3)); border-radius: 12px; min-height: 3em;
+  animation: ovc-preview-in .2s ease both; transition: opacity .15s; }
+.ovc-preview.is-loading { opacity: .6; }
+@keyframes ovc-preview-in { from { opacity: 0; transform: translateY(calc(4px * var(--ov-move, 1))); } }
+html[data-ov-motion="off"] .ovc-preview { animation: none; }
 .md > :first-child { margin-top: .6em; }
 .md > :last-child { margin-bottom: 0; }
 .md blockquote { margin: .6em 0; padding: 4px 14px; border-left: 3px solid var(--border-light); color: var(--text-secondary); }
