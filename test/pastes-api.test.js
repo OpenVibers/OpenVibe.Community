@@ -397,6 +397,14 @@ const { boot, check, done } = require('./helpers/app');
         assert.strictEqual(shot.headers.get('content-type'), 'image/jpeg');
         assert.ok(shot.text.includes('pixels'), 'the proxy serves the bytes');
         assert.strictEqual(shot.headers.get('location'), null, 'never a Media URL');
+        // A public screenshot is read from Media once, then served from memory (2026-11-19: 0.54 s a read).
+        const realBytes = t.app.locals.pasteMedia.bytes;
+        let mediaReads = 0;
+        t.app.locals.pasteMedia.bytes = async function (...args) { mediaReads += 1; return realBytes.apply(this, args); };
+        try {
+            for (let i = 0; i < 3; i += 1) assert.ok((await call(`/p/${shotSlug}/screenshot`)).text.includes('pixels'), 'the same bytes');
+            assert.strictEqual(mediaReads, 0, 'kept since the first read');
+        } finally { t.app.locals.pasteMedia.bytes = realBytes; }
         assert.strictEqual((await call(`/p/${shotSlug}/raw`)).headers.get('location'), `/p/${shotUrl}/screenshot`);
         assert.strictEqual((await call(`/p/${alexSlug}/screenshot`)).status, 404);
         const burn = (await call('/api/pastes', { method: 'POST', cookie: alexJwt, json: { content: 'once', burn_after_read: true } })).json().slug;

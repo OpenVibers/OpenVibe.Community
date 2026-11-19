@@ -755,6 +755,21 @@ async function createApp(opts = {}) {
     // The screenshot proxy: the one place a screenshot's bytes leave Community. The paste's share
     // check decides (canView, through screenshotUrl), then the bytes come from Media with Community's
     // token. The Media object's own URL is never handed to a browser.
+    // A public screenshot's bytes are kept in this process (48 MB at most, the oldest out): each read asked Media for a
+    // signed address and downloaded (and resized) the picture again, 0.54 s on average (2026-11-19).
+    const shotsKept = new Map();
+    let shotsKeptBytes = 0;
+    const SHOTS_KEPT_MAX = 48 * 1024 * 1024;
+    const keepShot = (key, got) => {
+        if (!got || !got.body || got.body.length > 4 * 1024 * 1024 || shotsKept.has(key)) return;
+        shotsKept.set(key, got);
+        shotsKeptBytes += got.body.length;
+        while (shotsKeptBytes > SHOTS_KEPT_MAX && shotsKept.size) {
+            const [oldest, value] = shotsKept.entries().next().value;
+            shotsKept.delete(oldest);
+            shotsKeptBytes -= value.body.length;
+        }
+    };
     app.get('/p/:slug/screenshot', withUser, async (req, res) => {
         if (!SLUG_RE.test(req.params.slug)) return notFound(res);
         const variant = screenshotVariant(req.query);
@@ -762,13 +777,19 @@ async function createApp(opts = {}) {
         try {
             await app.locals.pastes.screenshotUrl(req.viewer, req.params.slug);
             const row = await db.prepare('SELECT media_ref, screenshot_url, visibility, burn_after_read, locked FROM pastes WHERE (slug = ? OR public_id = ?) AND deleted_at IS NULL').get(req.params.slug, require('./pastes/url').publicIdOfRef(req.params.slug) || '');
-            const got = row ? await app.locals.pasteMedia.bytes(row, variant) : null;
-            if (!got) return notFound(res);
+            if (!row) return notFound(res);
             // A public paste's screenshot never changes under this URL, so it is cached like any other
             // content-addressed asset: the home page shows six of them and each is several hundred KB,
             // and re-downloading every one on every visit was most of the home page's 4 MB. Anything
             // whose audience is a person (private, burn-after-read, locked) stays private and uncached.
             const shared = row.visibility === 'public' && !Number(row.burn_after_read) && !row.locked;
+            const key = shared && (row.media_ref || row.screenshot_url) ? `${row.media_ref || row.screenshot_url}|${variant ? `${variant.w}:${variant.fmt}` : ''}` : null;
+            let got = key ? shotsKept.get(key) : null;
+            if (!got) {
+                got = await app.locals.pasteMedia.bytes(row, variant);
+                if (key) keepShot(key, got);
+            }
+            if (!got) return notFound(res);
             res.set('X-Content-Type-Options', 'nosniff')
                 .set('Cache-Control', shared ? cache.assetHeaders('screenshot.png', { hashed: true }) : cache.htmlHeaders({ private: true }));
             res.type(got.type || 'application/octet-stream').send(got.body);
