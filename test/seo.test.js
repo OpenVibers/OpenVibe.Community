@@ -215,6 +215,8 @@ const { boot, check, done } = require('./helpers/app');
         // Cloudflare Web Analytics (injected at the edge, disclosed in the privacy text) may load and report.
         assert.match(csp, /script-src [^;]*https:\/\/static\.cloudflareinsights\.com/);
         assert.match(csp, /connect-src [^;]*https:\/\/cloudflareinsights\.com/);
+        // The feed's preview videos play (11-20: refused while media-src was unset and default-src 'self').
+        assert.match(csp, /media-src 'self' blob: https:/);
         assert.strictEqual(r.headers.get('x-content-type-options'), 'nosniff');
         assert.strictEqual(r.headers.get('x-powered-by'), null);
     });

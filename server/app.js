@@ -119,6 +119,10 @@ async function createApp(opts = {}) {
                 fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
                 // Screenshots serve from openvibe.media (which may 302 to object storage); avatars from Live/Network.
                 imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+                // The feed's preview videos (Pulse and the menu's Feed: a recording's six seconds, a clip; ov-home.js
+                // watchPreview): media-src was unset, so default-src 'self' refused every one (2026-11-20, the GUI audit).
+                // Any https source, as Chat and Blog allow: a video cannot run code, and Media may redirect to storage.
+                mediaSrc: ["'self'", 'blob:', 'https:'],
                 connectSrc: ["'self'", 'https://openvibe.network', 'https://openvibe.quest', 'https://openvibe.chat', 'https://openvibe.live', 'https://openvibe.media', 'https://openvibe.events', 'https://inventory.openvibe.network', 'https://cloudflareinsights.com'],   // inventory: what people wear (items.js)
                 // The Network's hidden /sso/check frame: how a visitor who is signed in elsewhere gets signed in here.
                 frameSrc: ["'self'", 'https://openvibe.network'],
