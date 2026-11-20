@@ -490,8 +490,20 @@ async function createApp(opts = {}) {
     // four latest from Pulse (pastes are shown above it already) and real counts. Read at most once a minute; a shelf
     // that fails or is empty is left out of the page.
     let homeExtras = { at: 0, value: null };
+    // Older than a minute, the last read is served and a new one is made behind it, one at a time: no visitor waits for
+    // it (2026-11-20, on the host: every minute one request took 480-650 ms, the others 40-75 ms). Only the first
+    // request after a start waits.
+    let homeExtrasPending = null;
     async function readHomeExtras() {
         if (homeExtras.value && Date.now() - homeExtras.at < 60_000) return homeExtras.value;
+        if (homeExtras.value) { refreshHomeExtras().catch(() => {}); return homeExtras.value; }
+        return await refreshHomeExtras();
+    }
+    function refreshHomeExtras() {
+        if (!homeExtrasPending) homeExtrasPending = buildHomeExtras().finally(() => { homeExtrasPending = null; });
+        return homeExtrasPending;
+    }
+    async function buildHomeExtras() {
         const quiet = (p, fallback) => Promise.resolve().then(() => p).catch(() => fallback);
         const [spaces, roadmap, roadmapCounts, activity, counts] = await Promise.all([
             quiet(require('./forum/store').listSpaces(db, ['public']), []),
