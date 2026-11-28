@@ -882,6 +882,6 @@ release after paste comments moved onto the typed comment threads. [Submissions]
 
 <!-- versions:start -->
 - openvibe-contracts: v0.454.0
-- openvibe-sdk: v0.189.0
+- openvibe-sdk: v0.191.0
 - openvibe-shared: v4.339.0
 <!-- versions:end -->
